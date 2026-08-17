@@ -10,12 +10,14 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 1 is in progress. The project currently provides:
+Milestone 2 is in progress. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
 - an automated HTTP handler test;
 - an executable HTTP server with explicit timeouts and graceful shutdown;
+- a typed HTTP client with response validation, cancellation, and timeouts;
+- an executable CLI with a `health` command and explicit exit codes;
 - a repeatable milestone verification script.
 
 ## Requirements
@@ -43,6 +45,26 @@ Expected response:
 
 ```json
 {"status":"ok"}
+```
+
+## Run the CLI
+
+With the server running, check its status from another terminal:
+
+```bash
+go run ./cmd/client --server http://127.0.0.1:8080 health
+```
+
+Expected output:
+
+```text
+Server status: ok
+```
+
+The server URL uses the following configuration precedence:
+
+```text
+--server flag > MEDIAARCHIVE_SERVER environment variable > built-in default
 ```
 
 ## Verify a milestone
