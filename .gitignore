@@ -9,6 +9,10 @@
 /coverage/
 coverage.out
 
+# Editor-specific workspace settings
+.idea/
+.vscode/
+
 # Runtime data
 /data/
 *.db
