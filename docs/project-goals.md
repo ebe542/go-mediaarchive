@@ -100,4 +100,6 @@ database wrapper.
 - Use English for code, names, comments, documentation, and API messages.
 - Use LF line endings for all text files.
 - Keep every milestone executable and independently verifiable.
+- Mark every completed milestone with an immutable annotated `milestone-NNN`
+  Git tag.
 - Use the MIT License for the public source project.

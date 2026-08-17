@@ -240,3 +240,22 @@ on earlier commands succeeding.
 
 Update the relevant milestone document whenever its scope, acceptance criteria,
 or completion status changes.
+
+## Milestone tags
+
+A milestone may contain multiple complete Conventional Commits. Its completion
+is identified by an annotated Git tag using the `milestone-NNN` format, where
+`NNN` is a zero-padded sequential number.
+
+Examples:
+
+```text
+milestone-001
+milestone-002
+milestone-003
+```
+
+Create a milestone tag only after all acceptance criteria pass locally and in
+GitHub Actions. The tag points to the final documentation commit for that
+milestone and must not be moved after publication. Corrections use a new commit
+or, when appropriate, a new milestone rather than rewriting a published tag.
