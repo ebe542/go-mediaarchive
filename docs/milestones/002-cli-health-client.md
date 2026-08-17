@@ -59,7 +59,7 @@ coupling those details to individual commands.
 - [x] The CLI prints `Server status: ok` for a healthy server.
 - [x] Invalid arguments produce usage information and exit code `2`.
 - [x] Standard milestone checks pass locally.
-- [ ] GitHub Actions passes on `main`.
+- [x] GitHub Actions passes on `main`.
 
 ## Verification
 
