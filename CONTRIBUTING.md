@@ -159,12 +159,26 @@ establish a secure communication channel.
 
 ## Branches and commits
 
-Create a short-lived branch from `main`:
+The project currently uses trunk-based development. A solo maintainer may commit
+directly to `main` when every commit is complete, tested, documented where
+necessary, and safe to release.
+
+Synchronize `main` before starting work:
 
 ```bash
-git switch main && git pull --ff-only && \
-  git switch -c feature/short-description
+git switch main && git pull --ff-only
 ```
+
+Use a short-lived feature branch when work spans several incomplete commits,
+changes security-sensitive behavior, requires review, or risks leaving `main` in
+an unusable state:
+
+```bash
+git switch -c feature/short-description
+```
+
+If regular collaborators join the project, pull requests and branch protection
+should become the default workflow.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) with concise,
 imperative subjects. A commit should represent one coherent change and include
