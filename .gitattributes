@@ -1,0 +1,14 @@
+# Store all detected text files with LF line endings.
+* text=auto eol=lf
+
+# Binary files must not be normalized.
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.mp4 binary
+*.webm binary

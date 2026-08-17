@@ -1,0 +1,31 @@
+# Build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Test and coverage output
+/coverage/
+coverage.out
+
+# Runtime data
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Certificates and private keys
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Operating system files
+.DS_Store
+Thumbs.db
