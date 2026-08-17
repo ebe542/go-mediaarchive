@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 2 is complete. The project currently provides:
+Milestone 3 is in progress. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -18,6 +18,7 @@ Milestone 2 is complete. The project currently provides:
 - an executable HTTP server with explicit timeouts and graceful shutdown;
 - a typed HTTP client with response validation, cancellation, and timeouts;
 - an executable CLI with a `health` command and explicit exit codes;
+- a CGO-free SQLite foundation with WAL, foreign keys, and embedded migrations;
 - a repeatable milestone verification script.
 
 ## Requirements
@@ -30,7 +31,9 @@ Milestone 2 is complete. The project currently provides:
 ## Run the server
 
 ```bash
-go run ./cmd/server --addr 127.0.0.1:8080
+go run ./cmd/server \
+  --addr 127.0.0.1:8080 \
+  --database ./data/mediaarchive.db
 ```
 
 Check its health from another terminal:
@@ -105,8 +108,8 @@ planned as an advanced security milestone in addition to user authentication and
 authorization.
 
 See [Project goals](docs/project-goals.md) and the
-[milestone documentation](docs/milestones/001-foundation.md) for details.
+[milestone overview](docs/milestones/README.md) for details.
 
 ## License
 
-This project is intended to use the MIT License.
+This project uses the MIT License.

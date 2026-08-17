@@ -66,6 +66,7 @@ printf 'Checking milestone in %s\n' "$PROJECT_ROOT"
 run_check "Go version" go version
 run_check "Go formatting" check_formatting
 run_check "Module files" go mod tidy -diff
+run_check "Module checksums" go mod verify
 run_check "Static analysis" go vet ./...
 run_check "Tests" go test -count=1 -cover ./...
 
