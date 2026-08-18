@@ -7,7 +7,7 @@ verifiable increments.
 | --- | --- | --- |
 | `milestone-001` | [Executable foundation](001-foundation.md) | Complete |
 | `milestone-002` | [CLI health client](002-cli-health-client.md) | Complete |
-| `milestone-003` | [SQLite foundation](003-sqlite-foundation.md) | In progress |
+| `milestone-003` | [SQLite foundation](003-sqlite-foundation.md) | Complete |
 
 ## Versioning rule
 

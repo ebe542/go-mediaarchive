@@ -104,7 +104,7 @@ Tests will query these values rather than assuming successful configuration.
 - [x] The database closes during graceful server shutdown.
 - [x] Standard milestone checks pass.
 - [x] Local CI checks pass.
-- [ ] GitHub Actions passes on `main`.
+- [x] GitHub Actions passes on `main`.
 
 ## Verification
 
