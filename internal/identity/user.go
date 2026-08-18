@@ -174,3 +174,45 @@ func NewUser(
 		UpdatedAt:   timestamp,
 	}, nil
 }
+
+// UpdateDetails validates mutable user details and preserves identity state.
+func (user User) UpdateDetails(
+	argUsername string,
+	argDisplayName string,
+	argRole Role,
+	argNow time.Time,
+) (User, error) {
+	updatedUser, err := NewUser(
+		user.ID,
+		argUsername,
+		argDisplayName,
+		argRole,
+		argNow,
+	)
+	if err != nil {
+		return User{}, err
+	}
+
+	updatedUser.Active = user.Active
+	updatedUser.CreatedAt = user.CreatedAt
+
+	return updatedUser, nil
+}
+
+// SetActive changes the activation state and records the modification time.
+func (user User) SetActive(
+	argActive bool,
+	argNow time.Time,
+) (User, error) {
+	if argNow.IsZero() {
+		return User{}, fmt.Errorf(
+			"%w: update time must not be zero",
+			ErrInvalidTimestamp,
+		)
+	}
+
+	user.Active = argActive
+	user.UpdatedAt = argNow.UTC()
+
+	return user, nil
+}

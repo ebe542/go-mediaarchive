@@ -20,6 +20,9 @@ type UserRepository struct {
 	database *sql.DB
 }
 
+// Verify at compile time that UserRepository implements the domain contract.
+var _ identity.UserRepository = (*UserRepository)(nil)
+
 type sqliteCodedError interface {
 	Code() int
 }

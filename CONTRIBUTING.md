@@ -25,7 +25,7 @@ The project currently uses:
 
 - Go 1.26.6 or newer within the Go 1.26 release line;
 - Git;
-- Git Bash for documented shell commands;
+- Git Bash or Windows PowerShell for documented project checks;
 - LF line endings for all text files;
 - VS Code with the official Go extension as the recommended editor setup.
 
@@ -65,6 +65,12 @@ Run the additional race detector when the local toolchain supports it:
 ./scripts/check_milestone.sh --race
 ```
 
+Run the equivalent checks from Windows PowerShell with:
+
+```powershell
+.\scripts\check_milestone.ps1 -Race
+```
+
 The standard check verifies formatting, module files, static analysis, tests,
 coverage execution, builds, and Git whitespace.
 
@@ -73,6 +79,12 @@ project checks locally:
 
 ```bash
 ./scripts/check_ci.sh
+```
+
+The equivalent Windows PowerShell command is:
+
+```powershell
+.\scripts\check_ci.ps1
 ```
 
 This requires `actionlint`. Install it with:
@@ -234,9 +246,10 @@ tests, documentation, or a clear explanation of why no change is needed.
 ## Documentation
 
 Documentation, code identifiers, filenames, comments, API fields, log messages,
-and error messages are written in English. Commands in project documentation are
-written for Git Bash and should be combined with `&&` when later commands depend
-on earlier commands succeeding.
+and error messages are written in English. Shell commands in project
+documentation use Git Bash and should be combined with `&&` when later commands
+depend on earlier commands succeeding. Project checks also provide native
+Windows PowerShell scripts.
 
 Update the relevant milestone document whenever its scope, acceptance criteria,
 or completion status changes.

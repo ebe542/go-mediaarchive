@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 4 is complete. The project currently provides:
+Milestone 5 is in progress. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -85,10 +85,22 @@ Run the additional race detector when the local toolchain supports it:
 ./scripts/check_milestone.sh --race
 ```
 
+Run the equivalent checks from Windows PowerShell:
+
+```powershell
+.\scripts\check_milestone.ps1 -Race
+```
+
 Validate the GitHub Actions workflow and reproduce its project checks locally:
 
 ```bash
 ./scripts/check_ci.sh
+```
+
+From Windows PowerShell, run:
+
+```powershell
+.\scripts\check_ci.ps1
 ```
 
 Run the complete `verify` job locally with `act` and Docker:
