@@ -90,7 +90,7 @@ application functionality and must not be registered as a public handler.
 - [x] No user-administration HTTP routes are registered.
 - [x] Standard milestone checks pass.
 - [x] Local CI checks pass.
-- [ ] GitHub Actions passes on `main`.
+- [x] GitHub Actions passes on `main`.
 
 ## Verification
 

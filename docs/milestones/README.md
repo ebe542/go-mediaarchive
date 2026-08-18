@@ -9,7 +9,7 @@ verifiable increments.
 | `milestone-002` | [CLI health client](002-cli-health-client.md) | Complete |
 | `milestone-003` | [SQLite foundation](003-sqlite-foundation.md) | Complete |
 | `milestone-004` | [User identity foundation](004-user-identity-foundation.md) | Complete |
-| `milestone-005` | [User application service](005-user-application-service.md) | In progress |
+| `milestone-005` | [User application service](005-user-application-service.md) | Complete |
 
 ## Versioning rule
 
