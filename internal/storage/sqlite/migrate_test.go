@@ -32,6 +32,7 @@ func TestMigrateAppliesEmbeddedMigrationsOnce(t *testing.T) {
 		`
 			SELECT version, name
 			FROM schema_migrations
+			WHERE version = 1
 		`,
 	).Scan(&version, &name); err != nil {
 		t.Fatalf("query applied migration: %v", err)
@@ -62,11 +63,7 @@ func TestMigrateAppliesEmbeddedMigrationsOnce(t *testing.T) {
 		t.Fatalf("count applied migrations: %v", err)
 	}
 
-	if migrationCount != 1 {
-		t.Errorf(
-			"expected %d applied migration, got %d",
-			1,
-			migrationCount,
-		)
+	if migrationCount != 2 {
+		t.Fatalf("expected 2 applied migrations, got %d", migrationCount)
 	}
 }
