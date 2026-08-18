@@ -110,7 +110,7 @@ without printing the password hash or other credential material.
 - [x] No user-administration or authentication HTTP routes are registered.
 - [x] Standard milestone checks pass.
 - [x] Local CI checks pass.
-- [ ] GitHub Actions passes on `main`.
+- [x] GitHub Actions passes on `main`.
 
 ## Verification
 

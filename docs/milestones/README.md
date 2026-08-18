@@ -10,7 +10,7 @@ verifiable increments.
 | `milestone-003` | [SQLite foundation](003-sqlite-foundation.md) | Complete |
 | `milestone-004` | [User identity foundation](004-user-identity-foundation.md) | Complete |
 | `milestone-005` | [User application service](005-user-application-service.md) | Complete |
-| `milestone-006` | [Administrator credential bootstrap](006-admin-bootstrap.md) | In progress |
+| `milestone-006` | [Administrator credential bootstrap](006-admin-bootstrap.md) | Complete |
 
 ## Versioning rule
 

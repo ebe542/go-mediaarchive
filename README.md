@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 6 is in progress. The project currently provides:
+Milestone 6 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -21,6 +21,7 @@ Milestone 6 is in progress. The project currently provides:
 - a CGO-free SQLite foundation with WAL, foreign keys, and embedded migrations;
 - persistent user identities with global roles and a SQLite repository;
 - a storage-independent application service for user administration;
+- Argon2id password credentials and an atomic local administrator bootstrap;
 - a repeatable milestone verification script.
 
 ## Requirements
