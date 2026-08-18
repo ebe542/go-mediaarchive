@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 4 is in progress. The project currently provides:
+Milestone 4 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -19,6 +19,7 @@ Milestone 4 is in progress. The project currently provides:
 - a typed HTTP client with response validation, cancellation, and timeouts;
 - an executable CLI with a `health` command and explicit exit codes;
 - a CGO-free SQLite foundation with WAL, foreign keys, and embedded migrations;
+- persistent user identities with global roles and a SQLite repository;
 - a repeatable milestone verification script.
 
 ## Requirements

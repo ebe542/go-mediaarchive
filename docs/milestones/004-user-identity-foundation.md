@@ -94,7 +94,7 @@ The repository returns a stable domain-level not-found error rather than leaking
 - [x] Deactivated identities remain retrievable.
 - [x] Standard milestone checks pass.
 - [x] Local CI checks pass.
-- [ ] GitHub Actions passes on `main`.
+- [x] GitHub Actions passes on `main`.
 
 ## Verification
 
