@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 5 is complete. The project currently provides:
+Milestone 6 is in progress. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -71,6 +71,27 @@ The server URL uses the following configuration precedence:
 ```text
 --server flag > MEDIAARCHIVE_SERVER environment variable > built-in default
 ```
+
+## Bootstrap the first administrator
+
+Create the first administrator directly in a local SQLite database before
+authentication endpoints are introduced:
+
+```bash
+go run ./cmd/admin bootstrap \
+  --database ./data/mediaarchive.db \
+  --username archive-admin \
+  --display-name "Archive Administrator"
+```
+
+The command requests and confirms the password interactively without terminal
+echo. Passwords contain between 15 and 1,024 Unicode characters. They are hashed
+with Argon2id and are never accepted as command-line arguments or environment
+variables.
+
+Bootstrap succeeds only while the database contains no users. It atomically
+creates the initial administrator and password credential. Subsequent user
+administration will require authenticated and authorized API operations.
 
 ## Verify a milestone
 
