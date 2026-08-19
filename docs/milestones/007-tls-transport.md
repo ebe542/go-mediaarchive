@@ -97,7 +97,7 @@ password is committed to the repository.
 - [x] No certificate or private-key fixture is tracked by Git.
 - [x] Standard milestone checks pass.
 - [x] Local CI checks pass.
-- [ ] GitHub Actions passes on `main`.
+- [x] GitHub Actions passes on `main`.
 
 ## Verification
 

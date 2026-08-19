@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 7 is in progress. The project currently provides:
+Milestone 7 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -22,6 +22,7 @@ Milestone 7 is in progress. The project currently provides:
 - persistent user identities with global roles and a SQLite repository;
 - a storage-independent application service for user administration;
 - Argon2id password credentials and an atomic local administrator bootstrap;
+- TLS 1.3 network transport with explicit CLI certificate trust;
 - a repeatable milestone verification script.
 
 ## Requirements

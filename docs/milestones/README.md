@@ -11,7 +11,7 @@ verifiable increments.
 | `milestone-004` | [User identity foundation](004-user-identity-foundation.md) | Complete |
 | `milestone-005` | [User application service](005-user-application-service.md) | Complete |
 | `milestone-006` | [Administrator credential bootstrap](006-admin-bootstrap.md) | Complete |
-| `milestone-007` | [TLS transport foundation](007-tls-transport.md) | In progress |
+| `milestone-007` | [TLS transport foundation](007-tls-transport.md) | Complete |
 
 ## Versioning rule
 
