@@ -4,6 +4,7 @@ package sessions
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"time"
 
@@ -29,6 +30,17 @@ type TokenGenerator interface {
 	)
 }
 
+// UserFinder loads the current user state for a session.
+type UserFinder interface {
+	FindByID(
+		argContext context.Context,
+		argID string,
+	) (identity.User, error)
+}
+
+// ErrUnauthenticated is the generic failure for unusable session tokens.
+var ErrUnauthenticated = errors.New("authentication required")
+
 // Clock returns the current application time.
 type Clock func() time.Time
 
@@ -46,11 +58,13 @@ type Service struct {
 	currentTime      Clock
 	absoluteLifetime time.Duration
 	idleTimeout      time.Duration
+	userFinder       UserFinder
 }
 
 // NewService creates a server-side session service.
 func NewService(
 	argAuthenticator Authenticator,
+	argUserFinder UserFinder,
 	argRepository session.Repository,
 	argTokenGenerator TokenGenerator,
 	argClock Clock,
@@ -59,6 +73,7 @@ func NewService(
 ) *Service {
 	return &Service{
 		authenticator:    argAuthenticator,
+		userFinder:       argUserFinder,
 		repository:       argRepository,
 		tokenGenerator:   argTokenGenerator,
 		currentTime:      argClock,
@@ -120,4 +135,87 @@ func (service *Service) Create(
 		AccessToken: accessToken,
 		ExpiresAt:   createdSession.ExpiresAt,
 	}, nil
+}
+
+// Resolve authenticates an active session and records recent use.
+func (service *Service) Resolve(
+	argContext context.Context,
+	argAccessToken string,
+) (identity.User, error) {
+	tokenHash := session.HashToken(argAccessToken)
+
+	storedSession, err := service.repository.FindByTokenHash(
+		argContext,
+		tokenHash,
+	)
+	if errors.Is(err, session.ErrNotFound) {
+		return identity.User{}, ErrUnauthenticated
+	}
+	if err != nil {
+		return identity.User{}, fmt.Errorf(
+			"retrieve server-side session: %w",
+			err,
+		)
+	}
+
+	user, err := service.userFinder.FindByID(
+		argContext,
+		storedSession.UserID,
+	)
+	if errors.Is(err, identity.ErrUserNotFound) {
+		return identity.User{}, ErrUnauthenticated
+	}
+	if err != nil {
+		return identity.User{}, fmt.Errorf(
+			"retrieve session user: %w",
+			err,
+		)
+	}
+
+	currentTime := service.currentTime().UTC()
+
+	if !storedSession.IsValidAt(
+		currentTime,
+		service.idleTimeout,
+		user.Active,
+	) {
+		return identity.User{}, ErrUnauthenticated
+	}
+
+	if err := service.repository.Touch(
+		argContext,
+		tokenHash,
+		currentTime,
+	); errors.Is(err, session.ErrNotFound) {
+		return identity.User{}, ErrUnauthenticated
+	} else if err != nil {
+		return identity.User{}, fmt.Errorf(
+			"touch server-side session: %w",
+			err,
+		)
+	}
+
+	return user, nil
+}
+
+// Revoke idempotently invalidates a presented session token.
+func (service *Service) Revoke(
+	argContext context.Context,
+	argAccessToken string,
+) error {
+	tokenHash := session.HashToken(argAccessToken)
+	currentTime := service.currentTime().UTC()
+
+	if err := service.repository.Revoke(
+		argContext,
+		tokenHash,
+		currentTime,
+	); err != nil {
+		return fmt.Errorf(
+			"revoke server-side session: %w",
+			err,
+		)
+	}
+
+	return nil
 }
