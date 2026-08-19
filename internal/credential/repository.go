@@ -18,3 +18,16 @@ type AdminBootstrapper interface {
 		argCredential PasswordCredential,
 	) error
 }
+
+// ErrPasswordCredentialNotFound indicates that a user has no password credential.
+var ErrPasswordCredentialNotFound = errors.New(
+	"password credential not found",
+)
+
+// PasswordCredentialRepository loads password credentials for authentication.
+type PasswordCredentialRepository interface {
+	FindByUserID(
+		argContext context.Context,
+		argUserID string,
+	) (PasswordCredential, error)
+}

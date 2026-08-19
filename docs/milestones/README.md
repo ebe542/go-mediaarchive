@@ -12,6 +12,7 @@ verifiable increments.
 | `milestone-005` | [User application service](005-user-application-service.md) | Complete |
 | `milestone-006` | [Administrator credential bootstrap](006-admin-bootstrap.md) | Complete |
 | `milestone-007` | [TLS transport foundation](007-tls-transport.md) | Complete |
+| `milestone-008` | [Authentication sessions](008-authentication-sessions.md) | In progress |
 
 ## Versioning rule
 
@@ -28,3 +29,7 @@ A milestone tag is created only when:
 
 Published milestone tags are never moved. Subsequent corrections are recorded
 in new commits so that the project history remains auditable.
+
+The final implementation commit includes the completed milestone documentation.
+A separate documentation-only completion commit is not required. After GitHub
+Actions passes for that commit, the milestone tag is created directly.
