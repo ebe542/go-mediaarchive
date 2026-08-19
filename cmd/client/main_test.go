@@ -3,14 +3,16 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestRunHealthCommand(t *testing.T) {
-	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(
 		func(response http.ResponseWriter, request *http.Request) {
@@ -62,7 +64,6 @@ func TestRunHealthCommand(t *testing.T) {
 }
 
 func TestRunReturnsUsageErrorForUnknownCommand(t *testing.T) {
-	t.Parallel()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -97,7 +98,6 @@ func TestRunReturnsUsageErrorForUnknownCommand(t *testing.T) {
 }
 
 func TestServerURLFromEnvironment(t *testing.T) {
-	t.Parallel()
 
 	tests := []struct {
 		name        string
@@ -117,10 +117,8 @@ func TestServerURLFromEnvironment(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 
 			actualURL := serverURLFromEnvironment(
 				func(name string) string {
@@ -140,5 +138,160 @@ func TestServerURLFromEnvironment(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestNewHTTPClientRejectsCustomCAForPlainHTTP(t *testing.T) {
+
+	_, err := newHTTPClient(
+		"http://127.0.0.1:8080",
+		"test-ca.pem",
+	)
+	if err == nil {
+		t.Fatal("expected custom CA with plain HTTP to be rejected")
+	}
+}
+
+func TestNewHTTPClientTrustsCustomCA(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(
+		func(
+			argResponse http.ResponseWriter,
+			argRequest *http.Request,
+		) {
+			argResponse.WriteHeader(http.StatusNoContent)
+		},
+	))
+	t.Cleanup(server.Close)
+
+	certificatePEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: server.Certificate().Raw,
+	})
+
+	certificatePath := filepath.Join(
+		t.TempDir(),
+		"test-ca.pem",
+	)
+	if err := os.WriteFile(
+		certificatePath,
+		certificatePEM,
+		0o600,
+	); err != nil {
+		t.Fatalf("write test CA certificate: %v", err)
+	}
+
+	httpClient, err := newHTTPClient(
+		server.URL,
+		certificatePath,
+	)
+	if err != nil {
+		t.Fatalf("create HTTP client: %v", err)
+	}
+
+	response, err := httpClient.Get(server.URL)
+	if err != nil {
+		t.Fatalf("request HTTPS test server: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := response.Body.Close(); err != nil {
+			t.Errorf("close response body: %v", err)
+		}
+	})
+
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusNoContent,
+			response.StatusCode,
+		)
+	}
+}
+
+func TestRunHealthCommandWithCustomCA(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(
+		func(
+			argResponse http.ResponseWriter,
+			argRequest *http.Request,
+		) {
+			argResponse.Header().Set(
+				"Content-Type",
+				"application/json; charset=utf-8",
+			)
+			_, _ = argResponse.Write([]byte(`{"status":"ok"}`))
+		},
+	))
+	t.Cleanup(server.Close)
+
+	certificatePEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: server.Certificate().Raw,
+	})
+
+	certificatePath := filepath.Join(
+		t.TempDir(),
+		"test-ca.pem",
+	)
+	if err := os.WriteFile(
+		certificatePath,
+		certificatePEM,
+		0o600,
+	); err != nil {
+		t.Fatalf("write test CA certificate: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := run(
+		context.Background(),
+		[]string{
+			"--server",
+			server.URL,
+			"--ca-certificate",
+			certificatePath,
+			"health",
+		},
+		&stdout,
+		&stderr,
+		func(string) string {
+			return ""
+		},
+	)
+	if err != nil {
+		t.Fatalf("run HTTPS health command: %v", err)
+	}
+
+	const expectedOutput = "Server status: ok\n"
+	if stdout.String() != expectedOutput {
+		t.Fatalf(
+			"expected stdout %q, got %q",
+			expectedOutput,
+			stdout.String(),
+		)
+	}
+}
+
+func TestNewHTTPClientRejectsUntrustedCertificate(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(
+		func(
+			argResponse http.ResponseWriter,
+			argRequest *http.Request,
+		) {
+			argResponse.WriteHeader(http.StatusNoContent)
+		},
+	))
+	t.Cleanup(server.Close)
+
+	httpClient, err := newHTTPClient(server.URL, "")
+	if err != nil {
+		t.Fatalf("create default HTTP client: %v", err)
+	}
+
+	response, err := httpClient.Get(server.URL)
+	if response != nil {
+		_ = response.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("expected untrusted certificate to be rejected")
 	}
 }

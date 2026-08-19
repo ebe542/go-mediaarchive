@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 6 is complete. The project currently provides:
+Milestone 7 is in progress. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -33,6 +33,8 @@ Milestone 6 is complete. The project currently provides:
 
 ## Run the server
 
+For local loopback development, run plain HTTP with:
+
 ```bash
 go run ./cmd/server \
   --addr 127.0.0.1:8080 \
@@ -53,6 +55,21 @@ Expected response:
 {"status":"ok"}
 ```
 
+Plain HTTP is rejected for wildcard, hostname, and non-loopback listener
+addresses. For network access, provide a TLS certificate and matching private
+key:
+
+```bash
+go run ./cmd/server \
+  --addr 0.0.0.0:8443 \
+  --database ./data/mediaarchive.db \
+  --tls-certificate /path/to/server.crt \
+  --tls-private-key /path/to/server.key
+```
+
+The server requires TLS 1.3 or newer. Both TLS files must be configured
+together. Certificate and private-key files must remain outside version control.
+
 ## Run the CLI
 
 With the server running, check its status from another terminal:
@@ -72,6 +89,19 @@ The server URL uses the following configuration precedence:
 ```text
 --server flag > MEDIAARCHIVE_SERVER environment variable > built-in default
 ```
+
+When an HTTPS server uses a private certificate authority, add that CA to the
+CLI trust configuration:
+
+```bash
+go run ./cmd/client \
+  --server https://archive.example.test:8443 \
+  --ca-certificate /path/to/archive-ca.crt \
+  health
+```
+
+The additional CA extends the system trust store. Certificate verification
+cannot be disabled.
 
 ## Bootstrap the first administrator
 

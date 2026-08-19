@@ -161,6 +161,8 @@ publicly. Treat metadata and download permissions as security-sensitive.
 - Authentication does not replace per-resource authorization.
 - mTLS identifies trusted clients or devices; it does not replace user identity
   or user authorization.
+- Never add an option that disables TLS certificate verification.
+- Plain HTTP is limited to IP loopback listeners for local development.
 - Do not include real media libraries or production-derived fixtures in tests,
   issues, logs, or pull requests.
 
