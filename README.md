@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 8 is in progress. The project currently provides:
+Milestone 8 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -23,6 +23,7 @@ Milestone 8 is in progress. The project currently provides:
 - a storage-independent application service for user administration;
 - Argon2id password credentials and an atomic local administrator bootstrap;
 - TLS 1.3 network transport with explicit CLI certificate trust;
+- opaque server-side authentication sessions with login throttling;
 - a repeatable milestone verification script.
 
 ## Requirements
@@ -106,8 +107,8 @@ cannot be disabled.
 
 ## Bootstrap the first administrator
 
-Create the first administrator directly in a local SQLite database before
-authentication endpoints are introduced:
+Create the first administrator directly in a local SQLite database before the
+first API login:
 
 ```bash
 go run ./cmd/admin bootstrap \

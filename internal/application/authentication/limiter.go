@@ -10,6 +10,7 @@ import (
 
 type attemptBucket struct {
 	failures  int
+	pending   int
 	startedAt time.Time
 }
 
@@ -54,17 +55,35 @@ func (limiter *AttemptLimiter) Allow(
 
 	username := limiterUsernameKey(argUsername)
 
-	return bucketAllows(
-		limiter.usernames[username],
+	usernameBucket := limiter.usernames[username]
+	ipBucket := limiter.ipAddresses[argSourceIP]
+
+	if !bucketAllows(
+		usernameBucket,
 		limiter.usernameLimit,
 		argNow,
 		limiter.window,
-	) && bucketAllows(
-		limiter.ipAddresses[argSourceIP],
+	) || !bucketAllows(
+		ipBucket,
 		limiter.ipLimit,
 		argNow,
 		limiter.window,
+	) {
+		return false
+	}
+
+	limiter.usernames[username] = reserveBucket(
+		usernameBucket,
+		argNow,
+		limiter.window,
 	)
+	limiter.ipAddresses[argSourceIP] = reserveBucket(
+		ipBucket,
+		argNow,
+		limiter.window,
+	)
+
+	return true
 }
 
 // RecordFailure increments both independent failure buckets.
@@ -80,20 +99,23 @@ func (limiter *AttemptLimiter) RecordFailure(
 
 	username := limiterUsernameKey(argUsername)
 
-	limiter.usernames[username] = incrementBucket(
+	limiter.usernames[username] = completeFailedAttempt(
 		limiter.usernames[username],
 		argNow,
 		limiter.window,
 	)
-	limiter.ipAddresses[argSourceIP] = incrementBucket(
+	limiter.ipAddresses[argSourceIP] = completeFailedAttempt(
 		limiter.ipAddresses[argSourceIP],
 		argNow,
 		limiter.window,
 	)
 }
 
-// RecordSuccess clears username failures but preserves the source-IP history.
-func (limiter *AttemptLimiter) RecordSuccess(argUsername string) {
+// RecordSuccess clears username failures and releases the IP reservation.
+func (limiter *AttemptLimiter) RecordSuccess(
+	argUsername string,
+	argSourceIP string,
+) {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
@@ -101,6 +123,47 @@ func (limiter *AttemptLimiter) RecordSuccess(argUsername string) {
 		limiter.usernames,
 		limiterUsernameKey(argUsername),
 	)
+	releaseReservation(limiter.ipAddresses, argSourceIP)
+}
+
+// Cancel releases a reserved attempt without recording a failure.
+func (limiter *AttemptLimiter) Cancel(
+	argUsername string,
+	argSourceIP string,
+) {
+	limiter.mutex.Lock()
+	defer limiter.mutex.Unlock()
+
+	releaseReservation(
+		limiter.usernames,
+		limiterUsernameKey(argUsername),
+	)
+	releaseReservation(
+		limiter.ipAddresses,
+		argSourceIP,
+	)
+}
+
+func releaseReservation(
+	argBuckets map[string]attemptBucket,
+	argKey string,
+) {
+	bucket, exists := argBuckets[argKey]
+	if !exists {
+		return
+	}
+
+	if bucket.pending > 0 {
+		bucket.pending--
+	}
+
+	if bucket.failures == 0 && bucket.pending == 0 {
+		delete(argBuckets, argKey)
+
+		return
+	}
+
+	argBuckets[argKey] = bucket
 }
 
 func limiterUsernameKey(argUsername string) string {
@@ -123,10 +186,28 @@ func bucketAllows(
 		return true
 	}
 
-	return argBucket.failures < argLimit
+	return argBucket.failures+argBucket.pending < argLimit
 }
 
-func incrementBucket(
+func reserveBucket(
+	argBucket attemptBucket,
+	argNow time.Time,
+	argWindow time.Duration,
+) attemptBucket {
+	if argBucket.startedAt.IsZero() ||
+		!argNow.Before(argBucket.startedAt.Add(argWindow)) {
+		return attemptBucket{
+			pending:   1,
+			startedAt: argNow,
+		}
+	}
+
+	argBucket.pending++
+
+	return argBucket
+}
+
+func completeFailedAttempt(
 	argBucket attemptBucket,
 	argNow time.Time,
 	argWindow time.Duration,
@@ -137,6 +218,10 @@ func incrementBucket(
 			failures:  1,
 			startedAt: argNow,
 		}
+	}
+
+	if argBucket.pending > 0 {
+		argBucket.pending--
 	}
 
 	argBucket.failures++

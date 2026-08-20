@@ -3,6 +3,7 @@ package authentication
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -67,7 +68,7 @@ func TestAttemptLimiterExpiresAndClearsUsernameFailures(
 		t.Fatal("expected username to be limited")
 	}
 
-	limiter.RecordSuccess("archive_admin")
+	limiter.RecordSuccess("archive_admin", "192.0.2.2")
 
 	if !limiter.Allow("archive_admin", "192.0.2.2", now) {
 		t.Fatal("expected successful authentication to clear username failures")
@@ -112,17 +113,20 @@ func TestAttemptLimiterNormalizesUsernameAndRemovesExpiredBuckets(
 		t.Fatal("expected attempt after window expiration to be allowed")
 	}
 
-	if len(limiter.usernames) != 0 {
-		t.Fatalf(
-			"expected expired username buckets to be removed, got %d",
-			len(limiter.usernames),
-		)
+	if _, exists := limiter.usernames["archive_admin"]; exists {
+		t.Fatal("expected expired username bucket to be removed")
 	}
-	if len(limiter.ipAddresses) != 0 {
-		t.Fatalf(
-			"expected expired IP buckets to be removed, got %d",
-			len(limiter.ipAddresses),
-		)
+
+	if _, exists := limiter.ipAddresses["192.0.2.1"]; exists {
+		t.Fatal("expected expired IP bucket to be removed")
+	}
+
+	if _, exists := limiter.usernames["unrelated_user"]; !exists {
+		t.Fatal("expected allowed username attempt to be reserved")
+	}
+
+	if _, exists := limiter.ipAddresses["198.51.100.1"]; !exists {
+		t.Fatal("expected allowed IP attempt to be reserved")
 	}
 }
 
@@ -169,5 +173,63 @@ func TestAttemptLimiterRecordsConcurrentFailuresSafely(t *testing.T) {
 			failureCount,
 			ipBucket.failures,
 		)
+	}
+}
+
+func TestAttemptLimiterReservesConcurrentAttempts(t *testing.T) {
+	const attemptCount = 100
+
+	now := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+	limiter := NewAttemptLimiter(
+		5,
+		attemptCount,
+		15*time.Minute,
+	)
+
+	var allowedCount atomic.Int64
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(attemptCount)
+
+	for attempt := 0; attempt < attemptCount; attempt++ {
+		go func(argAttempt int) {
+			defer waitGroup.Done()
+
+			if limiter.Allow(
+				"archive_admin",
+				fmt.Sprintf("192.0.2.%d", argAttempt+1),
+				now,
+			) {
+				allowedCount.Add(1)
+			}
+		}(attempt)
+	}
+
+	waitGroup.Wait()
+
+	if actual := allowedCount.Load(); actual != 5 {
+		t.Fatalf(
+			"expected exactly %d reserved attempts, got %d",
+			5,
+			actual,
+		)
+	}
+}
+
+func TestAttemptLimiterCancelsReservedAttempt(t *testing.T) {
+	now := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+	limiter := NewAttemptLimiter(
+		1,
+		1,
+		15*time.Minute,
+	)
+
+	if !limiter.Allow("archive_admin", "192.0.2.1", now) {
+		t.Fatal("expected first attempt to be allowed")
+	}
+
+	limiter.Cancel("archive_admin", "192.0.2.1")
+
+	if !limiter.Allow("archive_admin", "192.0.2.1", now) {
+		t.Fatal("expected canceled reservation to release both limits")
 	}
 }

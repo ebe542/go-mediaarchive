@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,12 +17,21 @@ import (
 	"time"
 
 	"github.com/ebe542/go-mediaarchive/internal/api"
+	"github.com/ebe542/go-mediaarchive/internal/application/authentication"
+	appsessions "github.com/ebe542/go-mediaarchive/internal/application/sessions"
+	"github.com/ebe542/go-mediaarchive/internal/password"
+	"github.com/ebe542/go-mediaarchive/internal/session"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
 
 const (
-	defaultServerAddress = "127.0.0.1:8080"
-	defaultDatabasePath  = "data/mediaarchive.db"
+	defaultServerAddress    = "127.0.0.1:8080"
+	defaultDatabasePath     = "data/mediaarchive.db"
+	sessionAbsoluteLifetime = 8 * time.Hour
+	sessionIdleTimeout      = 30 * time.Minute
+	loginLimitWindow        = 15 * time.Minute
+	loginUsernameLimit      = 5
+	loginIPLimit            = 20
 )
 
 func main() {
@@ -107,11 +117,19 @@ func run(args []string, getenv func(string) string) error {
 		return fmt.Errorf("migrate SQLite database: %w", err)
 	}
 
+	handler, err := newApplicationHandler(database)
+	if err != nil {
+		return fmt.Errorf(
+			"initialize application handler: %w",
+			err,
+		)
+	}
+
 	// Explicit timeouts protect the server from clients that keep connections
 	// open without completing their requests.
 	server := newHTTPServer(
 		*address,
-		api.NewHandler(),
+		handler,
 		tlsEnabled,
 	)
 
@@ -227,6 +245,60 @@ func newHTTPServer(
 	}
 
 	return server
+}
+
+func newApplicationHandler(
+	argDatabase *sql.DB,
+) (http.Handler, error) {
+	passwordHasher := password.NewDefaultHasher()
+
+	// The dummy hash ensures that unknown-user authentication performs the same
+	// Argon2id work as authentication for a stored password credential.
+	dummyHash, err := passwordHasher.Hash(
+		[]byte("media-archive-dummy-password"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"create dummy authentication hash: %w",
+			err,
+		)
+	}
+
+	userRepository := sqlitestore.NewUserRepository(argDatabase)
+	credentialRepository := sqlitestore.NewPasswordCredentialRepository(argDatabase)
+
+	authenticator := authentication.NewService(
+		userRepository,
+		credentialRepository,
+		passwordHasher,
+		dummyHash,
+	)
+
+	sessionRepository := sqlitestore.NewSessionRepository(argDatabase)
+
+	sessionService := appsessions.NewService(
+		authenticator,
+		userRepository,
+		sessionRepository,
+		session.NewDefaultTokenGenerator(),
+		time.Now,
+		sessionAbsoluteLifetime,
+		sessionIdleTimeout,
+	)
+
+	loginLimiter := authentication.NewAttemptLimiter(
+		loginUsernameLimit,
+		loginIPLimit,
+		loginLimitWindow,
+	)
+
+	return api.NewHandler(
+		api.WithAuthentication(
+			sessionService,
+			loginLimiter,
+			time.Now,
+		),
+	), nil
 }
 
 func createDatabaseDirectory(databasePath string) error {

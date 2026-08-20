@@ -118,22 +118,22 @@ possible only on an IP loopback listener for local development.
 
 ## Acceptance criteria
 
-- [ ] Credential lookup normalizes usernames and preserves not-found semantics.
-- [ ] Unknown, incorrect, inactive, and credential-less users share one failure.
-- [ ] Missing-user authentication performs a dummy Argon2id verification.
-- [ ] Session tokens contain 256 bits of cryptographic randomness.
-- [ ] Only SHA-256 token hashes are persisted.
-- [ ] Migration `004_create_sessions.sql` enforces user and token constraints.
-- [ ] Idle and absolute expiration are enforced server-side.
-- [ ] Logout revokes the current session and is idempotent.
-- [ ] Username and source-IP login limits operate independently.
-- [ ] Login accepts only bounded, strict JSON requests.
-- [ ] Login returns versioned JSON with `Cache-Control: no-store`.
-- [ ] Authentication failures use a generic status and response body.
-- [ ] Session tokens are absent from logs and error messages.
-- [ ] No user-administration endpoints are registered.
-- [ ] Standard milestone checks pass.
-- [ ] Local CI checks pass.
+- [x] Credential lookup normalizes usernames and preserves not-found semantics.
+- [x] Unknown, incorrect, inactive, and credential-less users share one failure.
+- [x] Missing-user authentication performs a dummy Argon2id verification.
+- [x] Session tokens contain 256 bits of cryptographic randomness.
+- [x] Only SHA-256 token hashes are persisted.
+- [x] Migration `004_create_sessions.sql` enforces user and token constraints.
+- [x] Idle and absolute expiration are enforced server-side.
+- [x] Logout revokes the current session and is idempotent.
+- [x] Username and source-IP login limits operate independently.
+- [x] Login accepts only bounded, strict JSON requests.
+- [x] Login returns versioned JSON with `Cache-Control: no-store`.
+- [x] Authentication failures use a generic status and response body.
+- [x] Session tokens are absent from logs and error messages.
+- [x] No user-administration endpoints are registered.
+- [x] Standard milestone checks pass.
+- [x] Local CI checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-008` tag; it is verified after the final milestone commit.

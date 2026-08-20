@@ -1,12 +1,23 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"crypto/tls"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ebe542/go-mediaarchive/internal/api"
+	"github.com/ebe542/go-mediaarchive/internal/credential"
+	"github.com/ebe542/go-mediaarchive/internal/identity"
+	"github.com/ebe542/go-mediaarchive/internal/password"
+	"github.com/ebe542/go-mediaarchive/internal/session"
+	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
 
 func TestDatabasePathFromEnvironment(t *testing.T) {
@@ -232,5 +243,168 @@ func TestHTTPServerServesHealthEndpointOverTLS13(t *testing.T) {
 			tls.VersionTLS13,
 			response.TLS.Version,
 		)
+	}
+}
+
+func TestNewApplicationHandlerRejectsUnknownLogin(t *testing.T) {
+	ctx := context.Background()
+	databasePath := filepath.Join(t.TempDir(), "mediaarchive.db")
+
+	database, err := sqlitestore.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatalf("open SQLite database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
+
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	handler, err := newApplicationHandler(database)
+	if err != nil {
+		t.Fatalf("create application handler: %v", err)
+	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/sessions",
+		strings.NewReader(
+			`{"username":"unknown_user","password":"synthetic passphrase"}`,
+		),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.RemoteAddr = "192.0.2.10:12345"
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf(
+			"expected status %d, got %d: %s",
+			http.StatusUnauthorized,
+			response.Code,
+			response.Body.String(),
+		)
+	}
+}
+
+func TestApplicationHandlerAuthenticatesAndStoresOnlyTokenHash(
+	t *testing.T,
+) {
+	ctx := context.Background()
+	databasePath := filepath.Join(t.TempDir(), "mediaarchive.db")
+
+	database, err := sqlitestore.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatalf("open SQLite database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
+
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	now := time.Date(2026, time.August, 20, 10, 0, 0, 0, time.UTC)
+	userID := "123e4567-e89b-12d3-a456-426614174000"
+	plainPassword := []byte("synthetic passphrase")
+
+	user, err := identity.NewUser(
+		userID,
+		"archive_admin",
+		"Archive Administrator",
+		identity.RoleAdmin,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create user fixture: %v", err)
+	}
+
+	encodedHash, err := password.NewDefaultHasher().Hash(
+		plainPassword,
+	)
+	if err != nil {
+		t.Fatalf("hash password fixture: %v", err)
+	}
+
+	passwordCredential, err := credential.NewPasswordCredential(
+		userID,
+		encodedHash,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create credential fixture: %v", err)
+	}
+
+	if err := sqlitestore.NewAdminBootstrapRepository(
+		database,
+	).BootstrapAdmin(
+		ctx,
+		user,
+		passwordCredential,
+	); err != nil {
+		t.Fatalf("store authentication fixture: %v", err)
+	}
+
+	handler, err := newApplicationHandler(database)
+	if err != nil {
+		t.Fatalf("create application handler: %v", err)
+	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/sessions",
+		strings.NewReader(
+			`{"username":"archive_admin","password":"synthetic passphrase"}`,
+		),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.RemoteAddr = "192.0.2.10:12345"
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf(
+			"expected status %d, got %d: %s",
+			http.StatusCreated,
+			response.Code,
+			response.Body.String(),
+		)
+	}
+
+	var body struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode login response: %v", err)
+	}
+	if body.AccessToken == "" {
+		t.Fatal("expected non-empty access token")
+	}
+
+	var storedTokenHash []byte
+	err = database.QueryRowContext(
+		ctx,
+		`SELECT token_hash FROM sessions`,
+	).Scan(&storedTokenHash)
+	if err != nil {
+		t.Fatalf("read stored session token hash: %v", err)
+	}
+
+	expectedTokenHash := session.HashToken(body.AccessToken)
+	if !bytes.Equal(storedTokenHash, expectedTokenHash[:]) {
+		t.Fatal("expected only the access-token hash to be stored")
+	}
+
+	if bytes.Equal(storedTokenHash, []byte(body.AccessToken)) {
+		t.Fatal("expected raw access token not to be stored")
 	}
 }
