@@ -299,3 +299,167 @@ func TestRequireAuthenticationPreservesInternalFailure(
 		t.Fatal("expected response not to expose internal error")
 	}
 }
+
+func TestRequireRolesAllowsPermittedRole(t *testing.T) {
+	resolver := &recordingSessionResolver{
+		user: identity.User{
+			ID:       "3f74e74d-e237-4bd4-a9bb-3407c38dd16f",
+			Username: "archive_admin",
+			Role:     identity.RoleAdmin,
+			Active:   true,
+		},
+	}
+
+	nextCalled := false
+	protectedHandler := api.RequireAuthentication(
+		resolver,
+		api.RequireRoles(
+			http.HandlerFunc(func(
+				argResponse http.ResponseWriter,
+				argRequest *http.Request,
+			) {
+				nextCalled = true
+				argResponse.WriteHeader(http.StatusNoContent)
+			}),
+			identity.RoleAdmin,
+		),
+	)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/admin-only",
+		nil,
+	)
+	request.Header.Set(
+		"Authorization",
+		"Bearer opaque-session-token",
+	)
+
+	response := httptest.NewRecorder()
+	protectedHandler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusNoContent,
+			response.Code,
+		)
+	}
+	if !nextCalled {
+		t.Fatal("expected permitted handler to be called")
+	}
+}
+
+func TestRequireRolesRejectsInsufficientRole(t *testing.T) {
+	resolver := &recordingSessionResolver{
+		user: identity.User{
+			ID:       "bc3516f0-a8e5-45b9-9004-b2f402880c97",
+			Username: "archive_viewer",
+			Role:     identity.RoleViewer,
+			Active:   true,
+		},
+	}
+
+	nextCalled := false
+	protectedHandler := api.RequireAuthentication(
+		resolver,
+		api.RequireRoles(
+			http.HandlerFunc(func(
+				argResponse http.ResponseWriter,
+				argRequest *http.Request,
+			) {
+				nextCalled = true
+				argResponse.WriteHeader(http.StatusNoContent)
+			}),
+			identity.RoleAdmin,
+		),
+	)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/admin-only",
+		nil,
+	)
+	request.Header.Set(
+		"Authorization",
+		"Bearer viewer-session-token",
+	)
+
+	response := httptest.NewRecorder()
+	protectedHandler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusForbidden,
+			response.Code,
+		)
+	}
+	if nextCalled {
+		t.Fatal("expected forbidden handler not to be called")
+	}
+	if challenge := response.Header().Get("WWW-Authenticate"); challenge != "" {
+		t.Fatalf(
+			"expected no authentication challenge for authorization failure, got %q",
+			challenge,
+		)
+	}
+	if strings.Contains(
+		response.Body.String(),
+		"viewer-session-token",
+	) {
+		t.Fatal("expected response not to expose bearer token")
+	}
+	if strings.Contains(
+		response.Body.String(),
+		"viewer",
+	) {
+		t.Fatal("expected response not to expose the rejected role")
+	}
+}
+
+func TestRequireRolesAllowsAnyListedRole(t *testing.T) {
+	resolver := &recordingSessionResolver{
+		user: identity.User{
+			ID:       "22c3c390-b5f2-41d4-9292-0c988fbaba0b",
+			Username: "archive_editor",
+			Role:     identity.RoleEditor,
+			Active:   true,
+		},
+	}
+
+	protectedHandler := api.RequireAuthentication(
+		resolver,
+		api.RequireRoles(
+			http.HandlerFunc(func(
+				argResponse http.ResponseWriter,
+				argRequest *http.Request,
+			) {
+				argResponse.WriteHeader(http.StatusNoContent)
+			}),
+			identity.RoleViewer,
+			identity.RoleEditor,
+		),
+	)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/viewer-or-editor",
+		nil,
+	)
+	request.Header.Set(
+		"Authorization",
+		"Bearer editor-session-token",
+	)
+
+	response := httptest.NewRecorder()
+	protectedHandler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected status %d, got %d",
+			http.StatusNoContent,
+			response.Code,
+		)
+	}
+}

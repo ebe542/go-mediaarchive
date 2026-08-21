@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 
 	appsessions "github.com/ebe542/go-mediaarchive/internal/application/sessions"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
@@ -93,4 +94,35 @@ func writeAuthenticationRequired(
 		"authentication_required",
 		"Authentication required.",
 	)
+}
+
+// RequireRoles permits a request when its authenticated user has an allowed role.
+func RequireRoles(
+	argNext http.Handler,
+	argAllowedRoles ...identity.Role,
+) http.Handler {
+	return http.HandlerFunc(func(
+		argResponse http.ResponseWriter,
+		argRequest *http.Request,
+	) {
+		user, exists := AuthenticatedUser(argRequest.Context())
+		if !exists {
+			writeAuthenticationRequired(argResponse)
+
+			return
+		}
+
+		if slices.Contains(argAllowedRoles, user.Role) {
+			argNext.ServeHTTP(argResponse, argRequest)
+
+			return
+		}
+
+		writeJSONError(
+			argResponse,
+			http.StatusForbidden,
+			"forbidden",
+			"Access forbidden.",
+		)
+	})
 }

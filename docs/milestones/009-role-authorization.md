@@ -123,17 +123,17 @@ sensitive details.
 
 ## Acceptance criteria
 
-- [ ] Bearer credentials are parsed once for protected requests.
-- [ ] Malformed and unusable credentials share one `401` response.
-- [ ] Authentication challenges include `WWW-Authenticate: Bearer`.
-- [ ] Authenticated users are available through a typed request context.
+- [x] Bearer credentials are parsed once for protected requests.
+- [x] Malformed and unusable credentials share one `401` response.
+- [x] Authentication challenges include `WWW-Authenticate: Bearer`.
+- [x] Authenticated users are available through a typed request context.
 - [ ] Current database role and activation state apply to every request.
 - [ ] Every active role can read its own identity.
 - [ ] Only administrators can read another user by ID.
-- [ ] Insufficient roles receive `403` rather than `401`.
+- [x] Insufficient roles receive `403` rather than `401`.
 - [ ] Unknown users receive the documented `404` response.
 - [ ] Successful identity responses use `Cache-Control: no-store`.
-- [ ] Tokens are absent from response bodies, errors, and logs.
+- [x] Tokens are absent from response bodies, errors, and logs.
 - [ ] Public health and login behavior remains unchanged.
 - [ ] No user mutation endpoint is registered.
 - [ ] Global roles do not imply media download permission.
