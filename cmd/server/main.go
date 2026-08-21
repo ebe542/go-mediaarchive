@@ -16,9 +16,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ebe542/go-mediaarchive/internal/api"
 	"github.com/ebe542/go-mediaarchive/internal/application/authentication"
 	appsessions "github.com/ebe542/go-mediaarchive/internal/application/sessions"
+	appusers "github.com/ebe542/go-mediaarchive/internal/application/users"
 	"github.com/ebe542/go-mediaarchive/internal/password"
 	"github.com/ebe542/go-mediaarchive/internal/session"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
@@ -265,6 +268,11 @@ func newApplicationHandler(
 	}
 
 	userRepository := sqlitestore.NewUserRepository(argDatabase)
+	userService := appusers.NewService(
+		userRepository,
+		uuid.NewString,
+		time.Now,
+	)
 	credentialRepository := sqlitestore.NewPasswordCredentialRepository(argDatabase)
 
 	authenticator := authentication.NewService(
@@ -297,6 +305,10 @@ func newApplicationHandler(
 			sessionService,
 			loginLimiter,
 			time.Now,
+		),
+		api.WithUserReadAPI(
+			sessionService,
+			userService,
 		),
 	), nil
 }

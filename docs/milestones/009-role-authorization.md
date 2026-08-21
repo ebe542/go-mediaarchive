@@ -127,18 +127,18 @@ sensitive details.
 - [x] Malformed and unusable credentials share one `401` response.
 - [x] Authentication challenges include `WWW-Authenticate: Bearer`.
 - [x] Authenticated users are available through a typed request context.
-- [ ] Current database role and activation state apply to every request.
-- [ ] Every active role can read its own identity.
-- [ ] Only administrators can read another user by ID.
+- [x] Current database role and activation state apply to every request.
+- [x] Every active role can read its own identity.
+- [x] Only administrators can read another user by ID.
 - [x] Insufficient roles receive `403` rather than `401`.
-- [ ] Unknown users receive the documented `404` response.
-- [ ] Successful identity responses use `Cache-Control: no-store`.
+- [x] Unknown users receive the documented `404` response.
+- [x] Successful identity responses use `Cache-Control: no-store`.
 - [x] Tokens are absent from response bodies, errors, and logs.
-- [ ] Public health and login behavior remains unchanged.
-- [ ] No user mutation endpoint is registered.
-- [ ] Global roles do not imply media download permission.
-- [ ] Standard milestone checks pass.
-- [ ] Local CI checks pass.
+- [x] Public health and login behavior remains unchanged.
+- [x] No user mutation endpoint is registered.
+- [x] Global roles do not imply media download permission.
+- [x] Standard milestone checks pass.
+- [x] Local CI checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-009` tag; it is verified after the final milestone commit.

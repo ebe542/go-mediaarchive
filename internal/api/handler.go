@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
 
 func NewHandler(argOptions ...Option) http.Handler {
@@ -34,6 +36,40 @@ func NewHandler(argOptions ...Option) http.Handler {
 		)
 	}
 
+	if configuration.sessionResolver != nil &&
+		configuration.userReader != nil {
+		users := &userReadHandler{
+			users: configuration.userReader,
+		}
+
+		currentUserHandler := RequireAuthentication(
+			configuration.sessionResolver,
+			RequireRoles(
+				http.HandlerFunc(users.currentUser),
+				identity.RoleViewer,
+				identity.RoleEditor,
+				identity.RoleAdmin,
+			),
+		)
+
+		mux.Handle(
+			"GET /api/v1/users/me",
+			currentUserHandler,
+		)
+
+		userByIDHandler := RequireAuthentication(
+			configuration.sessionResolver,
+			RequireRoles(
+				http.HandlerFunc(users.userByID),
+				identity.RoleAdmin,
+			),
+		)
+
+		mux.Handle(
+			"GET /api/v1/users/{id}",
+			userByIDHandler,
+		)
+	}
 	return mux
 }
 

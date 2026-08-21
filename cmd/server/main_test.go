@@ -292,7 +292,7 @@ func TestNewApplicationHandlerRejectsUnknownLogin(t *testing.T) {
 	}
 }
 
-func TestApplicationHandlerAuthenticatesAndStoresOnlyTokenHash(
+func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 	t *testing.T,
 ) {
 	ctx := context.Background()
@@ -406,5 +406,49 @@ func TestApplicationHandlerAuthenticatesAndStoresOnlyTokenHash(
 
 	if bytes.Equal(storedTokenHash, []byte(body.AccessToken)) {
 		t.Fatal("expected raw access token not to be stored")
+	}
+
+	currentUserRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/users/me",
+		nil,
+	)
+	currentUserRequest.Header.Set(
+		"Authorization",
+		"Bearer "+body.AccessToken,
+	)
+
+	currentUserResponse := httptest.NewRecorder()
+	handler.ServeHTTP(currentUserResponse, currentUserRequest)
+
+	if currentUserResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"expected current user status %d, got %d: %s",
+			http.StatusOK,
+			currentUserResponse.Code,
+			currentUserResponse.Body.String(),
+		)
+	}
+
+	var currentUserBody struct {
+		ID       string        `json:"id"`
+		Username string        `json:"username"`
+		Role     identity.Role `json:"role"`
+	}
+
+	if err := json.NewDecoder(
+		currentUserResponse.Body,
+	).Decode(&currentUserBody); err != nil {
+		t.Fatalf("decode current user response: %v", err)
+	}
+
+	if currentUserBody.ID != user.ID ||
+		currentUserBody.Username != user.Username ||
+		currentUserBody.Role != user.Role {
+		t.Fatalf(
+			"expected current user %q, got %+v",
+			user.ID,
+			currentUserBody,
+		)
 	}
 }
