@@ -80,7 +80,9 @@ try {
                 }
             }
 
-            Copy-Item -LiteralPath "LICENSE", "README.md" -Destination $packageDirectory
+            Copy-Item `
+                -LiteralPath "CHANGELOG.md", "LICENSE", "README.md" `
+                -Destination $packageDirectory
 
             if ($targetOS -eq "windows") {
                 $archivePath = Join-Path $resolvedOutputDirectory "$archiveBase.zip"

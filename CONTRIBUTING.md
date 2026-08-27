@@ -282,9 +282,10 @@ form `vMAJOR.MINOR.PATCH`, for example `v0.1.0`. Release tags are distinct from
 `milestone-NNN` development checkpoints and may contain multiple milestones.
 
 Create a release tag only from a commit contained in `main` after the Quality
-Gate workflow succeeds. Pushing a matching tag starts the dedicated Release
-workflow, which repeats the quality gate and publishes cross-platform archives
-with SHA-256 checksums.
+Gate workflow succeeds. Before tagging, move completed entries from `Unreleased`
+to a dated `CHANGELOG.md` section matching the version. Pushing a matching tag
+starts the dedicated Release workflow, which repeats the quality gate and
+publishes cross-platform archives with SHA-256 checksums.
 
 Release and tag history is immutable. Publish a new patch version instead of
 moving a tag or replacing an existing release. See

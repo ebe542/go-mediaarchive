@@ -38,10 +38,10 @@ Archives are built with `CGO_ENABLED=0` and `-trimpath` for:
 - macOS AMD64;
 - macOS ARM64.
 
-Every archive also contains `LICENSE` and `README.md`. `SHA256SUMS` records the
-SHA-256 checksum of every published archive. Runtime databases, media files,
-credentials, certificates, private keys, and local configuration are never
-included.
+Every archive also contains `CHANGELOG.md`, `LICENSE`, and `README.md`.
+`SHA256SUMS` records the SHA-256 checksum of every published archive. Runtime
+databases, media files, credentials, certificates, private keys, and local
+configuration are never included.
 
 ## Local release build
 
@@ -66,17 +66,25 @@ not publish a GitHub release.
 
 ## Publishing a release
 
-First ensure the selected commit is on `main` and its Quality Gate workflow is
-green. Then create and push an annotated tag from Git Bash:
+First move the completed entries under `Unreleased` in `CHANGELOG.md` to a dated
+section matching the intended version:
+
+```markdown
+## [0.1.0] - 2026-09-01
+```
+
+Ensure the changelog commit is on `main` and its Quality Gate workflow is green.
+Then create and push an annotated tag from Git Bash:
 
 ```bash
 git tag -a v0.1.0 -m "Release v0.1.0" && \
 git push origin v0.1.0
 ```
 
-Pushing the tag starts the Release workflow. It validates the tag, repeats the
-quality gate, builds the archives, calculates checksums, and creates the GitHub
-release with generated release notes.
+Pushing the tag starts the Release workflow. It validates the tag and matching
+dated changelog section, repeats the quality gate, builds the archives,
+calculates checksums, and creates the GitHub release with generated release
+notes.
 
 Release tags and published releases are immutable. Corrections require a new
 semantic version rather than moving or replacing an existing tag.

@@ -90,7 +90,7 @@ for target in "${targets[@]}"; do
 			"./cmd/$command_name"
 	done
 
-	cp LICENSE README.md "$package_directory/"
+	cp CHANGELOG.md LICENSE README.md "$package_directory/"
 
 	if [[ "$target_os" == "windows" ]]; then
 		archive_path="$output_directory/$archive_base.zip"
