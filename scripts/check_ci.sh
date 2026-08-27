@@ -74,7 +74,7 @@ if [[ "$run_race" == true ]]; then
 fi
 
 run_check \
-	"CI project checks" \
+	"Quality gate project checks" \
 	bash ./scripts/check_milestone.sh "${milestone_arguments[@]}"
 
 if [[ "$run_act" == true ]]; then
@@ -87,4 +87,4 @@ if [[ "$run_act" == true ]]; then
 		act pull_request --job verify
 fi
 
-printf '\nAll local CI checks passed.\n'
+printf '\nAll local quality gate checks passed.\n'

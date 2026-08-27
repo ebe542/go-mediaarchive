@@ -53,7 +53,7 @@ try {
     Assert-Command -Name "actionlint" -InstallationHint "go install github.com/rhysd/actionlint/cmd/actionlint@latest"
     Invoke-Check "GitHub Actions workflow syntax" { Invoke-NativeCommand actionlint }
 
-    Invoke-Check "CI project checks" {
+    Invoke-Check "Quality gate project checks" {
         $arguments = @(
             "-NoProfile",
             "-ExecutionPolicy",
@@ -77,7 +77,7 @@ try {
     }
 
     Write-Host ""
-    Write-Host "All local CI checks passed."
+    Write-Host "All local quality gate checks passed."
 }
 finally {
     Pop-Location

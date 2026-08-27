@@ -1,4 +1,4 @@
-name: CI
+name: Quality Gate
 
 on:
   push:
@@ -12,12 +12,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: quality-gate-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
-    name: Verify milestone
+    name: Verify project
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -31,5 +31,5 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run milestone checks
+      - name: Run quality gate
         run: bash ./scripts/check_milestone.sh --race
