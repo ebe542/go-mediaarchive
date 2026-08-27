@@ -274,3 +274,18 @@ Create a milestone tag only after all acceptance criteria pass locally and in
 GitHub Actions. The tag points to the final documentation commit for that
 milestone and must not be moved after publication. Corrections use a new commit
 or, when appropriate, a new milestone rather than rewriting a published tag.
+
+## Release tags
+
+Installable product releases use annotated semantic-version tags in the exact
+form `vMAJOR.MINOR.PATCH`, for example `v0.1.0`. Release tags are distinct from
+`milestone-NNN` development checkpoints and may contain multiple milestones.
+
+Create a release tag only from a commit contained in `main` after the Quality
+Gate workflow succeeds. Pushing a matching tag starts the dedicated Release
+workflow, which repeats the quality gate and publishes cross-platform archives
+with SHA-256 checksums.
+
+Release and tag history is immutable. Publish a new patch version instead of
+moving a tag or replacing an existing release. See
+[Releases](docs/releases.md) for supported platforms and commands.

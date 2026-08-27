@@ -179,7 +179,8 @@ authorization.
 
 See [Project goals](docs/project-goals.md), the
 [milestone overview](docs/milestones/README.md), and the
-[architecture overview](docs/architecture.md) for details.
+[architecture overview](docs/architecture.md) for details. Product versioning
+and binary publication are described in [Releases](docs/releases.md).
 
 ## License
 
