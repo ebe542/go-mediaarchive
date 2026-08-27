@@ -177,8 +177,9 @@ a web interface. Network deployments will require TLS, with mutual TLS (mTLS)
 planned as an advanced security milestone in addition to user authentication and
 authorization.
 
-See [Project goals](docs/project-goals.md) and the
-[milestone overview](docs/milestones/README.md) for details.
+See [Project goals](docs/project-goals.md), the
+[milestone overview](docs/milestones/README.md), and the
+[architecture overview](docs/architecture.md) for details.
 
 ## License
 
