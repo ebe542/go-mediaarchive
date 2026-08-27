@@ -14,6 +14,7 @@ verifiable increments.
 | `milestone-007` | [TLS transport foundation](007-tls-transport.md) | Complete |
 | `milestone-008` | [Authentication sessions](008-authentication-sessions.md) | Complete |
 | `milestone-009` | [Role-based authorization foundation](009-role-authorization.md) | Complete |
+| `milestone-010` | [Administrator user management](010-administrator-user-management.md) | Complete |
 
 ## Versioning rule
 

@@ -11,6 +11,10 @@ var ErrUserNotFound = errors.New("user not found")
 // ErrUserConflict indicates that a user ID or username already exists.
 var ErrUserConflict = errors.New("user conflict")
 
+// ErrLastAdministrator indicates that an update would remove the last active
+// administrator.
+var ErrLastAdministrator = errors.New("last active administrator")
+
 // UserRepository defines persistence operations required by user services.
 type UserRepository interface {
 	Create(argContext context.Context, argUser User) error
@@ -20,4 +24,8 @@ type UserRepository interface {
 		argUsername string,
 	) (User, error)
 	Update(argContext context.Context, argUser User) error
+	UpdatePreservingLastAdministrator(
+		argContext context.Context,
+		argUser User,
+	) error
 }

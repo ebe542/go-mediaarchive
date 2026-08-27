@@ -3,11 +3,16 @@ package users
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
+
+// ErrSelfLockout indicates that an administrator tried to remove their own
+// administrative access.
+var ErrSelfLockout = errors.New("administrator cannot remove own access")
 
 // IDGenerator creates stable user identifiers.
 type IDGenerator func() string
@@ -118,9 +123,14 @@ func (service *Service) UserByUsername(
 // UpdateUser validates and persists mutable user details.
 func (service *Service) UpdateUser(
 	argContext context.Context,
+	argActorID string,
 	argID string,
 	argInput UpdateUserInput,
 ) (identity.User, error) {
+	if err := identity.ValidateUserID(argID); err != nil {
+		return identity.User{}, err
+	}
+
 	existingUser, err := service.repository.FindByID(argContext, argID)
 	if err != nil {
 		return identity.User{}, fmt.Errorf(
@@ -142,7 +152,16 @@ func (service *Service) UpdateUser(
 		)
 	}
 
-	if err := service.repository.Update(argContext, updatedUser); err != nil {
+	if argActorID == existingUser.ID &&
+		existingUser.Role == identity.RoleAdmin &&
+		updatedUser.Role != identity.RoleAdmin {
+		return identity.User{}, ErrSelfLockout
+	}
+
+	if err := service.repository.UpdatePreservingLastAdministrator(
+		argContext,
+		updatedUser,
+	); err != nil {
 		return identity.User{}, fmt.Errorf(
 			"persist updated user identity: %w",
 			err,
@@ -155,15 +174,30 @@ func (service *Service) UpdateUser(
 // SetUserActive changes and persists a user's activation state.
 func (service *Service) SetUserActive(
 	argContext context.Context,
+	argActorID string,
 	argID string,
 	argActive bool,
 ) (identity.User, error) {
+	if err := identity.ValidateUserID(argID); err != nil {
+		return identity.User{}, err
+	}
+
 	existingUser, err := service.repository.FindByID(argContext, argID)
 	if err != nil {
 		return identity.User{}, fmt.Errorf(
 			"retrieve user for activation update: %w",
 			err,
 		)
+	}
+
+	if argActorID == existingUser.ID &&
+		existingUser.Role == identity.RoleAdmin &&
+		!argActive {
+		return identity.User{}, ErrSelfLockout
+	}
+
+	if existingUser.Active == argActive {
+		return existingUser, nil
 	}
 
 	updatedUser, err := existingUser.SetActive(
@@ -177,7 +211,10 @@ func (service *Service) SetUserActive(
 		)
 	}
 
-	if err := service.repository.Update(argContext, updatedUser); err != nil {
+	if err := service.repository.UpdatePreservingLastAdministrator(
+		argContext,
+		updatedUser,
+	); err != nil {
 		return identity.User{}, fmt.Errorf(
 			"persist user activation state: %w",
 			err,

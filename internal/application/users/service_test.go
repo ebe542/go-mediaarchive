@@ -20,6 +20,7 @@ type recordingUserRepository struct {
 	updateError       error
 	createError       error
 	createCalls       int
+	protectedUpdates  int
 }
 
 func (repository *recordingUserRepository) Create(
@@ -54,6 +55,16 @@ func (repository *recordingUserRepository) Update(
 	argContext context.Context,
 	argUser identity.User,
 ) error {
+	repository.updatedUser = argUser
+
+	return repository.updateError
+}
+
+func (repository *recordingUserRepository) UpdatePreservingLastAdministrator(
+	argContext context.Context,
+	argUser identity.User,
+) error {
+	repository.protectedUpdates++
 	repository.updatedUser = argUser
 
 	return repository.updateError
@@ -269,6 +280,7 @@ func TestServiceUpdatesUserAndPreservesImmutableValues(t *testing.T) {
 
 	updatedUser, err := service.UpdateUser(
 		context.Background(),
+		"another-administrator",
 		existingUser.ID,
 		users.UpdateUserInput{
 			Username:    " Updated_User ",
@@ -356,6 +368,7 @@ func TestServiceSetsUserActiveState(t *testing.T) {
 
 	deactivatedUser, err := service.SetUserActive(
 		context.Background(),
+		"another-administrator",
 		existingUser.ID,
 		false,
 	)
@@ -464,5 +477,153 @@ func TestServiceRejectsInvalidGeneratedIDBeforePersistence(t *testing.T) {
 			"expected no persistence call, got %d",
 			repository.createCalls,
 		)
+	}
+}
+
+func TestServiceRejectsAdministratorSelfDemotion(t *testing.T) {
+	t.Parallel()
+
+	administrator := identity.User{
+		ID:          "0198b947-3ec7-7fa0-a024-bf64ed55c667",
+		Username:    "archive_admin",
+		DisplayName: "Archive Administrator",
+		Role:        identity.RoleAdmin,
+		Active:      true,
+		CreatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+		UpdatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+	}
+	repository := &recordingUserRepository{foundUser: administrator}
+	service := users.NewService(
+		repository,
+		func() string { return "" },
+		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) },
+	)
+
+	_, err := service.UpdateUser(
+		context.Background(),
+		administrator.ID,
+		administrator.ID,
+		users.UpdateUserInput{
+			Username:    administrator.Username,
+			DisplayName: administrator.DisplayName,
+			Role:        identity.RoleEditor,
+		},
+	)
+	if !errors.Is(err, users.ErrSelfLockout) {
+		t.Fatalf("expected ErrSelfLockout, got %v", err)
+	}
+	if repository.protectedUpdates != 0 {
+		t.Fatalf(
+			"expected no protected update, got %d",
+			repository.protectedUpdates,
+		)
+	}
+}
+
+func TestServiceRejectsAdministratorSelfDeactivation(t *testing.T) {
+	t.Parallel()
+
+	administrator := identity.User{
+		ID:          "0198b947-3ec7-7fa0-a024-bf64ed55c667",
+		Username:    "archive_admin",
+		DisplayName: "Archive Administrator",
+		Role:        identity.RoleAdmin,
+		Active:      true,
+		CreatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+		UpdatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+	}
+	repository := &recordingUserRepository{foundUser: administrator}
+	service := users.NewService(
+		repository,
+		func() string { return "" },
+		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) },
+	)
+
+	_, err := service.SetUserActive(
+		context.Background(),
+		administrator.ID,
+		administrator.ID,
+		false,
+	)
+	if !errors.Is(err, users.ErrSelfLockout) {
+		t.Fatalf("expected ErrSelfLockout, got %v", err)
+	}
+	if repository.protectedUpdates != 0 {
+		t.Fatalf(
+			"expected no protected update, got %d",
+			repository.protectedUpdates,
+		)
+	}
+}
+
+func TestServiceKeepsActivationUpdateIdempotent(t *testing.T) {
+	t.Parallel()
+
+	existingUser := identity.User{
+		ID:          "0198b947-3ec7-7fa0-a024-bf64ed55c667",
+		Username:    "archive_viewer",
+		DisplayName: "Archive Viewer",
+		Role:        identity.RoleViewer,
+		Active:      true,
+		CreatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+		UpdatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+	}
+	repository := &recordingUserRepository{foundUser: existingUser}
+	service := users.NewService(
+		repository,
+		func() string { return "" },
+		func() time.Time { return existingUser.UpdatedAt.Add(time.Hour) },
+	)
+
+	unchangedUser, err := service.SetUserActive(
+		context.Background(),
+		"another-administrator",
+		existingUser.ID,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("keep user active: %v", err)
+	}
+	if unchangedUser != existingUser {
+		t.Fatalf("expected unchanged user %#v, got %#v", existingUser, unchangedUser)
+	}
+	if repository.protectedUpdates != 0 {
+		t.Fatalf(
+			"expected no protected update, got %d",
+			repository.protectedUpdates,
+		)
+	}
+}
+
+func TestServicePreservesLastAdministratorProtection(t *testing.T) {
+	t.Parallel()
+
+	administrator := identity.User{
+		ID:          "0198b947-3ec7-7fa0-a024-bf64ed55c667",
+		Username:    "archive_admin",
+		DisplayName: "Archive Administrator",
+		Role:        identity.RoleAdmin,
+		Active:      true,
+		CreatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+		UpdatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+	}
+	repository := &recordingUserRepository{
+		foundUser:   administrator,
+		updateError: identity.ErrLastAdministrator,
+	}
+	service := users.NewService(
+		repository,
+		func() string { return "" },
+		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) },
+	)
+
+	_, err := service.SetUserActive(
+		context.Background(),
+		"another-administrator",
+		administrator.ID,
+		false,
+	)
+	if !errors.Is(err, identity.ErrLastAdministrator) {
+		t.Fatalf("expected ErrLastAdministrator, got %v", err)
 	}
 }

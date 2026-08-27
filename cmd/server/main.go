@@ -310,6 +310,10 @@ func newApplicationHandler(
 			sessionService,
 			userService,
 		),
+		api.WithUserManagementAPI(
+			sessionService,
+			userService,
+		),
 	), nil
 }
 

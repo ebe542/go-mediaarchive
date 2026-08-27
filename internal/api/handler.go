@@ -70,6 +70,34 @@ func NewHandler(argOptions ...Option) http.Handler {
 			userByIDHandler,
 		)
 	}
+
+	if configuration.sessionResolver != nil &&
+		configuration.userWriter != nil {
+		users := &userWriteHandler{
+			users: configuration.userWriter,
+		}
+
+		administratorOnly := func(argHandler http.Handler) http.Handler {
+			return RequireAuthentication(
+				configuration.sessionResolver,
+				RequireRoles(argHandler, identity.RoleAdmin),
+			)
+		}
+
+		mux.Handle(
+			"POST /api/v1/users",
+			administratorOnly(http.HandlerFunc(users.createUser)),
+		)
+		mux.Handle(
+			"PUT /api/v1/users/{id}",
+			administratorOnly(http.HandlerFunc(users.updateUser)),
+		)
+		mux.Handle(
+			"PUT /api/v1/users/{id}/active",
+			administratorOnly(http.HandlerFunc(users.setUserActive)),
+		)
+	}
+
 	return mux
 }
 

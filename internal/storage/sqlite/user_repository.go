@@ -31,6 +31,22 @@ type rowScanner interface {
 	Scan(argDestinations ...any) error
 }
 
+type statementExecutor interface {
+	ExecContext(
+		argContext context.Context,
+		argQuery string,
+		argArguments ...any,
+	) (sql.Result, error)
+}
+
+type userQueryer interface {
+	QueryRowContext(
+		argContext context.Context,
+		argQuery string,
+		argArguments ...any,
+	) *sql.Row
+}
+
 func scanUser(argRow rowScanner) (identity.User, error) {
 	var storedUser identity.User
 	var role string
@@ -127,7 +143,65 @@ func (repository *UserRepository) Update(
 	argContext context.Context,
 	argUser identity.User,
 ) error {
-	result, err := repository.database.ExecContext(
+	return repository.UpdatePreservingLastAdministrator(argContext, argUser)
+}
+
+// UpdatePreservingLastAdministrator atomically prevents removal of the last
+// active administrator.
+func (repository *UserRepository) UpdatePreservingLastAdministrator(
+	argContext context.Context,
+	argUser identity.User,
+) error {
+	transaction, err := repository.database.BeginTx(argContext, nil)
+	if err != nil {
+		return fmt.Errorf("begin protected user update: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	existingUser, err := findUserByID(
+		argContext,
+		transaction,
+		argUser.ID,
+	)
+	if err != nil {
+		return err
+	}
+
+	removesActiveAdministrator := existingUser.Active &&
+		existingUser.Role == identity.RoleAdmin &&
+		(!argUser.Active || argUser.Role != identity.RoleAdmin)
+	if removesActiveAdministrator {
+		var activeAdministratorCount int
+
+		if err := transaction.QueryRowContext(
+			argContext,
+			`SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1`,
+		).Scan(&activeAdministratorCount); err != nil {
+			return fmt.Errorf("count active administrators: %w", err)
+		}
+
+		if activeAdministratorCount <= 1 {
+			return identity.ErrLastAdministrator
+		}
+	}
+
+	if err := updateUser(argContext, transaction, argUser); err != nil {
+		return err
+	}
+
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit protected user update: %w", err)
+	}
+
+	return nil
+}
+
+func updateUser(
+	argContext context.Context,
+	argExecutor statementExecutor,
+	argUser identity.User,
+) error {
+	result, err := argExecutor.ExecContext(
 		argContext,
 		`
 			UPDATE users
@@ -177,7 +251,15 @@ func (repository *UserRepository) FindByID(
 	argContext context.Context,
 	argID string,
 ) (identity.User, error) {
-	row := repository.database.QueryRowContext(
+	return findUserByID(argContext, repository.database, argID)
+}
+
+func findUserByID(
+	argContext context.Context,
+	argQueryer userQueryer,
+	argID string,
+) (identity.User, error) {
+	row := argQueryer.QueryRowContext(
 		argContext,
 		`
 			SELECT

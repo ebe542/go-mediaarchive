@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"mime"
 	"net"
 	"net/http"
 	"runtime"
@@ -16,8 +14,6 @@ import (
 	"github.com/ebe542/go-mediaarchive/internal/application/authentication"
 	appsessions "github.com/ebe542/go-mediaarchive/internal/application/sessions"
 )
-
-const maximumAuthenticationBodySize = 64 * 1024
 
 // SessionService creates and revokes authenticated sessions.
 type SessionService interface {
@@ -67,6 +63,7 @@ type handlerConfiguration struct {
 	clock           Clock
 	sessionResolver SessionResolver
 	userReader      UserReader
+	userWriter      UserWriter
 }
 
 // Option configures optional API capabilities.
@@ -102,46 +99,16 @@ func (handler *authenticationHandler) createSession(
 	argResponse http.ResponseWriter,
 	argRequest *http.Request,
 ) {
-	mediaType, _, err := mime.ParseMediaType(
-		argRequest.Header.Get("Content-Type"),
-	)
-	if err != nil || mediaType != "application/json" {
-		writeJSONError(
-			argResponse,
-			http.StatusBadRequest,
-			"invalid_request",
-			"Invalid request.",
-		)
-
-		return
-	}
-
-	argRequest.Body = http.MaxBytesReader(
-		argResponse,
-		argRequest.Body,
-		maximumAuthenticationBodySize,
-	)
-
 	var requestBody struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 
-	decoder := json.NewDecoder(argRequest.Body)
-	decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(&requestBody); err != nil {
-		writeJSONError(
-			argResponse,
-			http.StatusBadRequest,
-			"invalid_request",
-			"Invalid request.",
-		)
-
-		return
-	}
-
-	if err := ensureJSONEnd(decoder); err != nil {
+	if err := decodeJSONRequest(
+		argResponse,
+		argRequest,
+		&requestBody,
+	); err != nil {
 		writeJSONError(
 			argResponse,
 			http.StatusBadRequest,
@@ -251,20 +218,6 @@ func (handler *authenticationHandler) createSession(
 		TokenType:   "Bearer",
 		ExpiresAt:   createdSession.ExpiresAt,
 	})
-}
-
-func ensureJSONEnd(argDecoder *json.Decoder) error {
-	var additionalValue any
-
-	if err := argDecoder.Decode(&additionalValue); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return errors.New("additional JSON value")
-		}
-
-		return fmt.Errorf("decode trailing JSON: %w", err)
-	}
-
-	return nil
 }
 
 func sourceIPAddress(argRemoteAddress string) (string, error) {

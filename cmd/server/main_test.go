@@ -451,4 +451,60 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 			currentUserBody,
 		)
 	}
+
+	createUserRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/users",
+		strings.NewReader(
+			`{"username":"archive_editor","displayName":"Archive Editor","role":"editor"}`,
+		),
+	)
+	createUserRequest.Header.Set("Content-Type", "application/json")
+	createUserRequest.Header.Set(
+		"Authorization",
+		"Bearer "+body.AccessToken,
+	)
+
+	createUserResponse := httptest.NewRecorder()
+	handler.ServeHTTP(createUserResponse, createUserRequest)
+
+	if createUserResponse.Code != http.StatusCreated {
+		t.Fatalf(
+			"expected create user status %d, got %d: %s",
+			http.StatusCreated,
+			createUserResponse.Code,
+			createUserResponse.Body.String(),
+		)
+	}
+
+	var createdUserBody struct {
+		ID       string        `json:"id"`
+		Username string        `json:"username"`
+		Role     identity.Role `json:"role"`
+	}
+	if err := json.NewDecoder(
+		createUserResponse.Body,
+	).Decode(&createdUserBody); err != nil {
+		t.Fatalf("decode created user response: %v", err)
+	}
+	if createdUserBody.ID == "" ||
+		createdUserBody.Username != "archive_editor" ||
+		createdUserBody.Role != identity.RoleEditor {
+		t.Fatalf("unexpected created user response: %+v", createdUserBody)
+	}
+
+	var credentialCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM password_credentials WHERE user_id = ?`,
+		createdUserBody.ID,
+	).Scan(&credentialCount); err != nil {
+		t.Fatalf("count created user credentials: %v", err)
+	}
+	if credentialCount != 0 {
+		t.Fatalf(
+			"expected credential-less identity, got %d credentials",
+			credentialCount,
+		)
+	}
 }

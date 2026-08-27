@@ -95,12 +95,24 @@ func writeUserResponse(
 	argResponse http.ResponseWriter,
 	argUser identity.User,
 ) {
+	writeUserResponseWithStatus(
+		argResponse,
+		argUser,
+		http.StatusOK,
+	)
+}
+
+func writeUserResponseWithStatus(
+	argResponse http.ResponseWriter,
+	argUser identity.User,
+	argStatus int,
+) {
 	argResponse.Header().Set(
 		"Content-Type",
 		"application/json; charset=utf-8",
 	)
 	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusOK)
+	argResponse.WriteHeader(argStatus)
 
 	_ = json.NewEncoder(argResponse).Encode(userResponse{
 		ID:          argUser.ID,

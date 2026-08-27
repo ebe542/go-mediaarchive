@@ -101,6 +101,21 @@ func isASCIIAlphanumeric(character byte) bool {
 		character >= '0' && character <= '9'
 }
 
+// ValidateUserID verifies a canonical lowercase non-nil UUID.
+func ValidateUserID(argID string) error {
+	parsedID, err := uuid.Parse(argID)
+	if err != nil ||
+		parsedID == uuid.Nil ||
+		parsedID.String() != argID {
+		return fmt.Errorf(
+			"%w: expected a canonical lowercase UUID",
+			ErrInvalidUserID,
+		)
+	}
+
+	return nil
+}
+
 // User represents a persistent user identity.
 type User struct {
 	ID          string
@@ -120,14 +135,8 @@ func NewUser(
 	role Role,
 	now time.Time,
 ) (User, error) {
-	parsedID, err := uuid.Parse(id)
-	if err != nil ||
-		parsedID == uuid.Nil ||
-		parsedID.String() != id {
-		return User{}, fmt.Errorf(
-			"%w: expected a canonical lowercase UUID",
-			ErrInvalidUserID,
-		)
+	if err := ValidateUserID(id); err != nil {
+		return User{}, err
 	}
 
 	normalizedUsername, err := NormalizeUsername(username)

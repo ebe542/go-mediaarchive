@@ -21,9 +21,17 @@ type PasswordVerifier interface {
 	) (bool, error)
 }
 
+// UserFinder loads identities by normalized username for authentication.
+type UserFinder interface {
+	FindByUsername(
+		argContext context.Context,
+		argUsername string,
+	) (identity.User, error)
+}
+
 // Service verifies user identities and password credentials.
 type Service struct {
-	users       identity.UserRepository
+	users       UserFinder
 	credentials credential.PasswordCredentialRepository
 	verifier    PasswordVerifier
 	dummyHash   string
@@ -31,7 +39,7 @@ type Service struct {
 
 // NewService creates an authentication service.
 func NewService(
-	argUsers identity.UserRepository,
+	argUsers UserFinder,
 	argCredentials credential.PasswordCredentialRepository,
 	argVerifier PasswordVerifier,
 	argDummyHash string,
