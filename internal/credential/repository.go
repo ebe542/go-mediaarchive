@@ -2,6 +2,7 @@ package credential
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 
 	"github.com/ebe542/go-mediaarchive/internal/identity"
@@ -30,4 +31,22 @@ type PasswordCredentialRepository interface {
 		argContext context.Context,
 		argUserID string,
 	) (PasswordCredential, error)
+}
+
+// ErrPasswordEnrollmentNotFound indicates that no enrollment matches a token.
+var ErrPasswordEnrollmentNotFound = errors.New(
+	"password enrollment not found",
+)
+
+// PasswordEnrollmentRepository stores replaceable password enrollments.
+type PasswordEnrollmentRepository interface {
+	Save(
+		argContext context.Context,
+		argEnrollment PasswordEnrollment,
+	) error
+
+	FindByTokenHash(
+		argContext context.Context,
+		argTokenHash [sha256.Size]byte,
+	) (PasswordEnrollment, error)
 }

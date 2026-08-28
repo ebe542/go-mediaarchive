@@ -10,6 +10,7 @@ overview of the current schema after all migrations have been applied.
 ```mermaid
 erDiagram
     users ||--|| password_credentials : "has"
+    users ||--o| password_enrollments : "may receive"
     users ||--o{ sessions : "owns"
 
     schema_migrations {
@@ -33,6 +34,13 @@ erDiagram
         TEXT password_hash
         TEXT created_at
         TEXT updated_at
+    }
+
+    password_enrollments {
+        TEXT user_id PK,FK
+        BLOB token_hash UK
+        TEXT created_at
+        TEXT expires_at
     }
 
     sessions {
@@ -111,6 +119,24 @@ Stores server-side authentication session metadata.
 user. User ID updates and deletes are restricted while sessions reference the
 user.
 
+### `password_enrollments`
+
+Stores at most one current initial-password enrollment for a user who does not
+yet have a password credential.
+
+| Column | SQLite type | Rules | Purpose |
+| --- | --- | --- | --- |
+| `user_id` | `TEXT` | Primary and foreign key to `users.id` | Ensures at most one current enrollment per user. |
+| `token_hash` | `BLOB` | Not null, unique, exactly 32 bytes | SHA-256 hash used to resolve a presented one-time token. |
+| `created_at` | `TEXT` | Not null, non-empty | Enrollment issue time in RFC 3339 Nano format. |
+| `expires_at` | `TEXT` | Not null; later than creation | Absolute expiration time. |
+
+Saving another enrollment for the same user atomically replaces the token hash
+and timestamps, immediately invalidating the previous token. The
+`password_enrollments_expires_at_index` supports later cleanup of expired
+records. Token consumption and credential creation will share one transaction
+in the application milestone step.
+
 ## Storage and integrity rules
 
 - Domain tables use SQLite `STRICT` mode.
@@ -120,6 +146,8 @@ user.
 - Passwords are represented only by encoded Argon2id hashes.
 - Session bearer tokens are returned to the client once, while only their
   32-byte SHA-256 hashes are persisted.
+- Password enrollment tokens follow the same one-time plaintext and persisted
+  SHA-256-hash separation.
 - Global roles do not represent permissions to download licensed media. Those
   permissions require a separate media authorization model.
 
@@ -131,6 +159,7 @@ user.
 | `002` | [`002_create_users.sql`](../internal/storage/sqlite/migrations/002_create_users.sql) | Creates `users`. |
 | `003` | [`003_create_password_credentials.sql`](../internal/storage/sqlite/migrations/003_create_password_credentials.sql) | Creates `password_credentials` and its user relationship. |
 | `004` | [`004_create_sessions.sql`](../internal/storage/sqlite/migrations/004_create_sessions.sql) | Creates `sessions` and `sessions_user_id_index`. |
+| `005` | [`005_create_password_enrollments.sql`](../internal/storage/sqlite/migrations/005_create_password_enrollments.sql) | Creates replaceable, expiring password enrollments. |
 
 New schema changes must be added as a new zero-padded migration. Existing
 migrations must remain immutable after publication because deployed databases
