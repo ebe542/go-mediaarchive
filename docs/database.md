@@ -132,10 +132,11 @@ yet have a password credential.
 | `expires_at` | `TEXT` | Not null; later than creation | Absolute expiration time. |
 
 Saving another enrollment for the same user atomically replaces the token hash
-and timestamps, immediately invalidating the previous token. The
-`password_enrollments_expires_at_index` supports later cleanup of expired
-records. Token consumption and credential creation will share one transaction
-in the application milestone step.
+and timestamps, immediately invalidating the previous token. Enrollment is
+rejected when the user already has a password credential. Token consumption
+and initial credential creation share one transaction, so neither change can
+be committed independently. The `password_enrollments_expires_at_index`
+supports later cleanup of expired records.
 
 ## Storage and integrity rules
 

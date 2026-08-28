@@ -114,8 +114,10 @@ again with the new password.
 ## Implementation sequence
 
 1. Add the enrollment domain model, token generator, migration, and repository.
-2. Add administrator issuance and initial password enrollment.
-3. Add authenticated password changes and atomic session revocation.
+2. Add the storage-independent enrollment application service and atomic
+   credential creation.
+3. Add administrator issuance and initial password enrollment over HTTP.
+4. Add authenticated password changes and atomic session revocation.
 
 Each step is delivered as a complete Conventional Commit. Acceptance criteria
 are checked continuously only after implementation and tests prove them.
@@ -126,11 +128,11 @@ are checked continuously only after implementation and tests prove them.
 - [x] Only SHA-256 token hashes are persisted.
 - [x] Enrollment timestamps and positive lifetimes are validated.
 - [x] Reissuing an enrollment invalidates the previous token atomically.
-- [ ] Expired, unknown, replaced, and consumed tokens share one error contract.
+- [x] Expired, unknown, replaced, and consumed tokens share one error contract.
 - [ ] Only administrators can issue enrollments.
-- [ ] Users with credentials cannot receive enrollment tokens.
-- [ ] Credential creation and enrollment consumption are atomic.
-- [ ] Inactive users may enroll but cannot authenticate.
+- [x] Users with credentials cannot receive enrollment tokens.
+- [x] Credential creation and enrollment consumption are atomic.
+- [x] Inactive users may enroll but cannot authenticate.
 - [ ] Users must provide their current password before changing it.
 - [ ] Password changes atomically revoke all sessions.
 - [ ] Passwords, hashes, and plaintext tokens are never logged.

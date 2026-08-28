@@ -31,49 +31,53 @@ flowchart LR
   subgraph application["Application services"]
     package4["internal/application/authentication"]
     package5["internal/application/bootstrap"]
-    package6["internal/application/sessions"]
-    package7["internal/application/users"]
+    package6["internal/application/passwords"]
+    package7["internal/application/sessions"]
+    package8["internal/application/users"]
   end
   subgraph domain["Domain"]
-    package9["internal/credential"]
-    package10["internal/identity"]
-    package11["internal/password"]
-    package12["internal/session"]
+    package10["internal/credential"]
+    package11["internal/identity"]
+    package12["internal/password"]
+    package13["internal/session"]
   end
   subgraph infrastructure["Infrastructure"]
-    package13["internal/storage/sqlite"]
+    package14["internal/storage/sqlite"]
   end
   subgraph client["Client"]
-    package8["internal/client"]
+    package9["internal/client"]
   end
   package0 --> package5
-  package0 --> package10
   package0 --> package11
-  package0 --> package13
-  package1 --> package8
+  package0 --> package12
+  package0 --> package14
+  package1 --> package9
   package2 --> package3
   package2 --> package4
-  package2 --> package6
   package2 --> package7
-  package2 --> package11
+  package2 --> package8
   package2 --> package12
   package2 --> package13
+  package2 --> package14
   package3 --> package4
-  package3 --> package6
   package3 --> package7
-  package3 --> package10
-  package4 --> package9
+  package3 --> package8
+  package3 --> package11
   package4 --> package10
-  package5 --> package9
+  package4 --> package11
   package5 --> package10
   package5 --> package11
+  package5 --> package12
   package6 --> package10
+  package6 --> package11
   package6 --> package12
-  package7 --> package10
-  package9 --> package10
-  package13 --> package9
-  package13 --> package10
-  package13 --> package12
+  package7 --> package11
+  package7 --> package13
+  package8 --> package11
+  package10 --> package11
+  package14 --> package10
+  package14 --> package11
+  package14 --> package13
 ```
 
 ## Modules
@@ -86,6 +90,7 @@ flowchart LR
 | [`internal/api`](../internal/api) | HTTP transport | Not documented yet. |
 | [`internal/application/authentication`](../internal/application/authentication) | Application services | Package authentication verifies user credentials. |
 | [`internal/application/bootstrap`](../internal/application/bootstrap) | Application services | Package bootstrap coordinates initial administrator creation. |
+| [`internal/application/passwords`](../internal/application/passwords) | Application services | Package passwords coordinates password enrollment and credential lifecycle. |
 | [`internal/application/sessions`](../internal/application/sessions) | Application services | Package sessions coordinates authenticated server-side sessions. |
 | [`internal/application/users`](../internal/application/users) | Application services | Package users coordinates user identity application operations. |
 | [`internal/client`](../internal/client) | Client | Not documented yet. |

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"time"
 
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
@@ -25,6 +26,11 @@ var ErrPasswordCredentialNotFound = errors.New(
 	"password credential not found",
 )
 
+// ErrPasswordCredentialExists indicates that a user already has a password.
+var ErrPasswordCredentialExists = errors.New(
+	"password credential already exists",
+)
+
 // PasswordCredentialRepository loads password credentials for authentication.
 type PasswordCredentialRepository interface {
 	FindByUserID(
@@ -40,7 +46,7 @@ var ErrPasswordEnrollmentNotFound = errors.New(
 
 // PasswordEnrollmentRepository stores replaceable password enrollments.
 type PasswordEnrollmentRepository interface {
-	Save(
+	SaveForCredentiallessUser(
 		argContext context.Context,
 		argEnrollment PasswordEnrollment,
 	) error
@@ -49,4 +55,11 @@ type PasswordEnrollmentRepository interface {
 		argContext context.Context,
 		argTokenHash [sha256.Size]byte,
 	) (PasswordEnrollment, error)
+
+	CreateCredentialAndConsume(
+		argContext context.Context,
+		argTokenHash [sha256.Size]byte,
+		argCredential PasswordCredential,
+		argNow time.Time,
+	) error
 }
