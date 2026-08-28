@@ -98,6 +98,34 @@ func NewHandler(argOptions ...Option) http.Handler {
 		)
 	}
 
+	if configuration.passwordEnrollmentResolver != nil &&
+		configuration.passwordEnrollments != nil &&
+		configuration.passwordEnrollmentLimiter != nil &&
+		configuration.passwordEnrollmentClock != nil {
+		passwordEnrollments := &passwordEnrollmentHandler{
+			service: configuration.passwordEnrollments,
+			limiter: configuration.passwordEnrollmentLimiter,
+			clock:   configuration.passwordEnrollmentClock,
+		}
+
+		issueEnrollment := RequireAuthentication(
+			configuration.passwordEnrollmentResolver,
+			RequireRoles(
+				http.HandlerFunc(passwordEnrollments.issue),
+				identity.RoleAdmin,
+			),
+		)
+
+		mux.Handle(
+			"POST /api/v1/users/{id}/password-enrollment",
+			issueEnrollment,
+		)
+		mux.HandleFunc(
+			"POST /api/v1/auth/password-enrollments",
+			passwordEnrollments.complete,
+		)
+	}
+
 	return mux
 }
 

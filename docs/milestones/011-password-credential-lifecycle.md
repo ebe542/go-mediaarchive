@@ -45,7 +45,11 @@ with an existing password credential returns `409 Conflict` because enrollment
 is not a password-reset mechanism.
 
 The default enrollment lifetime is 24 hours. Runtime configuration follows the
-project precedence rule: CLI flag, environment variable, then built-in default.
+project precedence rule:
+
+```text
+--password-enrollment-lifetime flag > MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME environment variable > 24h default
+```
 
 ## Initial password contract
 
@@ -129,14 +133,14 @@ are checked continuously only after implementation and tests prove them.
 - [x] Enrollment timestamps and positive lifetimes are validated.
 - [x] Reissuing an enrollment invalidates the previous token atomically.
 - [x] Expired, unknown, replaced, and consumed tokens share one error contract.
-- [ ] Only administrators can issue enrollments.
+- [x] Only administrators can issue enrollments.
 - [x] Users with credentials cannot receive enrollment tokens.
 - [x] Credential creation and enrollment consumption are atomic.
 - [x] Inactive users may enroll but cannot authenticate.
 - [ ] Users must provide their current password before changing it.
 - [ ] Password changes atomically revoke all sessions.
-- [ ] Passwords, hashes, and plaintext tokens are never logged.
-- [ ] Enrollment attempts are limited without attacker-controlled limiter keys.
+- [x] Passwords, hashes, and plaintext tokens are never logged.
+- [x] Enrollment attempts are limited without attacker-controlled limiter keys.
 - [ ] Standard milestone checks pass.
 - [ ] Local CI checks pass.
 

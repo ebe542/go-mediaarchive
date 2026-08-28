@@ -74,6 +74,20 @@ go run ./cmd/server \
 The server requires TLS 1.3 or newer. Both TLS files must be configured
 together. Certificate and private-key files must remain outside version control.
 
+Password enrollment tokens remain valid for 24 hours by default. Override the
+lifetime with a Go duration such as `12h`:
+
+```bash
+go run ./cmd/server \
+  --password-enrollment-lifetime 12h
+```
+
+The enrollment lifetime follows the project configuration precedence:
+
+```text
+--password-enrollment-lifetime flag > MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME environment variable > 24h default
+```
+
 ## Run the CLI
 
 With the server running, check its status from another terminal:

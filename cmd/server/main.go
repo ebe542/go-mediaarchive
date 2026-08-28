@@ -20,21 +20,26 @@ import (
 
 	"github.com/ebe542/go-mediaarchive/internal/api"
 	"github.com/ebe542/go-mediaarchive/internal/application/authentication"
+	apppasswords "github.com/ebe542/go-mediaarchive/internal/application/passwords"
 	appsessions "github.com/ebe542/go-mediaarchive/internal/application/sessions"
 	appusers "github.com/ebe542/go-mediaarchive/internal/application/users"
+	"github.com/ebe542/go-mediaarchive/internal/credential"
 	"github.com/ebe542/go-mediaarchive/internal/password"
 	"github.com/ebe542/go-mediaarchive/internal/session"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
 
 const (
-	defaultServerAddress    = "127.0.0.1:8080"
-	defaultDatabasePath     = "data/mediaarchive.db"
-	sessionAbsoluteLifetime = 8 * time.Hour
-	sessionIdleTimeout      = 30 * time.Minute
-	loginLimitWindow        = 15 * time.Minute
-	loginUsernameLimit      = 5
-	loginIPLimit            = 20
+	defaultServerAddress      = "127.0.0.1:8080"
+	defaultDatabasePath       = "data/mediaarchive.db"
+	sessionAbsoluteLifetime   = 8 * time.Hour
+	sessionIdleTimeout        = 30 * time.Minute
+	loginLimitWindow          = 15 * time.Minute
+	loginUsernameLimit        = 5
+	loginIPLimit              = 20
+	defaultEnrollmentLifetime = 24 * time.Hour
+	enrollmentLimitWindow     = 15 * time.Minute
+	enrollmentIPLimit         = 20
 )
 
 func main() {
@@ -71,6 +76,12 @@ func run(args []string, getenv func(string) string) error {
 		"path to the TLS private key",
 	)
 
+	enrollmentLifetimeValue := flags.String(
+		"password-enrollment-lifetime",
+		passwordEnrollmentLifetimeDefault(getenv),
+		"lifetime of one-time password enrollment tokens",
+	)
+
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("parse server arguments: %w", err)
 	}
@@ -80,6 +91,13 @@ func run(args []string, getenv func(string) string) error {
 			"unexpected positional arguments: %v",
 			flags.Args(),
 		)
+	}
+
+	enrollmentLifetime, err := parsePasswordEnrollmentLifetime(
+		*enrollmentLifetimeValue,
+	)
+	if err != nil {
+		return err
 	}
 
 	if err := validateTransportConfiguration(
@@ -120,7 +138,7 @@ func run(args []string, getenv func(string) string) error {
 		return fmt.Errorf("migrate SQLite database: %w", err)
 	}
 
-	handler, err := newApplicationHandler(database)
+	handler, err := newApplicationHandler(database, enrollmentLifetime)
 	if err != nil {
 		return fmt.Errorf(
 			"initialize application handler: %w",
@@ -252,6 +270,7 @@ func newHTTPServer(
 
 func newApplicationHandler(
 	argDatabase *sql.DB,
+	argEnrollmentLifetime time.Duration,
 ) (http.Handler, error) {
 	passwordHasher := password.NewDefaultHasher()
 
@@ -300,6 +319,19 @@ func newApplicationHandler(
 		loginLimitWindow,
 	)
 
+	passwordEnrollmentService := apppasswords.NewService(
+		userRepository,
+		sqlitestore.NewPasswordEnrollmentRepository(argDatabase),
+		credential.NewDefaultEnrollmentTokenGenerator(),
+		passwordHasher,
+		time.Now,
+		argEnrollmentLifetime,
+	)
+	passwordEnrollmentLimiter := apppasswords.NewIPAttemptLimiter(
+		enrollmentIPLimit,
+		enrollmentLimitWindow,
+	)
+
 	return api.NewHandler(
 		api.WithAuthentication(
 			sessionService,
@@ -313,6 +345,12 @@ func newApplicationHandler(
 		api.WithUserManagementAPI(
 			sessionService,
 			userService,
+		),
+		api.WithPasswordEnrollmentAPI(
+			sessionService,
+			passwordEnrollmentService,
+			passwordEnrollmentLimiter,
+			time.Now,
 		),
 	), nil
 }
@@ -357,4 +395,34 @@ func tlsPrivateKeyPathFromEnvironment(
 	argGetenv func(string) string,
 ) string {
 	return argGetenv("MEDIAARCHIVE_TLS_PRIVATE_KEY")
+}
+
+func passwordEnrollmentLifetimeDefault(
+	argGetenv func(string) string,
+) string {
+	value := argGetenv("MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME")
+	if value != "" {
+		return value
+	}
+
+	return defaultEnrollmentLifetime.String()
+}
+
+func parsePasswordEnrollmentLifetime(
+	argValue string,
+) (time.Duration, error) {
+	lifetime, err := time.ParseDuration(argValue)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"parse password enrollment lifetime: %w",
+			err,
+		)
+	}
+	if lifetime <= 0 {
+		return 0, errors.New(
+			"password enrollment lifetime must be positive",
+		)
+	}
+
+	return lifetime, nil
 }

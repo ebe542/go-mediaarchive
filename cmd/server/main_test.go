@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -61,6 +62,80 @@ func TestDatabasePathFromEnvironment(t *testing.T) {
 					"expected database path %q, got %q",
 					test.expectedPath,
 					actualPath,
+				)
+			}
+		})
+	}
+}
+
+func TestPasswordEnrollmentLifetimeConfiguration(t *testing.T) {
+	testCases := []struct {
+		name          string
+		environment   string
+		value         string
+		expected      time.Duration
+		expectedError bool
+	}{
+		{
+			name:     "built-in default",
+			expected: defaultEnrollmentLifetime,
+		},
+		{
+			name:        "environment default",
+			environment: "12h",
+			expected:    12 * time.Hour,
+		},
+		{
+			name:        "CLI value overrides environment default",
+			environment: "invalid-environment-value",
+			value:       "6h",
+			expected:    6 * time.Hour,
+		},
+		{
+			name:          "invalid value",
+			value:         "not-a-duration",
+			expectedError: true,
+		},
+		{
+			name:          "non-positive value",
+			value:         "0s",
+			expectedError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			configurationValue := passwordEnrollmentLifetimeDefault(
+				func(argName string) string {
+					if argName == "MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME" {
+						return testCase.environment
+					}
+
+					return ""
+				},
+			)
+			if testCase.value != "" {
+				configurationValue = testCase.value
+			}
+
+			actual, err := parsePasswordEnrollmentLifetime(
+				configurationValue,
+			)
+			if testCase.expectedError {
+				if err == nil {
+					t.Fatal("expected enrollment lifetime error")
+				}
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("parse enrollment lifetime: %v", err)
+			}
+			if actual != testCase.expected {
+				t.Fatalf(
+					"expected enrollment lifetime %s, got %s",
+					testCase.expected,
+					actual,
 				)
 			}
 		})
@@ -264,7 +339,10 @@ func TestNewApplicationHandlerRejectsUnknownLogin(t *testing.T) {
 		t.Fatalf("apply migrations: %v", err)
 	}
 
-	handler, err := newApplicationHandler(database)
+	handler, err := newApplicationHandler(
+		database,
+		defaultEnrollmentLifetime,
+	)
 	if err != nil {
 		t.Fatalf("create application handler: %v", err)
 	}
@@ -353,7 +431,10 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 		t.Fatalf("store authentication fixture: %v", err)
 	}
 
-	handler, err := newApplicationHandler(database)
+	handler, err := newApplicationHandler(
+		database,
+		defaultEnrollmentLifetime,
+	)
 	if err != nil {
 		t.Fatalf("create application handler: %v", err)
 	}
@@ -505,6 +586,98 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 		t.Fatalf(
 			"expected credential-less identity, got %d credentials",
 			credentialCount,
+		)
+	}
+
+	issueEnrollmentRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/users/"+createdUserBody.ID+"/password-enrollment",
+		nil,
+	)
+	issueEnrollmentRequest.Header.Set(
+		"Authorization",
+		"Bearer "+body.AccessToken,
+	)
+	issueEnrollmentResponse := httptest.NewRecorder()
+	handler.ServeHTTP(issueEnrollmentResponse, issueEnrollmentRequest)
+
+	if issueEnrollmentResponse.Code != http.StatusCreated {
+		t.Fatalf(
+			"expected enrollment issue status %d, got %d: %s",
+			http.StatusCreated,
+			issueEnrollmentResponse.Code,
+			issueEnrollmentResponse.Body.String(),
+		)
+	}
+
+	var enrollmentBody struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(
+		issueEnrollmentResponse.Body,
+	).Decode(&enrollmentBody); err != nil {
+		t.Fatalf("decode password enrollment response: %v", err)
+	}
+	if enrollmentBody.Token == "" {
+		t.Fatal("expected one-time password enrollment token")
+	}
+
+	completeEnrollmentRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/password-enrollments",
+		strings.NewReader(
+			fmt.Sprintf(
+				`{"token":%q,"password":"new synthetic passphrase"}`,
+				enrollmentBody.Token,
+			),
+		),
+	)
+	completeEnrollmentRequest.Header.Set(
+		"Content-Type",
+		"application/json",
+	)
+	completeEnrollmentRequest.RemoteAddr = "192.0.2.11:12345"
+	completeEnrollmentResponse := httptest.NewRecorder()
+	handler.ServeHTTP(
+		completeEnrollmentResponse,
+		completeEnrollmentRequest,
+	)
+
+	if completeEnrollmentResponse.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected enrollment completion status %d, got %d: %s",
+			http.StatusNoContent,
+			completeEnrollmentResponse.Code,
+			completeEnrollmentResponse.Body.String(),
+		)
+	}
+
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM password_credentials WHERE user_id = ?`,
+		createdUserBody.ID,
+	).Scan(&credentialCount); err != nil {
+		t.Fatalf("count enrolled user credentials: %v", err)
+	}
+	if credentialCount != 1 {
+		t.Fatalf(
+			"expected one enrolled credential, got %d",
+			credentialCount,
+		)
+	}
+
+	var enrollmentCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM password_enrollments WHERE user_id = ?`,
+		createdUserBody.ID,
+	).Scan(&enrollmentCount); err != nil {
+		t.Fatalf("count consumed password enrollments: %v", err)
+	}
+	if enrollmentCount != 0 {
+		t.Fatalf(
+			"expected enrollment token to be consumed, got %d",
+			enrollmentCount,
 		)
 	}
 }

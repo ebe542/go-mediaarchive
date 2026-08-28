@@ -54,15 +54,20 @@ flowchart LR
   package1 --> package9
   package2 --> package3
   package2 --> package4
+  package2 --> package6
   package2 --> package7
   package2 --> package8
+  package2 --> package10
   package2 --> package12
   package2 --> package13
   package2 --> package14
   package3 --> package4
+  package3 --> package6
   package3 --> package7
   package3 --> package8
+  package3 --> package10
   package3 --> package11
+  package3 --> package12
   package4 --> package10
   package4 --> package11
   package5 --> package10

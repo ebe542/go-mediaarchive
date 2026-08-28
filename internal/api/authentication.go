@@ -58,12 +58,16 @@ type AttemptLimiter interface {
 type Clock func() time.Time
 
 type handlerConfiguration struct {
-	sessions        SessionService
-	limiter         AttemptLimiter
-	clock           Clock
-	sessionResolver SessionResolver
-	userReader      UserReader
-	userWriter      UserWriter
+	sessions                   SessionService
+	limiter                    AttemptLimiter
+	clock                      Clock
+	sessionResolver            SessionResolver
+	userReader                 UserReader
+	userWriter                 UserWriter
+	passwordEnrollmentResolver SessionResolver
+	passwordEnrollments        PasswordEnrollmentService
+	passwordEnrollmentLimiter  PasswordEnrollmentAttemptLimiter
+	passwordEnrollmentClock    Clock
 }
 
 // Option configures optional API capabilities.
