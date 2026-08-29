@@ -15,7 +15,7 @@ verifiable increments.
 | `milestone-008` | [Authentication sessions](008-authentication-sessions.md) | Complete |
 | `milestone-009` | [Role-based authorization foundation](009-role-authorization.md) | Complete |
 | `milestone-010` | [Administrator user management](010-administrator-user-management.md) | Complete |
-| `milestone-011` | [Password credential lifecycle](011-password-credential-lifecycle.md) | In progress |
+| `milestone-011` | [Password credential lifecycle](011-password-credential-lifecycle.md) | Complete |
 
 ## Versioning rule
 

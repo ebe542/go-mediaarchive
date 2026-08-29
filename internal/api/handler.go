@@ -126,6 +126,30 @@ func NewHandler(argOptions ...Option) http.Handler {
 		)
 	}
 
+	if configuration.passwordChangeResolver != nil &&
+		configuration.passwordChanges != nil {
+		passwordChanges := &passwordChangeHandler{
+			service: configuration.passwordChanges,
+		}
+
+		changePassword := RequireAuthentication(
+			configuration.passwordChangeResolver,
+			RequireRoles(
+				http.HandlerFunc(
+					passwordChanges.changeCurrentUserPassword,
+				),
+				identity.RoleViewer,
+				identity.RoleEditor,
+				identity.RoleAdmin,
+			),
+		)
+
+		mux.Handle(
+			"PUT /api/v1/users/me/password",
+			changePassword,
+		)
+	}
+
 	return mux
 }
 

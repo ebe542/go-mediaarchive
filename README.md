@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 10 is complete. The project currently provides:
+Milestone 11 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -26,6 +26,7 @@ Milestone 10 is complete. The project currently provides:
 - opaque server-side authentication sessions with login throttling;
 - authenticated request identities and role-protected user read endpoints;
 - administrator-only user creation, updates, and safe activation management;
+- one-time initial password enrollment and authenticated password changes;
 - a repeatable milestone verification script.
 
 ## Requirements

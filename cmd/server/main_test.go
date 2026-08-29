@@ -680,4 +680,108 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 			enrollmentCount,
 		)
 	}
+
+	loginCreatedUserRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/sessions",
+		strings.NewReader(
+			`{"username":"archive_editor","password":"new synthetic passphrase"}`,
+		),
+	)
+	loginCreatedUserRequest.Header.Set("Content-Type", "application/json")
+	loginCreatedUserRequest.RemoteAddr = "192.0.2.11:12345"
+	loginCreatedUserResponse := httptest.NewRecorder()
+	handler.ServeHTTP(loginCreatedUserResponse, loginCreatedUserRequest)
+
+	if loginCreatedUserResponse.Code != http.StatusCreated {
+		t.Fatalf(
+			"expected enrolled user login status %d, got %d: %s",
+			http.StatusCreated,
+			loginCreatedUserResponse.Code,
+			loginCreatedUserResponse.Body.String(),
+		)
+	}
+
+	var createdUserSession struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if err := json.NewDecoder(
+		loginCreatedUserResponse.Body,
+	).Decode(&createdUserSession); err != nil {
+		t.Fatalf("decode enrolled user session: %v", err)
+	}
+
+	changePasswordRequest := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/users/me/password",
+		strings.NewReader(
+			`{"currentPassword":"new synthetic passphrase","newPassword":"replacement synthetic passphrase"}`,
+		),
+	)
+	changePasswordRequest.Header.Set("Content-Type", "application/json")
+	changePasswordRequest.Header.Set(
+		"Authorization",
+		"Bearer "+createdUserSession.AccessToken,
+	)
+	changePasswordResponse := httptest.NewRecorder()
+	handler.ServeHTTP(changePasswordResponse, changePasswordRequest)
+
+	if changePasswordResponse.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected password change status %d, got %d: %s",
+			http.StatusNoContent,
+			changePasswordResponse.Code,
+			changePasswordResponse.Body.String(),
+		)
+	}
+
+	revokedSessionRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/users/me",
+		nil,
+	)
+	revokedSessionRequest.Header.Set(
+		"Authorization",
+		"Bearer "+createdUserSession.AccessToken,
+	)
+	revokedSessionResponse := httptest.NewRecorder()
+	handler.ServeHTTP(revokedSessionResponse, revokedSessionRequest)
+
+	if revokedSessionResponse.Code != http.StatusUnauthorized {
+		t.Fatalf(
+			"expected revoked session status %d, got %d: %s",
+			http.StatusUnauthorized,
+			revokedSessionResponse.Code,
+			revokedSessionResponse.Body.String(),
+		)
+	}
+
+	for passwordValue, expectedStatus := range map[string]int{
+		"new synthetic passphrase":         http.StatusUnauthorized,
+		"replacement synthetic passphrase": http.StatusCreated,
+	} {
+		loginRequest := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/auth/sessions",
+			strings.NewReader(
+				fmt.Sprintf(
+					`{"username":"archive_editor","password":%q}`,
+					passwordValue,
+				),
+			),
+		)
+		loginRequest.Header.Set("Content-Type", "application/json")
+		loginRequest.RemoteAddr = "192.0.2.11:12345"
+		loginResponse := httptest.NewRecorder()
+		handler.ServeHTTP(loginResponse, loginRequest)
+
+		if loginResponse.Code != expectedStatus {
+			t.Fatalf(
+				"expected login status %d for selected password, got %d: %s",
+				expectedStatus,
+				loginResponse.Code,
+				loginResponse.Body.String(),
+			)
+		}
+	}
 }

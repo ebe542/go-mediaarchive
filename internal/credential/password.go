@@ -66,3 +66,30 @@ func NewPasswordCredential(
 		UpdatedAt:    timestamp,
 	}, nil
 }
+
+// WithPasswordHash returns a credential with a validated replacement hash.
+func (credential PasswordCredential) WithPasswordHash(
+	argPasswordHash string,
+	argNow time.Time,
+) (PasswordCredential, error) {
+	if !strings.HasPrefix(argPasswordHash, "$argon2id$") {
+		return PasswordCredential{}, fmt.Errorf(
+			"%w: expected an Argon2id encoding",
+			ErrInvalidPasswordHash,
+		)
+	}
+
+	if credential.CreatedAt.IsZero() ||
+		argNow.IsZero() ||
+		argNow.UTC().Before(credential.CreatedAt) {
+		return PasswordCredential{}, fmt.Errorf(
+			"%w: update time must not precede creation time",
+			ErrInvalidTimestamp,
+		)
+	}
+
+	credential.PasswordHash = argPasswordHash
+	credential.UpdatedAt = argNow.UTC()
+
+	return credential, nil
+}

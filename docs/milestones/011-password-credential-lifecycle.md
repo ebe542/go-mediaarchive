@@ -108,6 +108,7 @@ again with the new password.
 | Condition | Status | Error code |
 | --- | --- | --- |
 | Invalid authentication | `401` | `authentication_required` |
+| Invalid current password | `401` | `invalid_credentials` |
 | Insufficient role | `403` | `forbidden` |
 | Invalid request or password policy | `400` | `invalid_request` |
 | Enrollment invalid or expired | `401` | `invalid_enrollment` |
@@ -137,12 +138,12 @@ are checked continuously only after implementation and tests prove them.
 - [x] Users with credentials cannot receive enrollment tokens.
 - [x] Credential creation and enrollment consumption are atomic.
 - [x] Inactive users may enroll but cannot authenticate.
-- [ ] Users must provide their current password before changing it.
-- [ ] Password changes atomically revoke all sessions.
+- [x] Users must provide their current password before changing it.
+- [x] Password changes atomically revoke all sessions.
 - [x] Passwords, hashes, and plaintext tokens are never logged.
 - [x] Enrollment attempts are limited without attacker-controlled limiter keys.
-- [ ] Standard milestone checks pass.
-- [ ] Local CI checks pass.
+- [x] Standard milestone checks pass.
+- [x] Local CI checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-011` tag; it is verified after the final milestone commit.

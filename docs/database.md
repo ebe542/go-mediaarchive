@@ -101,6 +101,9 @@ Separates password authentication data from the user identity record.
 
 Updates and deletes of the referenced user ID are restricted. Credential
 lifecycle operations must therefore be explicit instead of silently cascading.
+Changing a password updates `password_credentials` and sets `revoked_at` on
+every session owned by the user in one transaction. A failed session update
+therefore also rolls back the replacement password hash.
 
 ### `sessions`
 

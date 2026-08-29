@@ -17,6 +17,8 @@ checkpoints.
 - TLS 1.3 server transport and explicit client certificate trust.
 - Opaque authentication sessions with login throttling and revocation.
 - Role-based authorization and protected user operations.
+- One-time password enrollment and authenticated password changes with
+  automatic session revocation.
 - CLI applications for server administration and health checks.
 - Generated Go package architecture and SQLite database documentation.
 - Quality Gate and semantic-version release automation.

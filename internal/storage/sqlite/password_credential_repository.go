@@ -92,3 +92,59 @@ func (repository *PasswordCredentialRepository) FindByUserID(
 
 	return storedCredential, nil
 }
+
+// ChangePasswordAndRevokeSessions atomically replaces a password hash and
+// revokes every session belonging to the credential's user.
+func (repository *PasswordCredentialRepository) ChangePasswordAndRevokeSessions(
+	argContext context.Context,
+	argCredential credential.PasswordCredential,
+) error {
+	transaction, err := repository.database.BeginTx(argContext, nil)
+	if err != nil {
+		return fmt.Errorf("begin password change: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	result, err := transaction.ExecContext(
+		argContext,
+		`
+			UPDATE password_credentials
+			SET password_hash = ?, updated_at = ?
+			WHERE user_id = ?
+		`,
+		argCredential.PasswordHash,
+		argCredential.UpdatedAt.Format(time.RFC3339Nano),
+		argCredential.UserID,
+	)
+	if err != nil {
+		return fmt.Errorf("update password credential: %w", err)
+	}
+
+	affectedRows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read changed credential count: %w", err)
+	}
+	if affectedRows != 1 {
+		return credential.ErrPasswordCredentialNotFound
+	}
+
+	_, err = transaction.ExecContext(
+		argContext,
+		`
+			UPDATE sessions
+			SET revoked_at = COALESCE(revoked_at, ?)
+			WHERE user_id = ?
+		`,
+		argCredential.UpdatedAt.Format(time.RFC3339Nano),
+		argCredential.UserID,
+	)
+	if err != nil {
+		return fmt.Errorf("revoke password change sessions: %w", err)
+	}
+
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit password change: %w", err)
+	}
+
+	return nil
+}

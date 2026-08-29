@@ -331,6 +331,11 @@ func newApplicationHandler(
 		enrollmentIPLimit,
 		enrollmentLimitWindow,
 	)
+	passwordChangeService := apppasswords.NewChangeService(
+		credentialRepository,
+		passwordHasher,
+		time.Now,
+	)
 
 	return api.NewHandler(
 		api.WithAuthentication(
@@ -351,6 +356,10 @@ func newApplicationHandler(
 			passwordEnrollmentService,
 			passwordEnrollmentLimiter,
 			time.Now,
+		),
+		api.WithPasswordChangeAPI(
+			sessionService,
+			passwordChangeService,
 		),
 	), nil
 }

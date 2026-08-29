@@ -48,6 +48,34 @@ func TestNewPasswordCredentialCreatesValidatedCredential(t *testing.T) {
 	}
 }
 
+func TestPasswordCredentialWithPasswordHashPreservesCreation(t *testing.T) {
+	createdAt := time.Date(2026, time.August, 28, 9, 0, 0, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Hour)
+	credential, err := NewPasswordCredential(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"$argon2id$old",
+		createdAt,
+	)
+	if err != nil {
+		t.Fatalf("create password credential: %v", err)
+	}
+
+	updated, err := credential.WithPasswordHash(
+		"$argon2id$new",
+		updatedAt,
+	)
+	if err != nil {
+		t.Fatalf("change password hash: %v", err)
+	}
+
+	if updated.CreatedAt != createdAt || updated.UpdatedAt != updatedAt {
+		t.Fatalf("unexpected credential timestamps: %+v", updated)
+	}
+	if updated.PasswordHash != "$argon2id$new" {
+		t.Fatalf("unexpected password hash %q", updated.PasswordHash)
+	}
+}
+
 func TestNewPasswordCredentialRejectsInvalidValues(t *testing.T) {
 	t.Parallel()
 

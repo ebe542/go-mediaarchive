@@ -68,6 +68,8 @@ type handlerConfiguration struct {
 	passwordEnrollments        PasswordEnrollmentService
 	passwordEnrollmentLimiter  PasswordEnrollmentAttemptLimiter
 	passwordEnrollmentClock    Clock
+	passwordChangeResolver     SessionResolver
+	passwordChanges            PasswordChangeService
 }
 
 // Option configures optional API capabilities.
