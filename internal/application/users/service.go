@@ -36,14 +36,14 @@ type UpdateUserInput struct {
 
 // Service coordinates user identity use cases.
 type Service struct {
-	repository  identity.UserRepository
+	repository  Repository
 	generateID  IDGenerator
 	currentTime Clock
 }
 
 // NewService creates a user application service.
 func NewService(
-	argRepository identity.UserRepository,
+	argRepository Repository,
 	argIDGenerator IDGenerator,
 	argClock Clock,
 ) *Service {

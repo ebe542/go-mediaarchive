@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	appusers "github.com/ebe542/go-mediaarchive/internal/application/users"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
@@ -71,6 +72,91 @@ func TestUserRepositoryCreatesAndFindsUserByID(t *testing.T) {
 			user,
 			storedUser,
 		)
+	}
+}
+
+func TestUserRepositoryListsUsersWithStableKeysetPagination(t *testing.T) {
+	ctx := context.Background()
+	databasePath := filepath.Join(t.TempDir(), "repository.db")
+
+	database, err := sqlitestore.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
+
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+
+	repository := sqlitestore.NewUserRepository(database)
+	firstTime := time.Date(2026, time.August, 29, 9, 0, 0, 0, time.UTC)
+	userFixtures := []struct {
+		id        string
+		username  string
+		createdAt time.Time
+	}{
+		{
+			id:        "123e4567-e89b-12d3-a456-426614174002",
+			username:  "third_user",
+			createdAt: firstTime.Add(time.Minute),
+		},
+		{
+			id:        "123e4567-e89b-12d3-a456-426614174001",
+			username:  "second_user",
+			createdAt: firstTime,
+		},
+		{
+			id:        "123e4567-e89b-12d3-a456-426614174000",
+			username:  "first_user",
+			createdAt: firstTime,
+		},
+	}
+
+	for _, fixture := range userFixtures {
+		user, err := identity.NewUser(
+			fixture.id,
+			fixture.username,
+			"Paginated User",
+			identity.RoleViewer,
+			fixture.createdAt,
+		)
+		if err != nil {
+			t.Fatalf("create user fixture: %v", err)
+		}
+		if err := repository.Create(ctx, user); err != nil {
+			t.Fatalf("store user fixture: %v", err)
+		}
+	}
+
+	firstPage, err := repository.ListUsers(ctx, nil, 2)
+	if err != nil {
+		t.Fatalf("list first user page: %v", err)
+	}
+	if len(firstPage) != 2 ||
+		firstPage[0].ID != "123e4567-e89b-12d3-a456-426614174000" ||
+		firstPage[1].ID != "123e4567-e89b-12d3-a456-426614174001" {
+		t.Fatalf("unexpected first page order: %+v", firstPage)
+	}
+
+	cursor, err := appusers.NewCursor(
+		firstPage[1].CreatedAt,
+		firstPage[1].ID,
+	)
+	if err != nil {
+		t.Fatalf("create continuation cursor: %v", err)
+	}
+	secondPage, err := repository.ListUsers(ctx, &cursor, 2)
+	if err != nil {
+		t.Fatalf("list second user page: %v", err)
+	}
+	if len(secondPage) != 1 ||
+		secondPage[0].ID != "123e4567-e89b-12d3-a456-426614174002" {
+		t.Fatalf("unexpected second page: %+v", secondPage)
 	}
 }
 

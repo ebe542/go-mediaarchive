@@ -87,6 +87,8 @@ Stores user identity, display information, global role, and activation state.
 
 The table is `STRICT`, so SQLite rejects values whose storage class is not
 compatible with the declared column type.
+`users_created_at_id_index` supports deterministic keyset pagination without
+scanning and discarding an increasing offset.
 
 ### `password_credentials`
 
@@ -164,6 +166,7 @@ supports later cleanup of expired records.
 | `003` | [`003_create_password_credentials.sql`](../internal/storage/sqlite/migrations/003_create_password_credentials.sql) | Creates `password_credentials` and its user relationship. |
 | `004` | [`004_create_sessions.sql`](../internal/storage/sqlite/migrations/004_create_sessions.sql) | Creates `sessions` and `sessions_user_id_index`. |
 | `005` | [`005_create_password_enrollments.sql`](../internal/storage/sqlite/migrations/005_create_password_enrollments.sql) | Creates replaceable, expiring password enrollments. |
+| `006` | [`006_create_users_pagination_index.sql`](../internal/storage/sqlite/migrations/006_create_users_pagination_index.sql) | Indexes the immutable user-directory ordering key. |
 
 New schema changes must be added as a new zero-padded migration. Existing
 migrations must remain immutable after publication because deployed databases

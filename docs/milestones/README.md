@@ -16,6 +16,7 @@ verifiable increments.
 | `milestone-009` | [Role-based authorization foundation](009-role-authorization.md) | Complete |
 | `milestone-010` | [Administrator user management](010-administrator-user-management.md) | Complete |
 | `milestone-011` | [Password credential lifecycle](011-password-credential-lifecycle.md) | Complete |
+| `milestone-012` | [Paginated user directory](012-paginated-user-directory.md) | In progress |
 
 ## Versioning rule
 

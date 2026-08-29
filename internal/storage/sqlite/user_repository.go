@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	appusers "github.com/ebe542/go-mediaarchive/internal/application/users"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
 
@@ -337,6 +338,83 @@ func (repository *UserRepository) FindByUsername(
 	}
 
 	return storedUser, nil
+}
+
+// ListUsers retrieves a bounded page in immutable creation-time and ID order.
+func (repository *UserRepository) ListUsers(
+	argContext context.Context,
+	argCursor *appusers.Cursor,
+	argLimit int,
+) ([]identity.User, error) {
+	if argLimit < 1 {
+		return nil, appusers.ErrInvalidPageLimit
+	}
+
+	query := `
+		SELECT
+			id,
+			username,
+			display_name,
+			role,
+			active,
+			created_at,
+			updated_at
+		FROM users
+	`
+	arguments := make([]any, 0, 4)
+
+	if argCursor != nil {
+		cursor, err := appusers.NewCursor(
+			argCursor.CreatedAt,
+			argCursor.ID,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		createdAt := cursor.CreatedAt.Format(time.RFC3339Nano)
+		query += `
+			WHERE created_at > ?
+			   OR (created_at = ? AND id > ?)
+		`
+		arguments = append(
+			arguments,
+			createdAt,
+			createdAt,
+			cursor.ID,
+		)
+	}
+
+	query += `
+		ORDER BY created_at ASC, id ASC
+		LIMIT ?
+	`
+	arguments = append(arguments, argLimit)
+
+	rows, err := repository.database.QueryContext(
+		argContext,
+		query,
+		arguments...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select user page: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	listedUsers := make([]identity.User, 0, argLimit)
+	for rows.Next() {
+		storedUser, err := scanUser(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan user page: %w", err)
+		}
+
+		listedUsers = append(listedUsers, storedUser)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate user page: %w", err)
+	}
+
+	return listedUsers, nil
 }
 
 func isUniqueConstraintError(argError error) bool {

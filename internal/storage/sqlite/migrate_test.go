@@ -63,7 +63,7 @@ func TestMigrateAppliesEmbeddedMigrationsOnce(t *testing.T) {
 		t.Fatalf("count applied migrations: %v", err)
 	}
 
-	if migrationCount != 5 {
-		t.Fatalf("expected 5 applied migrations, got %d", migrationCount)
+	if migrationCount != 6 {
+		t.Fatalf("expected 6 applied migrations, got %d", migrationCount)
 	}
 }

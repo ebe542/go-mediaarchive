@@ -21,6 +21,21 @@ type recordingUserRepository struct {
 	createError       error
 	createCalls       int
 	protectedUpdates  int
+	listedUsers       []identity.User
+	listError         error
+	listedCursor      *users.Cursor
+	listedLimit       int
+}
+
+func (repository *recordingUserRepository) ListUsers(
+	_ context.Context,
+	argCursor *users.Cursor,
+	argLimit int,
+) ([]identity.User, error) {
+	repository.listedCursor = argCursor
+	repository.listedLimit = argLimit
+
+	return repository.listedUsers, repository.listError
 }
 
 func (repository *recordingUserRepository) Create(

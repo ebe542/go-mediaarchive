@@ -3,10 +3,47 @@ package sqlite_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
+
+func TestUserSchemaIncludesPaginationIndex(t *testing.T) {
+	ctx := context.Background()
+	databasePath := filepath.Join(t.TempDir(), "mediaarchive.db")
+
+	database, err := sqlitestore.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatalf("open SQLite database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
+
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	var indexSQL string
+	if err := database.QueryRowContext(
+		ctx,
+		`
+			SELECT sql
+			FROM sqlite_master
+			WHERE type = 'index'
+			  AND name = 'users_created_at_id_index'
+		`,
+	).Scan(&indexSQL); err != nil {
+		t.Fatalf("find pagination index: %v", err)
+	}
+
+	if !strings.Contains(indexSQL, "users (created_at, id)") {
+		t.Fatalf("unexpected pagination index definition %q", indexSQL)
+	}
+}
 
 func TestUserSchemaEnforcesRoleAndActiveState(t *testing.T) {
 	t.Parallel()
