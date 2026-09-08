@@ -48,6 +48,7 @@ flowchart LR
     package9["internal/client"]
   end
   package0 --> package5
+  package0 --> package9
   package0 --> package11
   package0 --> package12
   package0 --> package14

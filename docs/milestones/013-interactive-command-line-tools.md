@@ -107,13 +107,13 @@ are checked continuously only after implementation and tests prove them.
 - [x] API errors retain HTTP status, stable code, and safe message.
 - [x] JSON response content types and required fields are validated.
 - [x] The end-user console supports its documented commands.
-- [ ] The administrator console supports its documented commands.
-- [ ] Offline administrator bootstrap remains compatible.
+- [x] The administrator console supports its documented commands.
+- [x] Offline administrator bootstrap remains compatible.
 - [x] Passwords and enrollment tokens use hidden interactive input.
 - [x] Bearer tokens remain in memory and are never command arguments.
 - [x] Logout and normal console exit revoke active sessions.
 - [x] Password changes clear local authentication.
-- [ ] Pagination state remains in memory and supports first/next navigation.
+- [x] Pagination state remains in memory and supports first/next navigation.
 - [ ] A central command reference documents complete example workflows.
 - [ ] Standard milestone checks pass.
 - [ ] Local CI checks pass.

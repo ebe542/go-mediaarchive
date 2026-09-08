@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,12 +20,16 @@ import (
 	"golang.org/x/term"
 
 	adminbootstrap "github.com/ebe542/go-mediaarchive/internal/application/bootstrap"
+	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/password"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
 
-const defaultDatabasePath = "data/mediaarchive.db"
+const (
+	defaultDatabasePath = "data/mediaarchive.db"
+	defaultServerURL    = "http://127.0.0.1:8080"
+)
 
 type passwordReader func() ([]byte, error)
 
@@ -144,12 +152,73 @@ func run(
 	argReadPassword passwordReader,
 	argBootstrapAdmin bootstrapAdminFunc,
 ) error {
-	if len(argArguments) == 0 ||
-		argArguments[0] != "bootstrap" {
-		printUsage(argStderr)
-
-		return errors.New("expected the bootstrap command")
+	if len(argArguments) > 0 && argArguments[0] == "bootstrap" {
+		return runBootstrap(
+			argContext,
+			argArguments[1:],
+			argStdout,
+			argStderr,
+			argReadPassword,
+			argBootstrapAdmin,
+		)
 	}
+
+	flags := flag.NewFlagSet("mediaarchive-admin", flag.ContinueOnError)
+	flags.SetOutput(argStderr)
+	serverURL := flags.String(
+		"server",
+		serverURLFromEnvironment(os.Getenv),
+		"base URL of the Media Archive server",
+	)
+	caCertificatePath := flags.String(
+		"ca-certificate",
+		"",
+		"path to an additional trusted CA certificate",
+	)
+	flags.Usage = func() {
+		printUsage(argStderr)
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(argArguments); err != nil {
+		return fmt.Errorf("parse arguments: %w", err)
+	}
+	if flags.NArg() != 0 {
+		flags.Usage()
+
+		return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
+	}
+
+	httpClient, err := newHTTPClient(*serverURL, *caCertificatePath)
+	if err != nil {
+		return fmt.Errorf("configure HTTP client: %w", err)
+	}
+
+	console := newAdminConsole(
+		apiclient.New(*serverURL, httpClient),
+		os.Stdin,
+		argStdout,
+		argStderr,
+		func(argPrompt string) ([]byte, error) {
+			fmt.Fprint(argStdout, argPrompt)
+			secret, err := argReadPassword()
+			fmt.Fprintln(argStdout)
+
+			return secret, err
+		},
+		5*time.Second,
+	)
+
+	return console.run(argContext)
+}
+
+func runBootstrap(
+	argContext context.Context,
+	argArguments []string,
+	argStdout io.Writer,
+	argStderr io.Writer,
+	argReadPassword passwordReader,
+	argBootstrapAdmin bootstrapAdminFunc,
+) error {
 
 	flags := flag.NewFlagSet(
 		"mediaarchive-admin bootstrap",
@@ -178,7 +247,7 @@ func run(
 		flags.PrintDefaults()
 	}
 
-	if err := flags.Parse(argArguments[1:]); err != nil {
+	if err := flags.Parse(argArguments); err != nil {
 		return fmt.Errorf("parse bootstrap arguments: %w", err)
 	}
 	if flags.NArg() != 0 {
@@ -240,10 +309,59 @@ func run(
 }
 
 func printUsage(argOutput io.Writer) {
-	fmt.Fprintln(
-		argOutput,
-		"Usage: mediaarchive-admin bootstrap [options]",
-	)
+	fmt.Fprintln(argOutput, "Usage:")
+	fmt.Fprintln(argOutput, "  mediaarchive-admin [options]")
+	fmt.Fprintln(argOutput, "  mediaarchive-admin bootstrap [options]")
+}
+
+func serverURLFromEnvironment(argGetenv func(string) string) string {
+	if serverURL := argGetenv("MEDIAARCHIVE_SERVER"); serverURL != "" {
+		return serverURL
+	}
+
+	return defaultServerURL
+}
+
+func newHTTPClient(
+	argServerURL string,
+	argCACertificatePath string,
+) (*http.Client, error) {
+	if argCACertificatePath == "" {
+		return http.DefaultClient, nil
+	}
+
+	parsedURL, err := url.Parse(argServerURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse server URL: %w", err)
+	}
+	if parsedURL.Scheme != "https" {
+		return nil, errors.New(
+			"a custom CA certificate requires an HTTPS server URL",
+		)
+	}
+
+	certificatePEM, err := os.ReadFile(argCACertificatePath)
+	if err != nil {
+		return nil, fmt.Errorf("read CA certificate: %w", err)
+	}
+
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("load system certificate authorities: %w", err)
+	}
+	if !rootCAs.AppendCertsFromPEM(certificatePEM) {
+		return nil, errors.New(
+			"CA certificate file contains no valid certificates",
+		)
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		RootCAs:    rootCAs,
+	}
+
+	return &http.Client{Transport: transport}, nil
 }
 
 func clearBytes(argValue []byte) {
