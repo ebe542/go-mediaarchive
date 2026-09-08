@@ -150,6 +150,23 @@ func NewHandler(argOptions ...Option) http.Handler {
 		)
 	}
 
+	if configuration.userDirectoryResolver != nil &&
+		configuration.userLister != nil {
+		directory := &userDirectoryHandler{
+			users: configuration.userLister,
+		}
+
+		listUsers := RequireAuthentication(
+			configuration.userDirectoryResolver,
+			RequireRoles(
+				http.HandlerFunc(directory.listUsers),
+				identity.RoleAdmin,
+			),
+		)
+
+		mux.Handle("GET /api/v1/users", listUsers)
+	}
+
 	return mux
 }
 

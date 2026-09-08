@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
@@ -38,6 +39,8 @@ type userResponse struct {
 	DisplayName string        `json:"displayName"`
 	Role        identity.Role `json:"role"`
 	Active      bool          `json:"active"`
+	CreatedAt   time.Time     `json:"createdAt"`
+	UpdatedAt   time.Time     `json:"updatedAt"`
 }
 
 func (handler *userReadHandler) currentUser(
@@ -114,11 +117,17 @@ func writeUserResponseWithStatus(
 	argResponse.Header().Set("Cache-Control", "no-store")
 	argResponse.WriteHeader(argStatus)
 
-	_ = json.NewEncoder(argResponse).Encode(userResponse{
+	_ = json.NewEncoder(argResponse).Encode(newUserResponse(argUser))
+}
+
+func newUserResponse(argUser identity.User) userResponse {
+	return userResponse{
 		ID:          argUser.ID,
 		Username:    argUser.Username,
 		DisplayName: argUser.DisplayName,
 		Role:        argUser.Role,
 		Active:      argUser.Active,
-	})
+		CreatedAt:   argUser.CreatedAt,
+		UpdatedAt:   argUser.UpdatedAt,
+	}
 }

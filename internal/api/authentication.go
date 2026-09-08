@@ -70,6 +70,8 @@ type handlerConfiguration struct {
 	passwordEnrollmentClock    Clock
 	passwordChangeResolver     SessionResolver
 	passwordChanges            PasswordChangeService
+	userDirectoryResolver      SessionResolver
+	userLister                 UserLister
 }
 
 // Option configures optional API capabilities.

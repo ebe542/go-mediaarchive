@@ -60,8 +60,8 @@ Accept: application/json
 - Ordering is always `created_at ASC, id ASC`.
 - The repository loads `limit + 1` records to detect another page.
 - The next cursor identifies the last user returned to the client.
-- The cursor internally contains an RFC 3339 Nano creation time and canonical
-  user UUID encoded as unpadded URL-safe Base64 JSON.
+- The cursor internally contains a canonical UTC RFC 3339 Nano creation time
+  and canonical user UUID encoded as unpadded URL-safe Base64 JSON.
 - The cursor is opaque but not secret and grants no authority.
 - A malformed cursor returns `400 invalid_request`.
 - `nextCursor` is omitted on the final page.
@@ -94,13 +94,13 @@ are checked continuously only after implementation and tests prove them.
 - [x] Users are ordered by immutable creation time and ID.
 - [x] Repository pagination uses a keyset and loads one lookahead record.
 - [x] The application returns a next cursor only when another page exists.
-- [ ] Only administrators can list users.
-- [ ] Cursor input is strictly decoded and validated.
-- [ ] Unknown and duplicated query parameters are rejected.
-- [ ] User responses contain no credential or session data.
-- [ ] Sensitive responses use `Cache-Control: no-store`.
-- [ ] Standard milestone checks pass.
-- [ ] Local CI checks pass.
+- [x] Only administrators can list users.
+- [x] Cursor input is strictly decoded and validated.
+- [x] Unknown and duplicated query parameters are rejected.
+- [x] User responses contain no credential or session data.
+- [x] Sensitive responses use `Cache-Control: no-store`.
+- [x] Standard milestone checks pass.
+- [x] Local CI checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-012` tag; it is verified after the final milestone commit.

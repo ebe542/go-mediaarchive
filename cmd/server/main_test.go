@@ -589,6 +589,43 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 		)
 	}
 
+	listUsersRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/users?limit=1",
+		nil,
+	)
+	listUsersRequest.Header.Set(
+		"Authorization",
+		"Bearer "+body.AccessToken,
+	)
+	listUsersResponse := httptest.NewRecorder()
+	handler.ServeHTTP(listUsersResponse, listUsersRequest)
+
+	if listUsersResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"expected user-directory status %d, got %d: %s",
+			http.StatusOK,
+			listUsersResponse.Code,
+			listUsersResponse.Body.String(),
+		)
+	}
+
+	var userDirectoryBody struct {
+		Users []struct {
+			ID string `json:"id"`
+		} `json:"users"`
+		NextCursor string `json:"nextCursor"`
+	}
+	if err := json.NewDecoder(
+		listUsersResponse.Body,
+	).Decode(&userDirectoryBody); err != nil {
+		t.Fatalf("decode user directory: %v", err)
+	}
+	if len(userDirectoryBody.Users) != 1 ||
+		userDirectoryBody.NextCursor == "" {
+		t.Fatalf("unexpected paginated user directory: %+v", userDirectoryBody)
+	}
+
 	issueEnrollmentRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/users/"+createdUserBody.ID+"/password-enrollment",

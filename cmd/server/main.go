@@ -351,6 +351,10 @@ func newApplicationHandler(
 			sessionService,
 			userService,
 		),
+		api.WithUserDirectoryAPI(
+			sessionService,
+			userService,
+		),
 		api.WithPasswordEnrollmentAPI(
 			sessionService,
 			passwordEnrollmentService,
