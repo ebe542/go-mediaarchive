@@ -103,16 +103,16 @@ are checked continuously only after implementation and tests prove them.
 
 ## Acceptance criteria
 
-- [ ] The typed client covers every currently published REST endpoint.
-- [ ] API errors retain HTTP status, stable code, and safe message.
-- [ ] JSON response content types and required fields are validated.
-- [ ] The end-user console supports its documented commands.
+- [x] The typed client covers every currently published REST endpoint.
+- [x] API errors retain HTTP status, stable code, and safe message.
+- [x] JSON response content types and required fields are validated.
+- [x] The end-user console supports its documented commands.
 - [ ] The administrator console supports its documented commands.
 - [ ] Offline administrator bootstrap remains compatible.
-- [ ] Passwords and enrollment tokens use hidden interactive input.
-- [ ] Bearer tokens remain in memory and are never command arguments.
-- [ ] Logout and normal console exit revoke active sessions.
-- [ ] Password changes clear local authentication.
+- [x] Passwords and enrollment tokens use hidden interactive input.
+- [x] Bearer tokens remain in memory and are never command arguments.
+- [x] Logout and normal console exit revoke active sessions.
+- [x] Password changes clear local authentication.
 - [ ] Pagination state remains in memory and supports first/next navigation.
 - [ ] A central command reference documents complete example workflows.
 - [ ] Standard milestone checks pass.

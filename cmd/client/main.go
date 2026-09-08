@@ -12,8 +12,10 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"time"
 
 	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
+	"golang.org/x/term"
 )
 
 const defaultServerURL = "http://127.0.0.1:8080"
@@ -87,7 +89,7 @@ func run(
 	)
 
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: mediaarchive [options] health")
+		fmt.Fprintln(stderr, "Usage: mediaarchive [options] [health]")
 		fmt.Fprintln(stderr)
 		fmt.Fprintln(stderr, "Options:")
 		flags.PrintDefaults()
@@ -99,31 +101,48 @@ func run(
 		}
 	}
 
-	if flags.NArg() != 1 {
+	if flags.NArg() > 1 {
 		flags.Usage()
 
 		return &usageError{
-			err: errors.New("exactly one command is required"),
+			err: errors.New("at most one command is allowed"),
 		}
+	}
+
+	httpClient, err := newHTTPClient(
+		*serverURL,
+		*caCertificatePath,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"configure HTTP client: %w",
+			err,
+		)
+	}
+
+	apiClient := apiclient.New(*serverURL, httpClient)
+	if flags.NArg() == 0 {
+		console := newUserConsole(
+			apiClient,
+			os.Stdin,
+			stdout,
+			stderr,
+			func(argPrompt string) ([]byte, error) {
+				fmt.Fprint(stdout, argPrompt)
+				secret, err := term.ReadPassword(int(os.Stdin.Fd()))
+				fmt.Fprintln(stdout)
+
+				return secret, err
+			},
+			5*time.Second,
+		)
+
+		return console.run(ctx)
 	}
 
 	switch flags.Arg(0) {
 	case "health":
-		httpClient, err := newHTTPClient(
-			*serverURL,
-			*caCertificatePath,
-		)
-		if err != nil {
-			return fmt.Errorf(
-				"configure HTTP client: %w",
-				err,
-			)
-		}
-
-		status, err := apiclient.New(
-			*serverURL,
-			httpClient,
-		).Health(ctx)
+		status, err := apiClient.Health(ctx)
 		if err != nil {
 			return fmt.Errorf("check server health: %w", err)
 		}
