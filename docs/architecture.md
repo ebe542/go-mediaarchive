@@ -79,6 +79,7 @@ flowchart LR
   package7 --> package11
   package7 --> package13
   package8 --> package11
+  package9 --> package11
   package10 --> package11
   package14 --> package8
   package14 --> package10
@@ -99,7 +100,7 @@ flowchart LR
 | [`internal/application/passwords`](../internal/application/passwords) | Application services | Package passwords coordinates password enrollment and credential lifecycle. |
 | [`internal/application/sessions`](../internal/application/sessions) | Application services | Package sessions coordinates authenticated server-side sessions. |
 | [`internal/application/users`](../internal/application/users) | Application services | Package users coordinates user identity application operations. |
-| [`internal/client`](../internal/client) | Client | Not documented yet. |
+| [`internal/client`](../internal/client) | Client | Package client provides a typed client for the Media Archive REST API. |
 | [`internal/credential`](../internal/credential) | Domain | Package credential defines authentication credentials independently of users. |
 | [`internal/identity`](../internal/identity) | Domain | Package identity defines users and global security roles. |
 | [`internal/password`](../internal/password) | Domain | Package password provides password hashing and verification. |

@@ -14,8 +14,6 @@ import (
 )
 
 func TestHealthRequestsVersionedEndpoint(t *testing.T) {
-	t.Parallel()
-
 	server := httptest.NewServer(http.HandlerFunc(
 		func(response http.ResponseWriter, request *http.Request) {
 			if request.Method != http.MethodGet {
@@ -66,8 +64,6 @@ func TestHealthRequestsVersionedEndpoint(t *testing.T) {
 }
 
 func TestHealthRejectsMissingStatus(t *testing.T) {
-	t.Parallel()
-
 	server := httptest.NewServer(http.HandlerFunc(
 		func(response http.ResponseWriter, _ *http.Request) {
 			response.Header().Set(
@@ -89,8 +85,6 @@ func TestHealthRejectsMissingStatus(t *testing.T) {
 }
 
 func TestHealthRejectsUnexpectedContentType(t *testing.T) {
-	t.Parallel()
-
 	server := httptest.NewServer(http.HandlerFunc(
 		func(response http.ResponseWriter, _ *http.Request) {
 			response.Header().Set("Content-Type", "text/plain")
@@ -108,8 +102,6 @@ func TestHealthRejectsUnexpectedContentType(t *testing.T) {
 }
 
 func TestHealthReportsInvalidResponses(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name              string
 		statusCode        int
@@ -134,11 +126,7 @@ func TestHealthReportsInvalidResponses(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
-
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
 			server := httptest.NewServer(http.HandlerFunc(
 				func(response http.ResponseWriter, _ *http.Request) {
 					response.Header().Set("Content-Type", test.contentType)
@@ -166,8 +154,6 @@ func TestHealthReportsInvalidResponses(t *testing.T) {
 	}
 }
 func TestHealthHonorsContextCancellation(t *testing.T) {
-	t.Parallel()
-
 	server := httptest.NewServer(http.HandlerFunc(
 		func(response http.ResponseWriter, _ *http.Request) {
 			response.Header().Set(
@@ -191,8 +177,6 @@ func TestHealthHonorsContextCancellation(t *testing.T) {
 }
 
 func TestHealthHonorsHTTPTimeout(t *testing.T) {
-	t.Parallel()
-
 	server := httptest.NewServer(http.HandlerFunc(
 		func(_ http.ResponseWriter, request *http.Request) {
 			// Keep the handler active until the client timeout cancels the request.
