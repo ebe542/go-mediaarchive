@@ -188,8 +188,14 @@ go run ./cmd/client --server http://127.0.0.1:8080 health
 | `quit` | No | Alias for `exit`. | `quit` |
 | `bye` | No | Alias for `exit`. | `bye` |
 
-The access token and pagination state exist only in process memory. EOF and a
-normal interrupt also attempt to revoke an active session.
+The access token exists only in process memory. EOF and a normal interrupt also
+attempt to revoke an active session. The prompt identifies
+the authenticated user, for example `archive_user@mediaarchive>`. Before login
+and after logout it uses `anonymous@mediaarchive>`.
+
+Invalid interactive field values repeat only the affected prompt. Values already
+accepted during the current operation do not need to be entered again. API
+errors still end the current operation and return to the command prompt.
 
 ## Administrator console
 
@@ -212,6 +218,10 @@ go run ./cmd/admin \
 
 Only a user with the global `admin` role may remain logged in to this console.
 A session created for another role is immediately revoked.
+
+The prompt changes from `anonymous@mediaarchive-admin>` to a form such as
+`archive_admin@mediaarchive-admin>` after login. Displayed timestamps use the
+operating system's current local time zone and retain their numeric UTC offset.
 
 ### Interactive commands
 
@@ -245,10 +255,10 @@ Start with a running server and a bootstrapped administrator.
 
 ```text
 $ go run ./cmd/admin --server http://127.0.0.1:8080
-mediaarchive-admin> login archive_admin
+anonymous@mediaarchive-admin> login archive_admin
 Password:
 Logged in as archive_admin.
-mediaarchive-admin> user create
+archive_admin@mediaarchive-admin> user create
 Username: archive_user
 Display name: Archive User
 Role (viewer|editor|admin): viewer
@@ -262,13 +272,13 @@ The actual generated user ID will differ from the example.
 Use the generated user ID:
 
 ```text
-mediaarchive-admin> password enrollment 123e4567-e89b-12d3-a456-426614174000
+archive_admin@mediaarchive-admin> password enrollment 123e4567-e89b-12d3-a456-426614174000
 Enrollment token (shown once):
 <one-time-enrollment-token>
-Expires: <UTC timestamp>
-mediaarchive-admin> logout
+Expires: <local timestamp with UTC offset>
+archive_admin@mediaarchive-admin> logout
 Logged out.
-mediaarchive-admin> exit
+anonymous@mediaarchive-admin> exit
 ```
 
 Transfer the token to the intended user through an appropriately protected
@@ -278,7 +288,7 @@ channel. Do not store it in shell history or project files.
 
 ```text
 $ go run ./cmd/client --server http://127.0.0.1:8080
-mediaarchive> password enroll
+anonymous@mediaarchive> password enroll
 Enrollment token:
 New password:
 Confirm new password:
@@ -288,10 +298,10 @@ Password enrolled. You can now log in.
 ### 4. Log in and inspect the identity
 
 ```text
-mediaarchive> login archive_user
+anonymous@mediaarchive> login archive_user
 Password:
 Logged in as archive_user.
-mediaarchive> me
+archive_user@mediaarchive> me
 ID: 123e4567-e89b-12d3-a456-426614174000
 Username: archive_user
 Display name: Archive User
@@ -302,15 +312,15 @@ Active: true
 ### 5. Change the password
 
 ```text
-mediaarchive> password change
+archive_user@mediaarchive> password change
 Current password:
 New password:
 Confirm new password:
 Password changed. Log in again.
-mediaarchive> login archive_user
+anonymous@mediaarchive> login archive_user
 Password:
 Logged in as archive_user.
-mediaarchive> exit
+archive_user@mediaarchive> exit
 ```
 
 A successful password change revokes every server-side session owned by the

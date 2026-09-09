@@ -174,8 +174,10 @@ func TestAdminConsoleRunsUserManagementScenario(t *testing.T) {
 		"user first",
 		"user get target-id",
 		"user create",
+		"",
 		"created_user",
 		"Created User",
+		"edtor",
 		"editor",
 		"user update target-id",
 		"",
@@ -204,8 +206,9 @@ func TestAdminConsoleRunsUserManagementScenario(t *testing.T) {
 	if err := console.run(context.Background()); err != nil {
 		t.Fatalf("run admin console: %v", err)
 	}
-	if errorOutput.Len() != 0 {
-		t.Errorf("expected empty error output, got %q", errorOutput.String())
+	if !strings.Contains(errorOutput.String(), "value is required") ||
+		!strings.Contains(errorOutput.String(), "role must be viewer, editor, or admin") {
+		t.Errorf("expected field validation retries, got %q", errorOutput.String())
 	}
 	if api.currentUserCallNum != 2 {
 		t.Errorf("expected login verification and me lookup, got %d calls", api.currentUserCallNum)
@@ -246,7 +249,12 @@ func TestAdminConsoleRunsUserManagementScenario(t *testing.T) {
 		t.Errorf("unexpected logout tokens: %v", api.logoutTokens)
 	}
 	if !strings.Contains(output.String(), "one-time-token") ||
-		!strings.Contains(output.String(), "More users are available") {
+		!strings.Contains(output.String(), "More users are available") ||
+		!strings.Contains(output.String(), "archive_admin@mediaarchive-admin> ") ||
+		!strings.Contains(
+			output.String(),
+			formatAdminLocalTime(time.Date(2026, time.September, 8, 13, 0, 0, 0, time.UTC)),
+		) {
 		t.Errorf("unexpected output: %q", output.String())
 	}
 	for index, value := range loginPassword {
@@ -303,14 +311,18 @@ func TestAdminConsoleChangesPasswordAndClearsSession(t *testing.T) {
 		[]byte("login passphrase"),
 		[]byte("current passphrase"),
 		[]byte("new passphrase"),
+		[]byte("mistyped passphrase"),
+		[]byte("new passphrase"),
 		[]byte("new passphrase"),
 	}
 	secretIndex := 0
+	var output bytes.Buffer
+	var errorOutput bytes.Buffer
 	console := newAdminConsole(
 		api,
 		strings.NewReader("login archive_admin\npassword change\nbye\n"),
-		&bytes.Buffer{},
-		&bytes.Buffer{},
+		&output,
+		&errorOutput,
 		func(string) ([]byte, error) {
 			secret := secrets[secretIndex]
 			secretIndex++
@@ -330,6 +342,12 @@ func TestAdminConsoleChangesPasswordAndClearsSession(t *testing.T) {
 	}
 	if len(api.logoutTokens) != 0 {
 		t.Errorf("expected password change to clear session, got %v", api.logoutTokens)
+	}
+	if !strings.Contains(errorOutput.String(), "password confirmation does not match") {
+		t.Errorf("expected password confirmation retry, got %q", errorOutput.String())
+	}
+	if !strings.Contains(output.String(), "anonymous@mediaarchive-admin> ") {
+		t.Errorf("expected anonymous prompt after password change, got %q", output.String())
 	}
 	for secretIndex, secret := range secrets {
 		for byteIndex, value := range secret {

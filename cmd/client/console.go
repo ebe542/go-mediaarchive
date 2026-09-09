@@ -13,7 +13,7 @@ import (
 	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 )
 
-const consolePrompt = "mediaarchive> "
+const anonymousUsername = "anonymous"
 
 type userAPI interface {
 	Health(context.Context) (apiclient.HealthStatus, error)
@@ -34,6 +34,7 @@ type userConsole struct {
 	readSecret    secretReader
 	logoutTimeout time.Duration
 	accessToken   string
+	username      string
 }
 
 func newUserConsole(
@@ -62,7 +63,7 @@ func (console *userConsole) run(argContext context.Context) error {
 	scanner := bufio.NewScanner(console.input)
 	defer console.logoutOnExit()
 	for {
-		fmt.Fprint(console.output, consolePrompt)
+		fmt.Fprint(console.output, console.prompt())
 
 		line, available, err := scanCommand(argContext, scanner)
 		if errors.Is(err, context.Canceled) {
@@ -85,6 +86,15 @@ func (console *userConsole) run(argContext context.Context) error {
 			return nil
 		}
 	}
+}
+
+func (console *userConsole) prompt() string {
+	username := console.username
+	if username == "" {
+		username = anonymousUsername
+	}
+
+	return fmt.Sprintf("%s@mediaarchive> ", username)
 }
 
 type commandScan struct {
@@ -187,7 +197,7 @@ func (console *userConsole) login(
 		return errors.New("already logged in; log out before starting another session")
 	}
 
-	password, err := console.readSecret("Password: ")
+	password, err := console.readRequiredSecret("Password: ")
 	if err != nil {
 		return fmt.Errorf("read password: %w", err)
 	}
@@ -197,8 +207,15 @@ func (console *userConsole) login(
 	if err != nil {
 		return fmt.Errorf("login: %w", err)
 	}
+	user, err := console.api.CurrentUser(argContext, session.AccessToken)
+	if err != nil {
+		console.revokeUnusableSession(session.AccessToken)
+
+		return fmt.Errorf("get authenticated user: %w", err)
+	}
 	console.accessToken = session.AccessToken
-	fmt.Fprintf(console.output, "Logged in as %s.\n", argUsername)
+	console.username = user.Username
+	fmt.Fprintf(console.output, "Logged in as %s.\n", user.Username)
 
 	return nil
 }
@@ -211,10 +228,18 @@ func (console *userConsole) logout(argContext context.Context) error {
 		return fmt.Errorf("logout: %w", err)
 	}
 
-	console.accessToken = ""
+	console.clearSession()
 	fmt.Fprintln(console.output, "Logged out.")
 
 	return nil
+}
+
+func (console *userConsole) revokeUnusableSession(argAccessToken string) {
+	ctx, cancel := context.WithTimeout(context.Background(), console.logoutTimeout)
+	defer cancel()
+	if err := console.api.Logout(ctx, argAccessToken); err != nil {
+		console.printError(fmt.Errorf("revoke unusable session: %w", err))
+	}
 }
 
 func (console *userConsole) logoutOnExit() {
@@ -227,7 +252,12 @@ func (console *userConsole) logoutOnExit() {
 	if err := console.api.Logout(ctx, console.accessToken); err != nil {
 		console.printError(fmt.Errorf("logout during exit: %w", err))
 	}
+	console.clearSession()
+}
+
+func (console *userConsole) clearSession() {
 	console.accessToken = ""
+	console.username = ""
 }
 
 func (console *userConsole) me(argContext context.Context) error {
@@ -267,7 +297,7 @@ func (console *userConsole) enrollPassword(argContext context.Context) error {
 		return errors.New("log out before enrolling a password")
 	}
 
-	token, err := console.readSecret("Enrollment token: ")
+	token, err := console.readRequiredSecret("Enrollment token: ")
 	if err != nil {
 		return fmt.Errorf("read enrollment token: %w", err)
 	}
@@ -296,7 +326,7 @@ func (console *userConsole) changePassword(argContext context.Context) error {
 		return errors.New("not logged in")
 	}
 
-	currentPassword, err := console.readSecret("Current password: ")
+	currentPassword, err := console.readRequiredSecret("Current password: ")
 	if err != nil {
 		return fmt.Errorf("read current password: %w", err)
 	}
@@ -318,33 +348,53 @@ func (console *userConsole) changePassword(argContext context.Context) error {
 	}
 
 	// The server revokes every user session after a successful password change.
-	console.accessToken = ""
+	console.clearSession()
 	fmt.Fprintln(console.output, "Password changed. Log in again.")
 
 	return nil
 }
 
 func (console *userConsole) confirmedPassword() ([]byte, error) {
-	password, err := console.readSecret("New password: ")
-	if err != nil {
-		return nil, fmt.Errorf("read new password: %w", err)
-	}
+	for {
+		password, err := console.readRequiredSecret("New password: ")
+		if err != nil {
+			return nil, fmt.Errorf("read new password: %w", err)
+		}
 
-	confirmation, err := console.readSecret("Confirm new password: ")
-	if err != nil {
+		confirmation, err := console.readRequiredSecret("Confirm new password: ")
+		if err != nil {
+			clearSecret(password)
+
+			return nil, fmt.Errorf("read password confirmation: %w", err)
+		}
+
+		if equalSecrets(password, confirmation) {
+			clearSecret(confirmation)
+
+			return password, nil
+		}
+
 		clearSecret(password)
-
-		return nil, fmt.Errorf("read password confirmation: %w", err)
+		clearSecret(confirmation)
+		console.printError(errors.New("password confirmation does not match; try again"))
 	}
-	defer clearSecret(confirmation)
+}
 
-	if !equalSecrets(password, confirmation) {
-		clearSecret(password)
+func (console *userConsole) readRequiredSecret(
+	argPrompt string,
+) ([]byte, error) {
+	for {
+		secret, err := console.readSecret(argPrompt)
+		if err != nil {
+			return nil, err
+		}
+		if len(secret) != 0 {
+			return secret, nil
+		}
 
-		return nil, errors.New("password confirmation does not match")
+		clearSecret(secret)
+		console.printError(errors.New("value is required; try again"))
 	}
-
-	return password, nil
 }
 
 func (console *userConsole) printHelp() {
@@ -384,8 +434,12 @@ func printUser(argOutput io.Writer, argUser apiclient.User) {
 	fmt.Fprintf(argOutput, "Display name: %s\n", argUser.DisplayName)
 	fmt.Fprintf(argOutput, "Role: %s\n", argUser.Role)
 	fmt.Fprintf(argOutput, "Active: %t\n", argUser.Active)
-	fmt.Fprintf(argOutput, "Created: %s\n", argUser.CreatedAt.Format(time.RFC3339))
-	fmt.Fprintf(argOutput, "Updated: %s\n", argUser.UpdatedAt.Format(time.RFC3339))
+	fmt.Fprintf(argOutput, "Created: %s\n", formatLocalTime(argUser.CreatedAt))
+	fmt.Fprintf(argOutput, "Updated: %s\n", formatLocalTime(argUser.UpdatedAt))
+}
+
+func formatLocalTime(argTime time.Time) string {
+	return argTime.Local().Format(time.RFC3339)
 }
 
 func equalSecrets(argFirst []byte, argSecond []byte) bool {

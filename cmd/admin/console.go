@@ -16,9 +16,8 @@ import (
 )
 
 const (
-	adminConsolePrompt = "mediaarchive-admin> "
-	defaultUserLimit   = 50
-	maximumUserLimit   = 100
+	defaultUserLimit = 50
+	maximumUserLimit = 100
 )
 
 type adminAPI interface {
@@ -45,6 +44,7 @@ type adminConsole struct {
 	readSecret    secretReader
 	logoutTimeout time.Duration
 	accessToken   string
+	username      string
 	pageLimit     int
 	nextCursor    string
 	pageStarted   bool
@@ -78,7 +78,7 @@ func (console *adminConsole) run(argContext context.Context) error {
 	for {
 		line, available, err := console.readCommand(
 			argContext,
-			adminConsolePrompt,
+			console.prompt(),
 		)
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(console.output)
@@ -100,6 +100,15 @@ func (console *adminConsole) run(argContext context.Context) error {
 			return nil
 		}
 	}
+}
+
+func (console *adminConsole) prompt() string {
+	username := console.username
+	if username == "" {
+		username = "anonymous"
+	}
+
+	return fmt.Sprintf("%s@mediaarchive-admin> ", username)
 }
 
 func (console *adminConsole) readCommand(
@@ -205,7 +214,7 @@ func (console *adminConsole) login(
 		return errors.New("already logged in; log out before starting another session")
 	}
 
-	password, err := console.readSecret("Password: ")
+	password, err := console.readRequiredSecret("Password: ")
 	if err != nil {
 		return fmt.Errorf("read password: %w", err)
 	}
@@ -229,6 +238,7 @@ func (console *adminConsole) login(
 	}
 
 	console.accessToken = session.AccessToken
+	console.username = user.Username
 	fmt.Fprintf(console.output, "Logged in as %s.\n", user.Username)
 
 	return nil
@@ -270,6 +280,7 @@ func (console *adminConsole) logoutOnExit() {
 
 func (console *adminConsole) clearSession() {
 	console.accessToken = ""
+	console.username = ""
 	console.pageStarted = false
 	console.nextCursor = ""
 }
@@ -580,14 +591,14 @@ func (console *adminConsole) issuePasswordEnrollment(
 	fmt.Fprintf(
 		console.output,
 		"Expires: %s\n",
-		enrollment.ExpiresAt.Format(time.RFC3339),
+		formatAdminLocalTime(enrollment.ExpiresAt),
 	)
 
 	return nil
 }
 
 func (console *adminConsole) changePassword(argContext context.Context) error {
-	currentPassword, err := console.readSecret("Current password: ")
+	currentPassword, err := console.readRequiredSecret("Current password: ")
 	if err != nil {
 		return fmt.Errorf("read current password: %w", err)
 	}
@@ -614,45 +625,67 @@ func (console *adminConsole) changePassword(argContext context.Context) error {
 }
 
 func (console *adminConsole) confirmedPassword() ([]byte, error) {
-	password, err := console.readSecret("New password: ")
-	if err != nil {
-		return nil, fmt.Errorf("read new password: %w", err)
-	}
+	for {
+		password, err := console.readRequiredSecret("New password: ")
+		if err != nil {
+			return nil, fmt.Errorf("read new password: %w", err)
+		}
 
-	confirmation, err := console.readSecret("Confirm new password: ")
-	if err != nil {
+		confirmation, err := console.readRequiredSecret("Confirm new password: ")
+		if err != nil {
+			clearBytes(password)
+
+			return nil, fmt.Errorf("read password confirmation: %w", err)
+		}
+
+		if subtle.ConstantTimeCompare(password, confirmation) == 1 {
+			clearBytes(confirmation)
+
+			return password, nil
+		}
+
 		clearBytes(password)
-
-		return nil, fmt.Errorf("read password confirmation: %w", err)
+		clearBytes(confirmation)
+		console.printError(errors.New("password confirmation does not match; try again"))
 	}
-	defer clearBytes(confirmation)
+}
 
-	if subtle.ConstantTimeCompare(password, confirmation) != 1 {
-		clearBytes(password)
+func (console *adminConsole) readRequiredSecret(
+	argPrompt string,
+) ([]byte, error) {
+	for {
+		secret, err := console.readSecret(argPrompt)
+		if err != nil {
+			return nil, err
+		}
+		if len(secret) != 0 {
+			return secret, nil
+		}
 
-		return nil, errors.New("password confirmation does not match")
+		clearBytes(secret)
+		console.printError(errors.New("value is required; try again"))
 	}
-
-	return password, nil
 }
 
 func (console *adminConsole) requiredValue(
 	argContext context.Context,
 	argPrompt string,
 ) (string, error) {
-	value, available, err := console.readCommand(argContext, argPrompt)
-	if err != nil {
-		return "", fmt.Errorf("read value: %w", err)
-	}
-	if !available {
-		return "", io.EOF
-	}
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", errors.New("value is required")
-	}
+	for {
+		value, available, err := console.readCommand(argContext, argPrompt)
+		if err != nil {
+			return "", fmt.Errorf("read value: %w", err)
+		}
+		if !available {
+			return "", io.EOF
+		}
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value, nil
+		}
 
-	return value, nil
+		console.printError(errors.New("value is required; try again"))
+	}
 }
 
 func (console *adminConsole) optionalValue(
@@ -680,23 +713,25 @@ func (console *adminConsole) readRole(
 	argPrompt string,
 	argDefault identity.Role,
 ) (identity.Role, error) {
-	value, available, err := console.readCommand(argContext, argPrompt)
-	if err != nil {
-		return "", fmt.Errorf("read role: %w", err)
-	}
-	if !available {
-		return "", io.EOF
-	}
-	if strings.TrimSpace(value) == "" && argDefault.Valid() {
-		return argDefault, nil
-	}
+	for {
+		value, available, err := console.readCommand(argContext, argPrompt)
+		if err != nil {
+			return "", fmt.Errorf("read role: %w", err)
+		}
+		if !available {
+			return "", io.EOF
+		}
+		if strings.TrimSpace(value) == "" && argDefault.Valid() {
+			return argDefault, nil
+		}
 
-	role := identity.Role(strings.TrimSpace(value))
-	if !role.Valid() {
-		return "", errors.New("role must be viewer, editor, or admin")
-	}
+		role := identity.Role(strings.TrimSpace(value))
+		if role.Valid() {
+			return role, nil
+		}
 
-	return role, nil
+		console.printError(errors.New("role must be viewer, editor, or admin; try again"))
+	}
 }
 
 func (console *adminConsole) requireAuthentication() error {
@@ -752,6 +787,10 @@ func printAdminUser(argOutput io.Writer, argUser apiclient.User) {
 	fmt.Fprintf(argOutput, "Display name: %s\n", argUser.DisplayName)
 	fmt.Fprintf(argOutput, "Role: %s\n", argUser.Role)
 	fmt.Fprintf(argOutput, "Active: %t\n", argUser.Active)
-	fmt.Fprintf(argOutput, "Created: %s\n", argUser.CreatedAt.Format(time.RFC3339))
-	fmt.Fprintf(argOutput, "Updated: %s\n", argUser.UpdatedAt.Format(time.RFC3339))
+	fmt.Fprintf(argOutput, "Created: %s\n", formatAdminLocalTime(argUser.CreatedAt))
+	fmt.Fprintf(argOutput, "Updated: %s\n", formatAdminLocalTime(argUser.UpdatedAt))
+}
+
+func formatAdminLocalTime(argTime time.Time) string {
+	return argTime.Local().Format(time.RFC3339)
 }

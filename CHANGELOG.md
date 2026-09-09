@@ -21,7 +21,8 @@ checkpoints.
 - One-time password enrollment and authenticated password changes with
   automatic session revocation.
 - Interactive end-user and administrator CLI applications with in-memory
-  sessions and complete user-management commands.
+  sessions, user-aware prompts, retryable field input, local-time presentation,
+  and complete user-management commands.
 - Generated Go package architecture and SQLite database documentation.
 - Quality Gate and semantic-version release automation.
 

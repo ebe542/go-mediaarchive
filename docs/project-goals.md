@@ -103,3 +103,11 @@ database wrapper.
 - Mark every completed milestone with an immutable annotated `milestone-NNN`
   Git tag.
 - Use the MIT License for the public source project.
+
+## Planned command-line usability
+
+- Add command-line editing and history navigation to both interactive tools.
+- Keep password and enrollment-token input outside command history.
+- Start with process-local history before considering optional persistence.
+- Define retention, file location, permissions, and opt-out behavior before any
+  history is written to disk.

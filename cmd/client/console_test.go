@@ -100,6 +100,8 @@ func TestUserConsoleRunsAuthenticatedPasswordChangeScenario(t *testing.T) {
 		[]byte("login passphrase"),
 		[]byte("current passphrase"),
 		[]byte("new passphrase"),
+		[]byte("mistyped passphrase"),
+		[]byte("new passphrase"),
 		[]byte("new passphrase"),
 	}
 	var output bytes.Buffer
@@ -129,11 +131,14 @@ func TestUserConsoleRunsAuthenticatedPasswordChangeScenario(t *testing.T) {
 		t.Errorf("expected changed password to clear the session, got logout tokens %v", api.logoutTokens)
 	}
 	if !strings.Contains(output.String(), "Username: archive_user") ||
+		!strings.Contains(output.String(), "archive_user@mediaarchive> ") ||
+		!strings.Contains(output.String(), "anonymous@mediaarchive> ") ||
+		!strings.Contains(output.String(), formatLocalTime(api.currentUser.CreatedAt)) ||
 		!strings.Contains(output.String(), "Password changed. Log in again.") {
 		t.Errorf("unexpected console output: %q", output.String())
 	}
-	if errorOutput.Len() != 0 {
-		t.Errorf("expected empty error output, got %q", errorOutput.String())
+	if !strings.Contains(errorOutput.String(), "password confirmation does not match") {
+		t.Errorf("expected password confirmation retry, got %q", errorOutput.String())
 	}
 	assertSecretsCleared(t, secrets)
 }
@@ -175,6 +180,9 @@ func TestUserConsoleEnrollsPasswordWithoutSession(t *testing.T) {
 func TestUserConsoleLogsOutOnExit(t *testing.T) {
 	api := &recordingUserAPI{
 		loginSession: apiclient.Session{AccessToken: "access-token"},
+		currentUser: apiclient.User{
+			Username: "archive_user",
+		},
 	}
 	console := newUserConsole(
 		api,
