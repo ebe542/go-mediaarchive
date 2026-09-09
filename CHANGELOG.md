@@ -20,6 +20,8 @@ checkpoints.
 - Administrator-only user directory with bounded keyset pagination.
 - One-time password enrollment and authenticated password changes with
   automatic session revocation.
+- Safe administrator-only user deletion with transactional authentication-data
+  removal, last-administrator protection, and explicit console confirmation.
 - Interactive end-user and administrator CLI applications with in-memory
   sessions, user-aware prompts, retryable field input, local-time presentation,
   and complete user-management commands.

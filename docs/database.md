@@ -107,6 +107,12 @@ Changing a password updates `password_credentials` and sets `revoked_at` on
 every session owned by the user in one transaction. A failed session update
 therefore also rolls back the replacement password hash.
 
+Permanent user deletion explicitly removes password enrollments, sessions, and
+password credentials before deleting the user, all within one transaction.
+This makes the authentication-data lifecycle visible and ensures that a failed
+step rolls back the entire deletion. The same transaction preserves at least
+one active administrator.
+
 ### `sessions`
 
 Stores server-side authentication session metadata.

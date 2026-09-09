@@ -29,6 +29,7 @@ type adminAPI interface {
 	CreateUser(context.Context, string, apiclient.UserInput) (apiclient.User, error)
 	UpdateUser(context.Context, string, string, apiclient.UserInput) (apiclient.User, error)
 	SetUserActive(context.Context, string, string, bool) (apiclient.User, error)
+	DeleteUser(context.Context, string, string) error
 	IssuePasswordEnrollment(context.Context, string, string) (apiclient.PasswordEnrollment, error)
 	ChangePassword(context.Context, string, []byte, []byte) error
 }
@@ -277,7 +278,7 @@ func (console *adminConsole) user(
 		return err
 	}
 	if len(argArguments) == 0 {
-		return adminCommandUsage("user list|get|create|update|activate|deactivate")
+		return adminCommandUsage("user list|get|create|update|activate|deactivate|delete")
 	}
 
 	switch argArguments[0] {
@@ -323,6 +324,12 @@ func (console *adminConsole) user(
 			argArguments[1],
 			argArguments[0] == "activate",
 		)
+	case "delete":
+		if len(argArguments) != 2 {
+			return adminCommandUsage("user delete <id>")
+		}
+
+		return console.deleteUser(argContext, argArguments[1])
 	default:
 		return fmt.Errorf("unknown user command %q", argArguments[0])
 	}
@@ -531,6 +538,65 @@ func (console *adminConsole) setUserActive(
 	return nil
 }
 
+func (console *adminConsole) deleteUser(
+	argContext context.Context,
+	argID string,
+) error {
+	user, err := console.api.UserByID(
+		argContext,
+		console.session.AccessToken(),
+		argID,
+	)
+	if err != nil {
+		return fmt.Errorf("get user for deletion: %w", err)
+	}
+	sharedcli.PrintUser(console.output, user)
+
+	for {
+		confirmation, available, err := console.readCommand(
+			argContext,
+			fmt.Sprintf(
+				"Type username %q to permanently delete this user (blank cancels): ",
+				user.Username,
+			),
+		)
+		if err != nil {
+			return fmt.Errorf("read deletion confirmation: %w", err)
+		}
+		if !available {
+			return io.EOF
+		}
+
+		confirmation = strings.TrimSpace(confirmation)
+		if confirmation == "" {
+			fmt.Fprintln(console.output, "User deletion canceled.")
+
+			return nil
+		}
+		if confirmation != user.Username {
+			console.printError(errors.New("username does not match; try again"))
+
+			continue
+		}
+
+		break
+	}
+
+	if err := console.api.DeleteUser(
+		argContext,
+		console.session.AccessToken(),
+		user.ID,
+	); err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	console.pageStarted = false
+	console.nextCursor = ""
+	console.pageLimit = defaultUserLimit
+	fmt.Fprintf(console.output, "Permanently deleted user %s (%s).\n", user.Username, user.ID)
+
+	return nil
+}
+
 func (console *adminConsole) password(
 	argContext context.Context,
 	argArguments []string,
@@ -695,6 +761,7 @@ func (console *adminConsole) printHelp() {
 	fmt.Fprintln(console.output, "  user update <id>")
 	fmt.Fprintln(console.output, "  user activate <id>")
 	fmt.Fprintln(console.output, "  user deactivate <id>")
+	fmt.Fprintln(console.output, "  user delete <id>")
 	fmt.Fprintln(console.output, "  password enrollment <user-id>")
 	fmt.Fprintln(console.output, "  password change")
 	fmt.Fprintln(console.output, "  exit | quit | bye")

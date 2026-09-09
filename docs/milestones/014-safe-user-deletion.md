@@ -64,9 +64,9 @@ Each step is delivered as a complete Conventional Commit.
 - [x] Only administrators can use the deletion endpoint.
 - [x] Successful API deletion returns HTTP 204.
 - [x] The typed client supports user deletion.
-- [ ] The administrator console requires exact username confirmation.
-- [ ] Invalid confirmation repeats only the affected prompt.
-- [ ] Command and lifecycle documentation describes permanent deletion.
+- [x] The administrator console requires exact username confirmation.
+- [x] Invalid confirmation repeats only the affected prompt.
+- [x] Command and lifecycle documentation describes permanent deletion.
 - [x] Standard milestone checks pass.
 - [x] Local CI checks pass.
 

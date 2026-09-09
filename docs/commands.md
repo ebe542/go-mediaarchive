@@ -240,6 +240,7 @@ operating system's current local time zone and retain their numeric UTC offset.
 | `user update <id>` | Prompt for mutable user properties. | `user update 123e4567-e89b-12d3-a456-426614174000` |
 | `user activate <id>` | Allow a deactivated user to authenticate again. | `user activate 123e4567-e89b-12d3-a456-426614174000` |
 | `user deactivate <id>` | Block authentication and revoke the user's sessions. | `user deactivate 123e4567-e89b-12d3-a456-426614174000` |
+| `user delete <id>` | Permanently delete a user after exact username confirmation. | `user delete 123e4567-e89b-12d3-a456-426614174000` |
 | `password enrollment <user-id>` | Issue a one-time initial-password token. | `password enrollment 123e4567-e89b-12d3-a456-426614174000` |
 | `password change` | Change the administrator's own password. | `password change` |
 | `exit`, `quit`, `bye` | Attempt logout and close the console. | `exit` |
@@ -326,6 +327,32 @@ archive_user@mediaarchive> exit
 A successful password change revokes every server-side session owned by the
 user, so a new login is required.
 
+## Permanent user deletion
+
+Use deactivation when access may need to be restored. Deletion is irreversible
+and permanently removes the identity together with its password enrollment,
+password credential, and server-side sessions.
+
+The administrator console loads and displays the selected identity before
+asking for its exact username. An incorrect value repeats only the confirmation
+prompt. Submit an empty value to cancel without changing server data.
+
+```text
+archive_admin@mediaarchive-admin> user delete 123e4567-e89b-12d3-a456-426614174000
+ID: 123e4567-e89b-12d3-a456-426614174000
+Username: archive_user
+Display name: Archive User
+Role: viewer
+Active: true
+Type username "archive_user" to permanently delete this user (blank cancels): archive_user
+Permanently deleted user archive_user (123e4567-e89b-12d3-a456-426614174000).
+```
+
+An administrator cannot delete their own identity or the last active
+administrator. Before media ownership is introduced, its design must either
+require transferring owned records or block deletion. Future audit records
+must retain an independent actor snapshot and survive identity deletion.
+
 ## REST API mapping
 
 Graphical applications do not invoke either terminal program. They communicate
@@ -342,6 +369,7 @@ directly with the same HTTPS JSON API and implement equivalent session handling.
 | Create user | `POST /api/v1/users` | Administrator |
 | Update user | `PUT /api/v1/users/{id}` | Administrator |
 | Activate or deactivate | `PUT /api/v1/users/{id}/active` | Administrator |
+| Permanently delete user | `DELETE /api/v1/users/{id}` | Administrator |
 | Issue enrollment | `POST /api/v1/users/{id}/password-enrollment` | Administrator |
 | Complete enrollment | `POST /api/v1/auth/password-enrollments` | Public, token protected and rate limited |
 | Change own password | `PUT /api/v1/users/me/password` | Authenticated |

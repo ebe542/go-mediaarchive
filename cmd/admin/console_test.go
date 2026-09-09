@@ -27,6 +27,8 @@ type recordingAdminAPI struct {
 	updatedInput       apiclient.UserInput
 	activationIDs      []string
 	activationValues   []bool
+	userLookupIDs      []string
+	deletedIDs         []string
 	enrollmentUserID   string
 	passwordChange     bool
 	currentPassword    string
@@ -71,6 +73,8 @@ func (api *recordingAdminAPI) UserByID(
 	_ string,
 	argID string,
 ) (apiclient.User, error) {
+	api.userLookupIDs = append(api.userLookupIDs, argID)
+
 	return testAdminUser(argID, "target_user", identity.RoleEditor, true), nil
 }
 
@@ -129,6 +133,16 @@ func (api *recordingAdminAPI) SetUserActive(
 	api.activationValues = append(api.activationValues, argActive)
 
 	return testAdminUser(argID, "target_user", identity.RoleEditor, argActive), nil
+}
+
+func (api *recordingAdminAPI) DeleteUser(
+	_ context.Context,
+	_ string,
+	argID string,
+) error {
+	api.deletedIDs = append(api.deletedIDs, argID)
+
+	return nil
 }
 
 func (api *recordingAdminAPI) IssuePasswordEnrollment(
@@ -264,6 +278,90 @@ func TestAdminConsoleRunsUserManagementScenario(t *testing.T) {
 		if value != 0 {
 			t.Errorf("login password byte %d was not cleared", index)
 		}
+	}
+}
+
+func TestAdminConsoleRepeatsOnlyUserDeletionConfirmation(t *testing.T) {
+	api := &recordingAdminAPI{
+		loginSession: apiclient.Session{AccessToken: "admin-token"},
+		currentUser: testAdminUser(
+			"admin-id",
+			"archive_admin",
+			identity.RoleAdmin,
+			true,
+		),
+	}
+	input := strings.Join([]string{
+		"login archive_admin",
+		"user delete target-id",
+		"wrong_user",
+		"target_user",
+		"exit",
+	}, "\n") + "\n"
+	var output bytes.Buffer
+	var errorOutput bytes.Buffer
+	console := newAdminConsole(
+		api,
+		strings.NewReader(input),
+		&output,
+		&errorOutput,
+		func(string) ([]byte, error) {
+			return []byte("admin passphrase"), nil
+		},
+		time.Second,
+	)
+
+	if err := console.run(context.Background()); err != nil {
+		t.Fatalf("run admin console: %v", err)
+	}
+	if len(api.userLookupIDs) != 1 || api.userLookupIDs[0] != "target-id" {
+		t.Fatalf("expected one target lookup, got %v", api.userLookupIDs)
+	}
+	if len(api.deletedIDs) != 1 || api.deletedIDs[0] != "target-id" {
+		t.Fatalf("expected confirmed target deletion, got %v", api.deletedIDs)
+	}
+	confirmationPrompt := `Type username "target_user" to permanently delete this user (blank cancels): `
+	if strings.Count(output.String(), confirmationPrompt) != 2 {
+		t.Errorf("expected only confirmation prompt to repeat, got %q", output.String())
+	}
+	if !strings.Contains(errorOutput.String(), "username does not match; try again") {
+		t.Errorf("expected confirmation error, got %q", errorOutput.String())
+	}
+	if !strings.Contains(output.String(), "Permanently deleted user target_user (target-id).") {
+		t.Errorf("expected deletion result, got %q", output.String())
+	}
+}
+
+func TestAdminConsoleCancelsUserDeletionOnBlankConfirmation(t *testing.T) {
+	api := &recordingAdminAPI{
+		loginSession: apiclient.Session{AccessToken: "admin-token"},
+		currentUser: testAdminUser(
+			"admin-id",
+			"archive_admin",
+			identity.RoleAdmin,
+			true,
+		),
+	}
+	var output bytes.Buffer
+	console := newAdminConsole(
+		api,
+		strings.NewReader("login archive_admin\nuser delete target-id\n\nexit\n"),
+		&output,
+		&bytes.Buffer{},
+		func(string) ([]byte, error) {
+			return []byte("admin passphrase"), nil
+		},
+		time.Second,
+	)
+
+	if err := console.run(context.Background()); err != nil {
+		t.Fatalf("run admin console: %v", err)
+	}
+	if len(api.deletedIDs) != 0 {
+		t.Fatalf("expected no deletion, got %v", api.deletedIDs)
+	}
+	if !strings.Contains(output.String(), "User deletion canceled.") {
+		t.Errorf("expected cancellation result, got %q", output.String())
 	}
 }
 
