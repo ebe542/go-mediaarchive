@@ -21,10 +21,23 @@ type recordingUserRepository struct {
 	createError       error
 	createCalls       int
 	protectedUpdates  int
+	deletedID         string
+	deleteError       error
+	deleteCalls       int
 	listedUsers       []identity.User
 	listError         error
 	listedCursor      *users.Cursor
 	listedLimit       int
+}
+
+func (repository *recordingUserRepository) DeletePreservingLastAdministrator(
+	_ context.Context,
+	argID string,
+) error {
+	repository.deleteCalls++
+	repository.deletedID = argID
+
+	return repository.deleteError
 }
 
 func (repository *recordingUserRepository) ListUsers(
@@ -640,5 +653,100 @@ func TestServicePreservesLastAdministratorProtection(t *testing.T) {
 	)
 	if !errors.Is(err, identity.ErrLastAdministrator) {
 		t.Fatalf("expected ErrLastAdministrator, got %v", err)
+	}
+}
+
+func TestServiceDeletesAnotherUser(t *testing.T) {
+	repository := &recordingUserRepository{}
+	service := users.NewService(
+		repository,
+		func() string { return "" },
+		func() time.Time { return time.Time{} },
+	)
+	targetID := "123e4567-e89b-12d3-a456-426614174000"
+
+	if err := service.DeleteUser(
+		context.Background(),
+		"123e4567-e89b-12d3-a456-426614174001",
+		targetID,
+	); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+	if repository.deleteCalls != 1 || repository.deletedID != targetID {
+		t.Errorf(
+			"expected deletion of %q, got calls=%d ID=%q",
+			targetID,
+			repository.deleteCalls,
+			repository.deletedID,
+		)
+	}
+}
+
+func TestServiceRejectsSelfDeletion(t *testing.T) {
+	repository := &recordingUserRepository{}
+	service := users.NewService(
+		repository,
+		func() string { return "" },
+		func() time.Time { return time.Time{} },
+	)
+	actorID := "123e4567-e89b-12d3-a456-426614174000"
+
+	err := service.DeleteUser(context.Background(), actorID, actorID)
+	if !errors.Is(err, users.ErrSelfDeletion) {
+		t.Fatalf("expected ErrSelfDeletion, got %v", err)
+	}
+	if repository.deleteCalls != 0 {
+		t.Errorf("expected no repository deletion, got %d", repository.deleteCalls)
+	}
+}
+
+func TestServiceRejectsInvalidDeletionID(t *testing.T) {
+	repository := &recordingUserRepository{}
+	service := users.NewService(
+		repository,
+		func() string { return "" },
+		func() time.Time { return time.Time{} },
+	)
+
+	err := service.DeleteUser(
+		context.Background(),
+		"123e4567-e89b-12d3-a456-426614174001",
+		"not-a-user-id",
+	)
+	if !errors.Is(err, identity.ErrInvalidUserID) {
+		t.Fatalf("expected ErrInvalidUserID, got %v", err)
+	}
+	if repository.deleteCalls != 0 {
+		t.Errorf("expected no repository deletion, got %d", repository.deleteCalls)
+	}
+}
+
+func TestServicePreservesDeletionRepositoryErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"unknown user", identity.ErrUserNotFound},
+		{"last administrator", identity.ErrLastAdministrator},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			repository := &recordingUserRepository{deleteError: testCase.err}
+			service := users.NewService(
+				repository,
+				func() string { return "" },
+				func() time.Time { return time.Time{} },
+			)
+
+			err := service.DeleteUser(
+				context.Background(),
+				"123e4567-e89b-12d3-a456-426614174001",
+				"123e4567-e89b-12d3-a456-426614174000",
+			)
+			if !errors.Is(err, testCase.err) {
+				t.Fatalf("expected %v, got %v", testCase.err, err)
+			}
+		})
 	}
 }

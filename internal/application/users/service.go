@@ -14,6 +14,10 @@ import (
 // administrative access.
 var ErrSelfLockout = errors.New("administrator cannot remove own access")
 
+// ErrSelfDeletion indicates that an administrator tried to delete their own
+// identity.
+var ErrSelfDeletion = errors.New("administrator cannot delete own identity")
+
 // IDGenerator creates stable user identifiers.
 type IDGenerator func() string
 
@@ -222,4 +226,27 @@ func (service *Service) SetUserActive(
 	}
 
 	return updatedUser, nil
+}
+
+// DeleteUser permanently removes another user and their authentication data.
+func (service *Service) DeleteUser(
+	argContext context.Context,
+	argActorID string,
+	argID string,
+) error {
+	if err := identity.ValidateUserID(argID); err != nil {
+		return err
+	}
+	if argActorID == argID {
+		return ErrSelfDeletion
+	}
+
+	if err := service.repository.DeletePreservingLastAdministrator(
+		argContext,
+		argID,
+	); err != nil {
+		return fmt.Errorf("delete user identity: %w", err)
+	}
+
+	return nil
 }

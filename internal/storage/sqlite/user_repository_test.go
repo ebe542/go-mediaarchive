@@ -1,8 +1,10 @@
 package sqlite_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -12,6 +14,104 @@ import (
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
+
+func TestUserRepositoryDeletesUserAuthenticationRecords(t *testing.T) {
+	ctx := context.Background()
+	databasePath := filepath.Join(t.TempDir(), "repository.db")
+	database, err := sqlitestore.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+
+	repository := sqlitestore.NewUserRepository(database)
+	now := time.Date(2026, time.September, 9, 10, 0, 0, 0, time.UTC)
+	user, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"deletion_target",
+		"Deletion Target",
+		identity.RoleViewer,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create user fixture: %v", err)
+	}
+	if err := repository.Create(ctx, user); err != nil {
+		t.Fatalf("store user fixture: %v", err)
+	}
+
+	createdAt := now.Format(time.RFC3339Nano)
+	expiresAt := now.Add(time.Hour).Format(time.RFC3339Nano)
+	if _, err := database.ExecContext(
+		ctx,
+		`INSERT INTO password_credentials (user_id, password_hash, created_at, updated_at)
+		 VALUES (?, ?, ?, ?)`,
+		user.ID,
+		"$argon2id$fixture",
+		createdAt,
+		createdAt,
+	); err != nil {
+		t.Fatalf("insert credential fixture: %v", err)
+	}
+	if _, err := database.ExecContext(
+		ctx,
+		`INSERT INTO sessions
+		 (token_hash, user_id, created_at, last_seen_at, expires_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		bytes.Repeat([]byte{1}, 32),
+		user.ID,
+		createdAt,
+		createdAt,
+		expiresAt,
+	); err != nil {
+		t.Fatalf("insert session fixture: %v", err)
+	}
+	if _, err := database.ExecContext(
+		ctx,
+		`INSERT INTO password_enrollments
+		 (user_id, token_hash, created_at, expires_at)
+		 VALUES (?, ?, ?, ?)`,
+		user.ID,
+		bytes.Repeat([]byte{2}, 32),
+		createdAt,
+		expiresAt,
+	); err != nil {
+		t.Fatalf("insert enrollment fixture: %v", err)
+	}
+
+	if err := repository.DeletePreservingLastAdministrator(ctx, user.ID); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+	for _, table := range []string{
+		"password_enrollments",
+		"sessions",
+		"password_credentials",
+		"users",
+	} {
+		var count int
+		if err := database.QueryRowContext(
+			ctx,
+			"SELECT COUNT(*) FROM "+table+" WHERE "+userReferenceColumn(table)+" = ?",
+			user.ID,
+		).Scan(&count); err != nil {
+			t.Fatalf("count %s records: %v", table, err)
+		}
+		if count != 0 {
+			t.Errorf("expected no %s records, got %d", table, count)
+		}
+	}
+}
+
+func userReferenceColumn(argTable string) string {
+	if argTable == "users" {
+		return "id"
+	}
+
+	return "user_id"
+}
 
 func TestUserRepositoryCreatesAndFindsUserByID(t *testing.T) {
 	t.Parallel()
@@ -607,5 +707,179 @@ func TestUserRepositorySerializesConcurrentAdministratorRemoval(
 			successCount,
 			protectedCount,
 		)
+	}
+}
+
+func TestUserRepositoryProtectsLastAdministratorDeletion(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlitestore.Open(
+		ctx,
+		filepath.Join(t.TempDir(), "repository.db"),
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+
+	repository := sqlitestore.NewUserRepository(database)
+	administrator, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"last_admin",
+		"Last Administrator",
+		identity.RoleAdmin,
+		time.Date(2026, time.September, 9, 10, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatalf("create administrator fixture: %v", err)
+	}
+	if err := repository.Create(ctx, administrator); err != nil {
+		t.Fatalf("store administrator fixture: %v", err)
+	}
+
+	err = repository.DeletePreservingLastAdministrator(ctx, administrator.ID)
+	if !errors.Is(err, identity.ErrLastAdministrator) {
+		t.Fatalf("expected ErrLastAdministrator, got %v", err)
+	}
+	if _, err := repository.FindByID(ctx, administrator.ID); err != nil {
+		t.Fatalf("expected protected administrator to remain: %v", err)
+	}
+}
+
+func TestUserRepositorySerializesConcurrentAdministratorDeletion(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlitestore.Open(
+		ctx,
+		filepath.Join(t.TempDir(), "repository.db"),
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+
+	repository := sqlitestore.NewUserRepository(database)
+	administratorIDs := []string{
+		"123e4567-e89b-12d3-a456-426614174000",
+		"123e4567-e89b-12d3-a456-426614174001",
+	}
+	for index, id := range administratorIDs {
+		administrator, err := identity.NewUser(
+			id,
+			fmt.Sprintf("delete_admin_%d", index),
+			"Deletion Administrator",
+			identity.RoleAdmin,
+			time.Date(2026, time.September, 9, 10, 0, index, 0, time.UTC),
+		)
+		if err != nil {
+			t.Fatalf("create administrator fixture: %v", err)
+		}
+		if err := repository.Create(ctx, administrator); err != nil {
+			t.Fatalf("store administrator fixture: %v", err)
+		}
+	}
+
+	results := make(chan error, len(administratorIDs))
+	var waitGroup sync.WaitGroup
+	for _, id := range administratorIDs {
+		waitGroup.Add(1)
+		go func(argID string) {
+			defer waitGroup.Done()
+			results <- repository.DeletePreservingLastAdministrator(ctx, argID)
+		}(id)
+	}
+	waitGroup.Wait()
+	close(results)
+
+	successCount := 0
+	protectedCount := 0
+	for result := range results {
+		switch {
+		case result == nil:
+			successCount++
+		case errors.Is(result, identity.ErrLastAdministrator):
+			protectedCount++
+		default:
+			t.Fatalf("unexpected concurrent deletion error: %v", result)
+		}
+	}
+	if successCount != 1 || protectedCount != 1 {
+		t.Fatalf(
+			"expected one deletion and one protected administrator, got %d and %d",
+			successCount,
+			protectedCount,
+		)
+	}
+}
+
+func TestUserRepositoryRollsBackRelatedDeletionOnUserFailure(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlitestore.Open(
+		ctx,
+		filepath.Join(t.TempDir(), "repository.db"),
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+
+	repository := sqlitestore.NewUserRepository(database)
+	user, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"rollback_user",
+		"Rollback User",
+		identity.RoleViewer,
+		time.Date(2026, time.September, 9, 10, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatalf("create user fixture: %v", err)
+	}
+	if err := repository.Create(ctx, user); err != nil {
+		t.Fatalf("store user fixture: %v", err)
+	}
+	if _, err := database.ExecContext(
+		ctx,
+		`INSERT INTO password_credentials (user_id, password_hash, created_at, updated_at)
+		 VALUES (?, '$argon2id$fixture', ?, ?)`,
+		user.ID,
+		user.CreatedAt.Format(time.RFC3339Nano),
+		user.UpdatedAt.Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("insert credential fixture: %v", err)
+	}
+	if _, err := database.ExecContext(
+		ctx,
+		`CREATE TRIGGER reject_test_user_deletion
+		 BEFORE DELETE ON users
+		 BEGIN
+		   SELECT RAISE(ABORT, 'synthetic deletion failure');
+		 END`,
+	); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	if err := repository.DeletePreservingLastAdministrator(ctx, user.ID); err == nil {
+		t.Fatal("expected deletion failure")
+	}
+	var credentialCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM password_credentials WHERE user_id = ?`,
+		user.ID,
+	).Scan(&credentialCount); err != nil {
+		t.Fatalf("count rolled-back credentials: %v", err)
+	}
+	if credentialCount != 1 {
+		t.Fatalf("expected credential rollback, got %d records", credentialCount)
+	}
+	if _, err := repository.FindByID(ctx, user.ID); err != nil {
+		t.Fatalf("expected user rollback: %v", err)
 	}
 }

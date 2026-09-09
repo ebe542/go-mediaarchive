@@ -197,6 +197,71 @@ func (repository *UserRepository) UpdatePreservingLastAdministrator(
 	return nil
 }
 
+// DeletePreservingLastAdministrator atomically deletes authentication records
+// and a user without removing the last active administrator.
+func (repository *UserRepository) DeletePreservingLastAdministrator(
+	argContext context.Context,
+	argID string,
+) error {
+	transaction, err := repository.database.BeginTx(argContext, nil)
+	if err != nil {
+		return fmt.Errorf("begin protected user deletion: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	existingUser, err := findUserByID(argContext, transaction, argID)
+	if err != nil {
+		return err
+	}
+	if existingUser.Active && existingUser.Role == identity.RoleAdmin {
+		var activeAdministratorCount int
+		if err := transaction.QueryRowContext(
+			argContext,
+			`SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1`,
+		).Scan(&activeAdministratorCount); err != nil {
+			return fmt.Errorf("count active administrators: %w", err)
+		}
+		if activeAdministratorCount <= 1 {
+			return identity.ErrLastAdministrator
+		}
+	}
+
+	relatedDeletes := []struct {
+		name  string
+		query string
+	}{
+		{"password_enrollments", `DELETE FROM password_enrollments WHERE user_id = ?`},
+		{"sessions", `DELETE FROM sessions WHERE user_id = ?`},
+		{"password_credentials", `DELETE FROM password_credentials WHERE user_id = ?`},
+	}
+	for _, relatedDelete := range relatedDeletes {
+		if _, err := transaction.ExecContext(
+			argContext,
+			relatedDelete.query,
+			argID,
+		); err != nil {
+			return fmt.Errorf(
+				"delete user records from %s: %w",
+				relatedDelete.name,
+				err,
+			)
+		}
+	}
+
+	if _, err := transaction.ExecContext(
+		argContext,
+		`DELETE FROM users WHERE id = ?`,
+		argID,
+	); err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit protected user deletion: %w", err)
+	}
+
+	return nil
+}
+
 func updateUser(
 	argContext context.Context,
 	argExecutor statementExecutor,

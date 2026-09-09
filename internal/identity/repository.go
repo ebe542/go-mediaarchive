@@ -28,4 +28,8 @@ type UserRepository interface {
 		argContext context.Context,
 		argUser User,
 	) error
+	DeletePreservingLastAdministrator(
+		argContext context.Context,
+		argID string,
+	) error
 }
