@@ -18,7 +18,7 @@ verifiable increments.
 | `milestone-011` | [Password credential lifecycle](011-password-credential-lifecycle.md) | Complete |
 | `milestone-012` | [Paginated user directory](012-paginated-user-directory.md) | Complete |
 | `milestone-013` | [Interactive command-line tools](013-interactive-command-line-tools.md) | Complete |
-| `milestone-014` | [Safe user deletion](014-safe-user-deletion.md) | In progress |
+| `milestone-014` | [Safe user deletion](014-safe-user-deletion.md) | Complete |
 
 ## Versioning rule
 

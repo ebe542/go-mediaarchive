@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 14 is in progress. The project currently provides:
+Milestone 14 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -27,6 +27,8 @@ Milestone 14 is in progress. The project currently provides:
 - authenticated request identities and role-protected user read endpoints;
 - administrator-only user creation, updates, safe activation management, and
   paginated directory access;
+- irreversible administrator-only user deletion with confirmation,
+  authentication-data cleanup, and last-administrator protection;
 - one-time initial password enrollment and authenticated password changes;
 - a repeatable milestone verification script.
 
