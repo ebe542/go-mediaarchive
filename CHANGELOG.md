@@ -20,7 +20,8 @@ checkpoints.
 - Administrator-only user directory with bounded keyset pagination.
 - One-time password enrollment and authenticated password changes with
   automatic session revocation.
-- CLI applications for server administration and health checks.
+- Interactive end-user and administrator CLI applications with in-memory
+  sessions and complete user-management commands.
 - Generated Go package architecture and SQLite database documentation.
 - Quality Gate and semantic-version release automation.
 

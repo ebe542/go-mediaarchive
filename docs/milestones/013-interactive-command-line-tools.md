@@ -114,9 +114,9 @@ are checked continuously only after implementation and tests prove them.
 - [x] Logout and normal console exit revoke active sessions.
 - [x] Password changes clear local authentication.
 - [x] Pagination state remains in memory and supports first/next navigation.
-- [ ] A central command reference documents complete example workflows.
-- [ ] Standard milestone checks pass.
-- [ ] Local CI checks pass.
+- [x] A central command reference documents complete example workflows.
+- [x] Standard milestone checks pass.
+- [x] Local CI checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-013` tag; it is verified after the final milestone commit.

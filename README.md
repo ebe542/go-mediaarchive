@@ -10,14 +10,14 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 12 is complete. The project currently provides:
+Milestone 13 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
 - an automated HTTP handler test;
 - an executable HTTP server with explicit timeouts and graceful shutdown;
 - a typed HTTP client with response validation, cancellation, and timeouts;
-- an executable CLI with a `health` command and explicit exit codes;
+- interactive end-user and administrator consoles with in-memory sessions;
 - a CGO-free SQLite foundation with WAL, foreign keys, and embedded migrations;
 - persistent user identities with global roles and a SQLite repository;
 - a storage-independent application service for user administration;
@@ -142,7 +142,8 @@ variables.
 
 Bootstrap succeeds only while the database contains no users. It atomically
 creates the initial administrator and password credential. Subsequent user
-administration will require authenticated and authorized API operations.
+administration requires authenticated and authorized API operations through the
+administrator console.
 
 ## Verify a milestone
 
@@ -195,8 +196,10 @@ authorization.
 
 See [Project goals](docs/project-goals.md), the
 [milestone overview](docs/milestones/README.md), and the
-[architecture overview](docs/architecture.md) for details. Product versioning
-and binary publication are described in [Releases](docs/releases.md).
+[architecture overview](docs/architecture.md) for details. All program,
+interactive-console, verification, and release commands are collected in the
+[Command reference](docs/commands.md). Product versioning and binary publication
+are described in [Releases](docs/releases.md).
 Notable product changes are recorded in the [Changelog](CHANGELOG.md).
 
 ## License
