@@ -159,6 +159,29 @@ func TestSetUserActive(t *testing.T) {
 	assertUser(t, user, false)
 }
 
+func TestDeleteUser(t *testing.T) {
+	server := newJSONServer(t, func(response http.ResponseWriter, request *http.Request) {
+		assertRequest(
+			t,
+			request,
+			http.MethodDelete,
+			"/api/v1/users/user-id",
+			"access-token",
+		)
+		response.WriteHeader(http.StatusNoContent)
+	})
+	defer server.Close()
+
+	apiClient := client.New(server.URL, server.Client())
+	if err := apiClient.DeleteUser(
+		context.Background(),
+		"access-token",
+		"user-id",
+	); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+}
+
 func writeUser(
 	argTest *testing.T,
 	argResponse http.ResponseWriter,

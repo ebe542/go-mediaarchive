@@ -27,6 +27,11 @@ type UserWriter interface {
 		argID string,
 		argActive bool,
 	) (identity.User, error)
+	DeleteUser(
+		argContext context.Context,
+		argActorID string,
+		argID string,
+	) error
 }
 
 // WithUserManagementAPI enables administrator-only user mutation endpoints.
@@ -180,6 +185,36 @@ func (handler *userWriteHandler) setUserActive(
 	writeUserResponse(argResponse, updatedUser)
 }
 
+func (handler *userWriteHandler) deleteUser(
+	argResponse http.ResponseWriter,
+	argRequest *http.Request,
+) {
+	actor, exists := AuthenticatedUser(argRequest.Context())
+	if !exists {
+		writeJSONError(
+			argResponse,
+			http.StatusInternalServerError,
+			"internal_error",
+			"Internal server error.",
+		)
+
+		return
+	}
+
+	if err := handler.users.DeleteUser(
+		argRequest.Context(),
+		actor.ID,
+		argRequest.PathValue("id"),
+	); err != nil {
+		writeUserApplicationError(argResponse, err)
+
+		return
+	}
+
+	argResponse.Header().Set("Cache-Control", "no-store")
+	argResponse.WriteHeader(http.StatusNoContent)
+}
+
 func writeInvalidRequest(argResponse http.ResponseWriter) {
 	writeJSONError(
 		argResponse,
@@ -216,6 +251,13 @@ func writeUserApplicationError(
 			http.StatusConflict,
 			"self_lockout",
 			"An administrator cannot remove their own access.",
+		)
+	case errors.Is(argError, appusers.ErrSelfDeletion):
+		writeJSONError(
+			argResponse,
+			http.StatusConflict,
+			"self_deletion",
+			"An administrator cannot delete their own identity.",
 		)
 	case errors.Is(argError, identity.ErrLastAdministrator):
 		writeJSONError(

@@ -227,3 +227,21 @@ func (client *Client) SetUserActive(
 
 	return user, nil
 }
+
+// DeleteUser permanently removes a user identity and its authentication data.
+func (client *Client) DeleteUser(
+	argContext context.Context,
+	argAccessToken string,
+	argID string,
+) error {
+	return client.doJSON(
+		argContext,
+		http.MethodDelete,
+		"/api/v1/users/"+url.PathEscape(argID),
+		argAccessToken,
+		nil,
+		http.StatusNoContent,
+		nil,
+		"delete user",
+	)
+}

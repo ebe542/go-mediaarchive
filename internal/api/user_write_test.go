@@ -26,9 +26,11 @@ type recordingUserWriter struct {
 	createError error
 	updateError error
 	activeError error
+	deleteError error
 	createCalls int
 	updateCalls int
 	activeCalls int
+	deleteCalls int
 }
 
 func (writer *recordingUserWriter) CreateUser(
@@ -67,6 +69,18 @@ func (writer *recordingUserWriter) SetUserActive(
 	writer.active = argActive
 
 	return writer.activeUser, writer.activeError
+}
+
+func (writer *recordingUserWriter) DeleteUser(
+	argContext context.Context,
+	argActorID string,
+	argID string,
+) error {
+	writer.deleteCalls++
+	writer.actorID = argActorID
+	writer.targetID = argID
+
+	return writer.deleteError
 }
 
 func administratorResolver() *recordingSessionResolver {
@@ -214,6 +228,7 @@ func TestUserMutationEndpointsRequireAdministrator(t *testing.T) {
 		"create":     {http.MethodPost, "/api/v1/users", `{"username":"new_user","displayName":"New User","role":"viewer"}`},
 		"update":     {http.MethodPut, "/api/v1/users/bc3516f0-a8e5-45b9-9004-b2f402880c97", `{"username":"new_user","displayName":"New User","role":"viewer"}`},
 		"activation": {http.MethodPut, "/api/v1/users/bc3516f0-a8e5-45b9-9004-b2f402880c97/active", `{"active":false}`},
+		"delete":     {http.MethodDelete, "/api/v1/users/bc3516f0-a8e5-45b9-9004-b2f402880c97", ""},
 	}
 
 	for name, testCase := range testCases {
@@ -230,7 +245,7 @@ func TestUserMutationEndpointsRequireAdministrator(t *testing.T) {
 			if response.Code != http.StatusForbidden {
 				t.Fatalf("expected status %d, got %d", http.StatusForbidden, response.Code)
 			}
-			if writer.createCalls+writer.updateCalls+writer.activeCalls != 0 {
+			if writer.createCalls+writer.updateCalls+writer.activeCalls+writer.deleteCalls != 0 {
 				t.Fatal("expected forbidden request not to reach user service")
 			}
 		})
@@ -296,10 +311,11 @@ func TestSetUserActiveEndpointRequiresActiveField(t *testing.T) {
 	}
 }
 
-func TestUserDeletionRemainsUnavailable(t *testing.T) {
+func TestDeleteUserEndpointPassesActorAndTarget(t *testing.T) {
 	writer := &recordingUserWriter{}
+	resolver := administratorResolver()
 	handler := api.NewHandler(
-		api.WithUserManagementAPI(administratorResolver(), writer),
+		api.WithUserManagementAPI(resolver, writer),
 	)
 	request := httptest.NewRequest(
 		http.MethodDelete,
@@ -310,15 +326,71 @@ func TestUserDeletionRemainsUnavailable(t *testing.T) {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusMethodNotAllowed {
+	if response.Code != http.StatusNoContent {
 		t.Fatalf(
 			"expected status %d, got %d",
-			http.StatusMethodNotAllowed,
+			http.StatusNoContent,
 			response.Code,
 		)
 	}
-	if writer.createCalls+writer.updateCalls+writer.activeCalls != 0 {
-		t.Fatal("expected delete request not to reach user service")
+	if cacheControl := response.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("expected no-store cache control, got %q", cacheControl)
+	}
+	if response.Body.Len() != 0 {
+		t.Fatalf("expected an empty response body, got %q", response.Body.String())
+	}
+	if writer.deleteCalls != 1 {
+		t.Fatalf("expected one delete call, got %d", writer.deleteCalls)
+	}
+	if writer.actorID != resolver.user.ID ||
+		writer.targetID != "bc3516f0-a8e5-45b9-9004-b2f402880c97" {
+		t.Fatal("expected authenticated actor and path target to reach user service")
+	}
+}
+
+func TestDeleteUserEndpointMapsApplicationErrors(t *testing.T) {
+	testCases := map[string]struct {
+		err       error
+		status    int
+		errorCode string
+	}{
+		"invalid ID":         {identity.ErrInvalidUserID, http.StatusBadRequest, "invalid_request"},
+		"not found":          {identity.ErrUserNotFound, http.StatusNotFound, "not_found"},
+		"self deletion":      {appusers.ErrSelfDeletion, http.StatusConflict, "self_deletion"},
+		"last administrator": {identity.ErrLastAdministrator, http.StatusConflict, "last_administrator"},
+		"internal error":     {errors.New("database unavailable"), http.StatusInternalServerError, "internal_error"},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			writer := &recordingUserWriter{deleteError: testCase.err}
+			handler := api.NewHandler(
+				api.WithUserManagementAPI(administratorResolver(), writer),
+			)
+			request := authenticatedJSONRequest(
+				http.MethodDelete,
+				"/api/v1/users/bc3516f0-a8e5-45b9-9004-b2f402880c97",
+				"",
+			)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+
+			if response.Code != testCase.status {
+				t.Fatalf("expected status %d, got %d", testCase.status, response.Code)
+			}
+
+			var body struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+			if body.Error.Code != testCase.errorCode {
+				t.Fatalf("expected error code %q, got %q", testCase.errorCode, body.Error.Code)
+			}
+		})
 	}
 }
 

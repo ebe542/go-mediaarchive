@@ -61,14 +61,14 @@ Each step is delivered as a complete Conventional Commit.
 - [x] Authentication records and the user are deleted atomically.
 - [x] The last active administrator cannot be deleted.
 - [x] Concurrent administrator deletions preserve one active administrator.
-- [ ] Only administrators can use the deletion endpoint.
-- [ ] Successful API deletion returns HTTP 204.
-- [ ] The typed client supports user deletion.
+- [x] Only administrators can use the deletion endpoint.
+- [x] Successful API deletion returns HTTP 204.
+- [x] The typed client supports user deletion.
 - [ ] The administrator console requires exact username confirmation.
 - [ ] Invalid confirmation repeats only the affected prompt.
 - [ ] Command and lifecycle documentation describes permanent deletion.
-- [ ] Standard milestone checks pass.
-- [ ] Local CI checks pass.
+- [x] Standard milestone checks pass.
+- [x] Local CI checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-014` tag after all milestone commits are complete.

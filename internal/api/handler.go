@@ -96,6 +96,10 @@ func NewHandler(argOptions ...Option) http.Handler {
 			"PUT /api/v1/users/{id}/active",
 			administratorOnly(http.HandlerFunc(users.setUserActive)),
 		)
+		mux.Handle(
+			"DELETE /api/v1/users/{id}",
+			administratorOnly(http.HandlerFunc(users.deleteUser)),
+		)
 	}
 
 	if configuration.passwordEnrollmentResolver != nil &&

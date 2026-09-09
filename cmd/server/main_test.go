@@ -821,4 +821,37 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 			)
 		}
 	}
+
+	deleteUserRequest := httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/users/"+createdUserBody.ID,
+		nil,
+	)
+	deleteUserRequest.Header.Set(
+		"Authorization",
+		"Bearer "+body.AccessToken,
+	)
+	deleteUserResponse := httptest.NewRecorder()
+	handler.ServeHTTP(deleteUserResponse, deleteUserRequest)
+
+	if deleteUserResponse.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected delete user status %d, got %d: %s",
+			http.StatusNoContent,
+			deleteUserResponse.Code,
+			deleteUserResponse.Body.String(),
+		)
+	}
+
+	var deletedUserCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM users WHERE id = ?`,
+		createdUserBody.ID,
+	).Scan(&deletedUserCount); err != nil {
+		t.Fatalf("count deleted users: %v", err)
+	}
+	if deletedUserCount != 0 {
+		t.Fatalf("expected deleted user to be absent, got %d records", deletedUserCount)
+	}
 }
