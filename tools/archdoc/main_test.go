@@ -57,6 +57,20 @@ func TestIsProductPackage(t *testing.T) {
 	}
 }
 
+func TestGroupForPackageClassifiesClientAdapters(t *testing.T) {
+	importPaths := []string{
+		"example.com/mediaarchive/internal/cli",
+		"example.com/mediaarchive/internal/client",
+	}
+
+	for _, importPath := range importPaths {
+		group := groupForPackage("example.com/mediaarchive", importPath)
+		if group != "client" {
+			t.Errorf("expected client group for %q, got %q", importPath, group)
+		}
+	}
+}
+
 func TestGenerateDocumentSortsPackagesAndIncludesInternalImports(t *testing.T) {
 	moduleDirectory := t.TempDir()
 	module := &listedModule{

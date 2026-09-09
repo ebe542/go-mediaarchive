@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	sharedcli "github.com/ebe542/go-mediaarchive/internal/cli"
 	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
@@ -253,7 +254,9 @@ func TestAdminConsoleRunsUserManagementScenario(t *testing.T) {
 		!strings.Contains(output.String(), "archive_admin@mediaarchive-admin> ") ||
 		!strings.Contains(
 			output.String(),
-			formatAdminLocalTime(time.Date(2026, time.September, 8, 13, 0, 0, 0, time.UTC)),
+			sharedcli.FormatLocalTime(
+				time.Date(2026, time.September, 8, 13, 0, 0, 0, time.UTC),
+			),
 		) {
 		t.Errorf("unexpected output: %q", output.String())
 	}

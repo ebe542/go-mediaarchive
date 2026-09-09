@@ -36,56 +36,60 @@ flowchart LR
     package8["internal/application/users"]
   end
   subgraph domain["Domain"]
-    package10["internal/credential"]
-    package11["internal/identity"]
-    package12["internal/password"]
-    package13["internal/session"]
+    package11["internal/credential"]
+    package12["internal/identity"]
+    package13["internal/password"]
+    package14["internal/session"]
   end
   subgraph infrastructure["Infrastructure"]
-    package14["internal/storage/sqlite"]
+    package15["internal/storage/sqlite"]
   end
   subgraph client["Client"]
-    package9["internal/client"]
+    package9["internal/cli"]
+    package10["internal/client"]
   end
   package0 --> package5
   package0 --> package9
-  package0 --> package11
+  package0 --> package10
   package0 --> package12
-  package0 --> package14
+  package0 --> package13
+  package0 --> package15
   package1 --> package9
+  package1 --> package10
   package2 --> package3
   package2 --> package4
   package2 --> package6
   package2 --> package7
   package2 --> package8
-  package2 --> package10
-  package2 --> package12
+  package2 --> package11
   package2 --> package13
   package2 --> package14
+  package2 --> package15
   package3 --> package4
   package3 --> package6
   package3 --> package7
   package3 --> package8
-  package3 --> package10
   package3 --> package11
   package3 --> package12
-  package4 --> package10
+  package3 --> package13
   package4 --> package11
-  package5 --> package10
+  package4 --> package12
   package5 --> package11
   package5 --> package12
-  package6 --> package10
+  package5 --> package13
   package6 --> package11
   package6 --> package12
-  package7 --> package11
-  package7 --> package13
-  package8 --> package11
-  package9 --> package11
-  package10 --> package11
-  package14 --> package8
-  package14 --> package10
-  package14 --> package11
-  package14 --> package13
+  package6 --> package13
+  package7 --> package12
+  package7 --> package14
+  package8 --> package12
+  package9 --> package10
+  package10 --> package12
+  package11 --> package12
+  package15 --> package8
+  package15 --> package11
+  package15 --> package12
+  package15 --> package14
 ```
 
 ## Modules
@@ -101,6 +105,7 @@ flowchart LR
 | [`internal/application/passwords`](../internal/application/passwords) | Application services | Package passwords coordinates password enrollment and credential lifecycle. |
 | [`internal/application/sessions`](../internal/application/sessions) | Application services | Package sessions coordinates authenticated server-side sessions. |
 | [`internal/application/users`](../internal/application/users) | Application services | Package users coordinates user identity application operations. |
+| [`internal/cli`](../internal/cli) | Client | Package cli provides shared primitives for interactive command-line tools. |
 | [`internal/client`](../internal/client) | Client | Package client provides a typed client for the Media Archive REST API. |
 | [`internal/credential`](../internal/credential) | Domain | Package credential defines authentication credentials independently of users. |
 | [`internal/identity`](../internal/identity) | Domain | Package identity defines users and global security roles. |

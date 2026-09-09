@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 )
 
 func TestRunHealthCommand(t *testing.T) {
@@ -143,7 +145,7 @@ func TestServerURLFromEnvironment(t *testing.T) {
 
 func TestNewHTTPClientRejectsCustomCAForPlainHTTP(t *testing.T) {
 
-	_, err := newHTTPClient(
+	_, err := apiclient.NewHTTPClient(
 		"http://127.0.0.1:8080",
 		"test-ca.pem",
 	)
@@ -180,7 +182,7 @@ func TestNewHTTPClientTrustsCustomCA(t *testing.T) {
 		t.Fatalf("write test CA certificate: %v", err)
 	}
 
-	httpClient, err := newHTTPClient(
+	httpClient, err := apiclient.NewHTTPClient(
 		server.URL,
 		certificatePath,
 	)
@@ -282,7 +284,7 @@ func TestNewHTTPClientRejectsUntrustedCertificate(t *testing.T) {
 	))
 	t.Cleanup(server.Close)
 
-	httpClient, err := newHTTPClient(server.URL, "")
+	httpClient, err := apiclient.NewHTTPClient(server.URL, "")
 	if err != nil {
 		t.Fatalf("create default HTTP client: %v", err)
 	}

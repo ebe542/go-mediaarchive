@@ -3,14 +3,10 @@ package main
 import (
 	"context"
 	"crypto/subtle"
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -20,6 +16,7 @@ import (
 	"golang.org/x/term"
 
 	adminbootstrap "github.com/ebe542/go-mediaarchive/internal/application/bootstrap"
+	sharedcli "github.com/ebe542/go-mediaarchive/internal/cli"
 	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/password"
@@ -188,7 +185,7 @@ func run(
 		return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
 	}
 
-	httpClient, err := newHTTPClient(*serverURL, *caCertificatePath)
+	httpClient, err := apiclient.NewHTTPClient(*serverURL, *caCertificatePath)
 	if err != nil {
 		return fmt.Errorf("configure HTTP client: %w", err)
 	}
@@ -271,7 +268,7 @@ func runBootstrap(
 	if err != nil {
 		return fmt.Errorf("read password: %w", err)
 	}
-	defer clearBytes(plainPassword)
+	defer sharedcli.ClearSecret(plainPassword)
 
 	fmt.Fprint(argStderr, "Confirm password: ")
 	confirmedPassword, err := argReadPassword()
@@ -279,7 +276,7 @@ func runBootstrap(
 	if err != nil {
 		return fmt.Errorf("read password confirmation: %w", err)
 	}
-	defer clearBytes(confirmedPassword)
+	defer sharedcli.ClearSecret(confirmedPassword)
 
 	if subtle.ConstantTimeCompare(
 		plainPassword,
@@ -320,52 +317,4 @@ func serverURLFromEnvironment(argGetenv func(string) string) string {
 	}
 
 	return defaultServerURL
-}
-
-func newHTTPClient(
-	argServerURL string,
-	argCACertificatePath string,
-) (*http.Client, error) {
-	if argCACertificatePath == "" {
-		return http.DefaultClient, nil
-	}
-
-	parsedURL, err := url.Parse(argServerURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse server URL: %w", err)
-	}
-	if parsedURL.Scheme != "https" {
-		return nil, errors.New(
-			"a custom CA certificate requires an HTTPS server URL",
-		)
-	}
-
-	certificatePEM, err := os.ReadFile(argCACertificatePath)
-	if err != nil {
-		return nil, fmt.Errorf("read CA certificate: %w", err)
-	}
-
-	rootCAs, err := x509.SystemCertPool()
-	if err != nil {
-		return nil, fmt.Errorf("load system certificate authorities: %w", err)
-	}
-	if !rootCAs.AppendCertsFromPEM(certificatePEM) {
-		return nil, errors.New(
-			"CA certificate file contains no valid certificates",
-		)
-	}
-
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{
-		MinVersion: tls.VersionTLS13,
-		RootCAs:    rootCAs,
-	}
-
-	return &http.Client{Transport: transport}, nil
-}
-
-func clearBytes(argValue []byte) {
-	for index := range argValue {
-		argValue[index] = 0
-	}
 }

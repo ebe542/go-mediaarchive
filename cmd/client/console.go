@@ -1,19 +1,16 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
 
+	sharedcli "github.com/ebe542/go-mediaarchive/internal/cli"
 	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 )
-
-const anonymousUsername = "anonymous"
 
 type userAPI interface {
 	Health(context.Context) (apiclient.HealthStatus, error)
@@ -24,17 +21,16 @@ type userAPI interface {
 	ChangePassword(context.Context, string, []byte, []byte) error
 }
 
-type secretReader func(string) ([]byte, error)
+type secretReader = sharedcli.SecretReader
 
 type userConsole struct {
 	api           userAPI
-	input         io.Reader
+	input         *sharedcli.LineReader
 	output        io.Writer
 	errorOutput   io.Writer
-	readSecret    secretReader
+	readSecret    sharedcli.SecretReader
 	logoutTimeout time.Duration
-	accessToken   string
-	username      string
+	session       *sharedcli.Session
 }
 
 func newUserConsole(
@@ -47,11 +43,12 @@ func newUserConsole(
 ) *userConsole {
 	return &userConsole{
 		api:           argAPI,
-		input:         argInput,
+		input:         sharedcli.NewLineReader(argInput),
 		output:        argOutput,
 		errorOutput:   argErrorOutput,
 		readSecret:    argReadSecret,
 		logoutTimeout: argLogoutTimeout,
+		session:       sharedcli.NewSession("mediaarchive"),
 	}
 }
 
@@ -60,12 +57,13 @@ func (console *userConsole) run(argContext context.Context) error {
 	fmt.Fprintln(console.output, "Media Archive interactive client")
 	fmt.Fprintln(console.output, "Type 'help' to list available commands.")
 
-	scanner := bufio.NewScanner(console.input)
 	defer console.logoutOnExit()
 	for {
-		fmt.Fprint(console.output, console.prompt())
-
-		line, available, err := scanCommand(argContext, scanner)
+		line, available, err := console.input.Read(
+			argContext,
+			console.output,
+			console.session.Prompt(),
+		)
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(console.output)
 
@@ -85,43 +83,6 @@ func (console *userConsole) run(argContext context.Context) error {
 		if exit {
 			return nil
 		}
-	}
-}
-
-func (console *userConsole) prompt() string {
-	username := console.username
-	if username == "" {
-		username = anonymousUsername
-	}
-
-	return fmt.Sprintf("%s@mediaarchive> ", username)
-}
-
-type commandScan struct {
-	line      string
-	available bool
-	err       error
-}
-
-func scanCommand(
-	argContext context.Context,
-	argScanner *bufio.Scanner,
-) (string, bool, error) {
-	result := make(chan commandScan, 1)
-	go func() {
-		available := argScanner.Scan()
-		result <- commandScan{
-			line:      argScanner.Text(),
-			available: available,
-			err:       argScanner.Err(),
-		}
-	}()
-
-	select {
-	case <-argContext.Done():
-		return "", false, argContext.Err()
-	case scanned := <-result:
-		return scanned.line, scanned.available, scanned.err
 	}
 }
 
@@ -193,15 +154,19 @@ func (console *userConsole) login(
 	argContext context.Context,
 	argUsername string,
 ) error {
-	if console.accessToken != "" {
+	if console.session.Authenticated() {
 		return errors.New("already logged in; log out before starting another session")
 	}
 
-	password, err := console.readRequiredSecret("Password: ")
+	password, err := sharedcli.ReadRequiredSecret(
+		console.readSecret,
+		"Password: ",
+		console.printError,
+	)
 	if err != nil {
 		return fmt.Errorf("read password: %w", err)
 	}
-	defer clearSecret(password)
+	defer sharedcli.ClearSecret(password)
 
 	session, err := console.api.Login(argContext, argUsername, password)
 	if err != nil {
@@ -213,22 +178,21 @@ func (console *userConsole) login(
 
 		return fmt.Errorf("get authenticated user: %w", err)
 	}
-	console.accessToken = session.AccessToken
-	console.username = user.Username
+	console.session.Set(user.Username, session.AccessToken)
 	fmt.Fprintf(console.output, "Logged in as %s.\n", user.Username)
 
 	return nil
 }
 
 func (console *userConsole) logout(argContext context.Context) error {
-	if console.accessToken == "" {
+	if !console.session.Authenticated() {
 		return errors.New("not logged in")
 	}
-	if err := console.api.Logout(argContext, console.accessToken); err != nil {
+	if err := console.api.Logout(argContext, console.session.AccessToken()); err != nil {
 		return fmt.Errorf("logout: %w", err)
 	}
 
-	console.clearSession()
+	console.session.Clear()
 	fmt.Fprintln(console.output, "Logged out.")
 
 	return nil
@@ -243,33 +207,28 @@ func (console *userConsole) revokeUnusableSession(argAccessToken string) {
 }
 
 func (console *userConsole) logoutOnExit() {
-	if console.accessToken == "" {
+	if !console.session.Authenticated() {
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), console.logoutTimeout)
 	defer cancel()
-	if err := console.api.Logout(ctx, console.accessToken); err != nil {
+	if err := console.api.Logout(ctx, console.session.AccessToken()); err != nil {
 		console.printError(fmt.Errorf("logout during exit: %w", err))
 	}
-	console.clearSession()
-}
-
-func (console *userConsole) clearSession() {
-	console.accessToken = ""
-	console.username = ""
+	console.session.Clear()
 }
 
 func (console *userConsole) me(argContext context.Context) error {
-	if console.accessToken == "" {
+	if !console.session.Authenticated() {
 		return errors.New("not logged in")
 	}
 
-	user, err := console.api.CurrentUser(argContext, console.accessToken)
+	user, err := console.api.CurrentUser(argContext, console.session.AccessToken())
 	if err != nil {
 		return fmt.Errorf("get current user: %w", err)
 	}
-	printUser(console.output, user)
+	sharedcli.PrintUser(console.output, user)
 
 	return nil
 }
@@ -293,21 +252,28 @@ func (console *userConsole) password(
 }
 
 func (console *userConsole) enrollPassword(argContext context.Context) error {
-	if console.accessToken != "" {
+	if console.session.Authenticated() {
 		return errors.New("log out before enrolling a password")
 	}
 
-	token, err := console.readRequiredSecret("Enrollment token: ")
+	token, err := sharedcli.ReadRequiredSecret(
+		console.readSecret,
+		"Enrollment token: ",
+		console.printError,
+	)
 	if err != nil {
 		return fmt.Errorf("read enrollment token: %w", err)
 	}
-	defer clearSecret(token)
+	defer sharedcli.ClearSecret(token)
 
-	password, err := console.confirmedPassword()
+	password, err := sharedcli.ReadConfirmedSecret(
+		console.readSecret,
+		console.printError,
+	)
 	if err != nil {
 		return err
 	}
-	defer clearSecret(password)
+	defer sharedcli.ClearSecret(password)
 
 	if err := console.api.CompletePasswordEnrollment(
 		argContext,
@@ -322,25 +288,32 @@ func (console *userConsole) enrollPassword(argContext context.Context) error {
 }
 
 func (console *userConsole) changePassword(argContext context.Context) error {
-	if console.accessToken == "" {
+	if !console.session.Authenticated() {
 		return errors.New("not logged in")
 	}
 
-	currentPassword, err := console.readRequiredSecret("Current password: ")
+	currentPassword, err := sharedcli.ReadRequiredSecret(
+		console.readSecret,
+		"Current password: ",
+		console.printError,
+	)
 	if err != nil {
 		return fmt.Errorf("read current password: %w", err)
 	}
-	defer clearSecret(currentPassword)
+	defer sharedcli.ClearSecret(currentPassword)
 
-	newPassword, err := console.confirmedPassword()
+	newPassword, err := sharedcli.ReadConfirmedSecret(
+		console.readSecret,
+		console.printError,
+	)
 	if err != nil {
 		return err
 	}
-	defer clearSecret(newPassword)
+	defer sharedcli.ClearSecret(newPassword)
 
 	if err := console.api.ChangePassword(
 		argContext,
-		console.accessToken,
+		console.session.AccessToken(),
 		currentPassword,
 		newPassword,
 	); err != nil {
@@ -348,53 +321,10 @@ func (console *userConsole) changePassword(argContext context.Context) error {
 	}
 
 	// The server revokes every user session after a successful password change.
-	console.clearSession()
+	console.session.Clear()
 	fmt.Fprintln(console.output, "Password changed. Log in again.")
 
 	return nil
-}
-
-func (console *userConsole) confirmedPassword() ([]byte, error) {
-	for {
-		password, err := console.readRequiredSecret("New password: ")
-		if err != nil {
-			return nil, fmt.Errorf("read new password: %w", err)
-		}
-
-		confirmation, err := console.readRequiredSecret("Confirm new password: ")
-		if err != nil {
-			clearSecret(password)
-
-			return nil, fmt.Errorf("read password confirmation: %w", err)
-		}
-
-		if equalSecrets(password, confirmation) {
-			clearSecret(confirmation)
-
-			return password, nil
-		}
-
-		clearSecret(password)
-		clearSecret(confirmation)
-		console.printError(errors.New("password confirmation does not match; try again"))
-	}
-}
-
-func (console *userConsole) readRequiredSecret(
-	argPrompt string,
-) ([]byte, error) {
-	for {
-		secret, err := console.readSecret(argPrompt)
-		if err != nil {
-			return nil, err
-		}
-		if len(secret) != 0 {
-			return secret, nil
-		}
-
-		clearSecret(secret)
-		console.printError(errors.New("value is required; try again"))
-	}
 }
 
 func (console *userConsole) printHelp() {
@@ -410,44 +340,9 @@ func (console *userConsole) printHelp() {
 }
 
 func (console *userConsole) printError(argError error) {
-	var apiError *apiclient.APIError
-	if errors.As(argError, &apiError) {
-		fmt.Fprintf(
-			console.errorOutput,
-			"Error [%s]: %s\n",
-			apiError.Code,
-			apiError.Message,
-		)
-
-		return
-	}
-	fmt.Fprintf(console.errorOutput, "Error: %v\n", argError)
+	sharedcli.PrintError(console.errorOutput, argError)
 }
 
 func commandUsage(argUsage string) error {
 	return fmt.Errorf("usage: %s", argUsage)
-}
-
-func printUser(argOutput io.Writer, argUser apiclient.User) {
-	fmt.Fprintf(argOutput, "ID: %s\n", argUser.ID)
-	fmt.Fprintf(argOutput, "Username: %s\n", argUser.Username)
-	fmt.Fprintf(argOutput, "Display name: %s\n", argUser.DisplayName)
-	fmt.Fprintf(argOutput, "Role: %s\n", argUser.Role)
-	fmt.Fprintf(argOutput, "Active: %t\n", argUser.Active)
-	fmt.Fprintf(argOutput, "Created: %s\n", formatLocalTime(argUser.CreatedAt))
-	fmt.Fprintf(argOutput, "Updated: %s\n", formatLocalTime(argUser.UpdatedAt))
-}
-
-func formatLocalTime(argTime time.Time) string {
-	return argTime.Local().Format(time.RFC3339)
-}
-
-func equalSecrets(argFirst []byte, argSecond []byte) bool {
-	return subtle.ConstantTimeCompare(argFirst, argSecond) == 1
-}
-
-func clearSecret(argSecret []byte) {
-	for index := range argSecret {
-		argSecret[index] = 0
-	}
 }

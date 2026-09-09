@@ -255,7 +255,7 @@ func groupForPackage(modulePath string, importPath string) string {
 		return "application"
 	case strings.HasPrefix(relativePath, "internal/storage/"):
 		return "infrastructure"
-	case relativePath == "internal/client":
+	case relativePath == "internal/cli", relativePath == "internal/client":
 		return "client"
 	default:
 		return "domain"

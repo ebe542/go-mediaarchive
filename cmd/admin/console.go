@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	sharedcli "github.com/ebe542/go-mediaarchive/internal/cli"
 	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
@@ -34,17 +33,16 @@ type adminAPI interface {
 	ChangePassword(context.Context, string, []byte, []byte) error
 }
 
-type secretReader func(string) ([]byte, error)
+type secretReader = sharedcli.SecretReader
 
 type adminConsole struct {
 	api           adminAPI
-	scanner       *bufio.Scanner
+	input         *sharedcli.LineReader
 	output        io.Writer
 	errorOutput   io.Writer
-	readSecret    secretReader
+	readSecret    sharedcli.SecretReader
 	logoutTimeout time.Duration
-	accessToken   string
-	username      string
+	session       *sharedcli.Session
 	pageLimit     int
 	nextCursor    string
 	pageStarted   bool
@@ -60,11 +58,12 @@ func newAdminConsole(
 ) *adminConsole {
 	return &adminConsole{
 		api:           argAPI,
-		scanner:       bufio.NewScanner(argInput),
+		input:         sharedcli.NewLineReader(argInput),
 		output:        argOutput,
 		errorOutput:   argErrorOutput,
 		readSecret:    argReadSecret,
 		logoutTimeout: argLogoutTimeout,
+		session:       sharedcli.NewSession("mediaarchive-admin"),
 		pageLimit:     defaultUserLimit,
 	}
 }
@@ -78,7 +77,7 @@ func (console *adminConsole) run(argContext context.Context) error {
 	for {
 		line, available, err := console.readCommand(
 			argContext,
-			console.prompt(),
+			console.session.Prompt(),
 		)
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(console.output)
@@ -102,42 +101,11 @@ func (console *adminConsole) run(argContext context.Context) error {
 	}
 }
 
-func (console *adminConsole) prompt() string {
-	username := console.username
-	if username == "" {
-		username = "anonymous"
-	}
-
-	return fmt.Sprintf("%s@mediaarchive-admin> ", username)
-}
-
 func (console *adminConsole) readCommand(
 	argContext context.Context,
 	argPrompt string,
 ) (string, bool, error) {
-	fmt.Fprint(console.output, argPrompt)
-
-	type scanResult struct {
-		line      string
-		available bool
-		err       error
-	}
-	result := make(chan scanResult, 1)
-	go func() {
-		available := console.scanner.Scan()
-		result <- scanResult{
-			line:      console.scanner.Text(),
-			available: available,
-			err:       console.scanner.Err(),
-		}
-	}()
-
-	select {
-	case <-argContext.Done():
-		return "", false, argContext.Err()
-	case scanned := <-result:
-		return scanned.line, scanned.available, scanned.err
-	}
+	return console.input.Read(argContext, console.output, argPrompt)
 }
 
 func (console *adminConsole) execute(
@@ -210,15 +178,19 @@ func (console *adminConsole) login(
 	argContext context.Context,
 	argUsername string,
 ) error {
-	if console.accessToken != "" {
+	if console.session.Authenticated() {
 		return errors.New("already logged in; log out before starting another session")
 	}
 
-	password, err := console.readRequiredSecret("Password: ")
+	password, err := sharedcli.ReadRequiredSecret(
+		console.readSecret,
+		"Password: ",
+		console.printError,
+	)
 	if err != nil {
 		return fmt.Errorf("read password: %w", err)
 	}
-	defer clearBytes(password)
+	defer sharedcli.ClearSecret(password)
 
 	session, err := console.api.Login(argContext, argUsername, password)
 	if err != nil {
@@ -237,8 +209,7 @@ func (console *adminConsole) login(
 		return errors.New("the authenticated user is not an administrator")
 	}
 
-	console.accessToken = session.AccessToken
-	console.username = user.Username
+	console.session.Set(user.Username, session.AccessToken)
 	fmt.Fprintf(console.output, "Logged in as %s.\n", user.Username)
 
 	return nil
@@ -256,7 +227,7 @@ func (console *adminConsole) logout(argContext context.Context) error {
 	if err := console.requireAuthentication(); err != nil {
 		return err
 	}
-	if err := console.api.Logout(argContext, console.accessToken); err != nil {
+	if err := console.api.Logout(argContext, console.session.AccessToken()); err != nil {
 		return fmt.Errorf("logout: %w", err)
 	}
 	console.clearSession()
@@ -266,21 +237,20 @@ func (console *adminConsole) logout(argContext context.Context) error {
 }
 
 func (console *adminConsole) logoutOnExit() {
-	if console.accessToken == "" {
+	if !console.session.Authenticated() {
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), console.logoutTimeout)
 	defer cancel()
-	if err := console.api.Logout(ctx, console.accessToken); err != nil {
+	if err := console.api.Logout(ctx, console.session.AccessToken()); err != nil {
 		console.printError(fmt.Errorf("logout during exit: %w", err))
 	}
 	console.clearSession()
 }
 
 func (console *adminConsole) clearSession() {
-	console.accessToken = ""
-	console.username = ""
+	console.session.Clear()
 	console.pageStarted = false
 	console.nextCursor = ""
 }
@@ -290,11 +260,11 @@ func (console *adminConsole) me(argContext context.Context) error {
 		return err
 	}
 
-	user, err := console.api.CurrentUser(argContext, console.accessToken)
+	user, err := console.api.CurrentUser(argContext, console.session.AccessToken())
 	if err != nil {
 		return fmt.Errorf("get current user: %w", err)
 	}
-	printAdminUser(console.output, user)
+	sharedcli.PrintUser(console.output, user)
 
 	return nil
 }
@@ -411,7 +381,7 @@ func (console *adminConsole) loadUserPage(
 ) error {
 	page, err := console.api.ListUsers(
 		argContext,
-		console.accessToken,
+		console.session.AccessToken(),
 		console.pageLimit,
 		argCursor,
 	)
@@ -446,11 +416,11 @@ func (console *adminConsole) getUser(
 	argContext context.Context,
 	argID string,
 ) error {
-	user, err := console.api.UserByID(argContext, console.accessToken, argID)
+	user, err := console.api.UserByID(argContext, console.session.AccessToken(), argID)
 	if err != nil {
 		return fmt.Errorf("get user: %w", err)
 	}
-	printAdminUser(console.output, user)
+	sharedcli.PrintUser(console.output, user)
 
 	return nil
 }
@@ -471,7 +441,7 @@ func (console *adminConsole) createUser(argContext context.Context) error {
 
 	user, err := console.api.CreateUser(
 		argContext,
-		console.accessToken,
+		console.session.AccessToken(),
 		apiclient.UserInput{
 			Username:    username,
 			DisplayName: displayName,
@@ -490,7 +460,11 @@ func (console *adminConsole) updateUser(
 	argContext context.Context,
 	argID string,
 ) error {
-	current, err := console.api.UserByID(argContext, console.accessToken, argID)
+	current, err := console.api.UserByID(
+		argContext,
+		console.session.AccessToken(),
+		argID,
+	)
 	if err != nil {
 		return fmt.Errorf("get user for update: %w", err)
 	}
@@ -522,7 +496,7 @@ func (console *adminConsole) updateUser(
 
 	updated, err := console.api.UpdateUser(
 		argContext,
-		console.accessToken,
+		console.session.AccessToken(),
 		argID,
 		apiclient.UserInput{
 			Username:    username,
@@ -545,7 +519,7 @@ func (console *adminConsole) setUserActive(
 ) error {
 	user, err := console.api.SetUserActive(
 		argContext,
-		console.accessToken,
+		console.session.AccessToken(),
 		argID,
 		argActive,
 	)
@@ -580,7 +554,7 @@ func (console *adminConsole) issuePasswordEnrollment(
 ) error {
 	enrollment, err := console.api.IssuePasswordEnrollment(
 		argContext,
-		console.accessToken,
+		console.session.AccessToken(),
 		argUserID,
 	)
 	if err != nil {
@@ -591,28 +565,35 @@ func (console *adminConsole) issuePasswordEnrollment(
 	fmt.Fprintf(
 		console.output,
 		"Expires: %s\n",
-		formatAdminLocalTime(enrollment.ExpiresAt),
+		sharedcli.FormatLocalTime(enrollment.ExpiresAt),
 	)
 
 	return nil
 }
 
 func (console *adminConsole) changePassword(argContext context.Context) error {
-	currentPassword, err := console.readRequiredSecret("Current password: ")
+	currentPassword, err := sharedcli.ReadRequiredSecret(
+		console.readSecret,
+		"Current password: ",
+		console.printError,
+	)
 	if err != nil {
 		return fmt.Errorf("read current password: %w", err)
 	}
-	defer clearBytes(currentPassword)
+	defer sharedcli.ClearSecret(currentPassword)
 
-	newPassword, err := console.confirmedPassword()
+	newPassword, err := sharedcli.ReadConfirmedSecret(
+		console.readSecret,
+		console.printError,
+	)
 	if err != nil {
 		return err
 	}
-	defer clearBytes(newPassword)
+	defer sharedcli.ClearSecret(newPassword)
 
 	if err := console.api.ChangePassword(
 		argContext,
-		console.accessToken,
+		console.session.AccessToken(),
 		currentPassword,
 		newPassword,
 	); err != nil {
@@ -622,49 +603,6 @@ func (console *adminConsole) changePassword(argContext context.Context) error {
 	fmt.Fprintln(console.output, "Password changed. Log in again.")
 
 	return nil
-}
-
-func (console *adminConsole) confirmedPassword() ([]byte, error) {
-	for {
-		password, err := console.readRequiredSecret("New password: ")
-		if err != nil {
-			return nil, fmt.Errorf("read new password: %w", err)
-		}
-
-		confirmation, err := console.readRequiredSecret("Confirm new password: ")
-		if err != nil {
-			clearBytes(password)
-
-			return nil, fmt.Errorf("read password confirmation: %w", err)
-		}
-
-		if subtle.ConstantTimeCompare(password, confirmation) == 1 {
-			clearBytes(confirmation)
-
-			return password, nil
-		}
-
-		clearBytes(password)
-		clearBytes(confirmation)
-		console.printError(errors.New("password confirmation does not match; try again"))
-	}
-}
-
-func (console *adminConsole) readRequiredSecret(
-	argPrompt string,
-) ([]byte, error) {
-	for {
-		secret, err := console.readSecret(argPrompt)
-		if err != nil {
-			return nil, err
-		}
-		if len(secret) != 0 {
-			return secret, nil
-		}
-
-		clearBytes(secret)
-		console.printError(errors.New("value is required; try again"))
-	}
 }
 
 func (console *adminConsole) requiredValue(
@@ -735,7 +673,7 @@ func (console *adminConsole) readRole(
 }
 
 func (console *adminConsole) requireAuthentication() error {
-	if console.accessToken == "" {
+	if !console.session.Authenticated() {
 		return errors.New("not logged in")
 	}
 
@@ -763,34 +701,9 @@ func (console *adminConsole) printHelp() {
 }
 
 func (console *adminConsole) printError(argError error) {
-	var apiError *apiclient.APIError
-	if errors.As(argError, &apiError) {
-		fmt.Fprintf(
-			console.errorOutput,
-			"Error [%s]: %s\n",
-			apiError.Code,
-			apiError.Message,
-		)
-
-		return
-	}
-	fmt.Fprintf(console.errorOutput, "Error: %v\n", argError)
+	sharedcli.PrintError(console.errorOutput, argError)
 }
 
 func adminCommandUsage(argUsage string) error {
 	return fmt.Errorf("usage: %s", argUsage)
-}
-
-func printAdminUser(argOutput io.Writer, argUser apiclient.User) {
-	fmt.Fprintf(argOutput, "ID: %s\n", argUser.ID)
-	fmt.Fprintf(argOutput, "Username: %s\n", argUser.Username)
-	fmt.Fprintf(argOutput, "Display name: %s\n", argUser.DisplayName)
-	fmt.Fprintf(argOutput, "Role: %s\n", argUser.Role)
-	fmt.Fprintf(argOutput, "Active: %t\n", argUser.Active)
-	fmt.Fprintf(argOutput, "Created: %s\n", formatAdminLocalTime(argUser.CreatedAt))
-	fmt.Fprintf(argOutput, "Updated: %s\n", formatAdminLocalTime(argUser.UpdatedAt))
-}
-
-func formatAdminLocalTime(argTime time.Time) string {
-	return argTime.Local().Format(time.RFC3339)
 }

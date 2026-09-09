@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	sharedcli "github.com/ebe542/go-mediaarchive/internal/cli"
 	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
@@ -133,7 +134,7 @@ func TestUserConsoleRunsAuthenticatedPasswordChangeScenario(t *testing.T) {
 	if !strings.Contains(output.String(), "Username: archive_user") ||
 		!strings.Contains(output.String(), "archive_user@mediaarchive> ") ||
 		!strings.Contains(output.String(), "anonymous@mediaarchive> ") ||
-		!strings.Contains(output.String(), formatLocalTime(api.currentUser.CreatedAt)) ||
+		!strings.Contains(output.String(), sharedcli.FormatLocalTime(api.currentUser.CreatedAt)) ||
 		!strings.Contains(output.String(), "Password changed. Log in again.") {
 		t.Errorf("unexpected console output: %q", output.String())
 	}
