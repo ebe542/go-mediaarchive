@@ -46,11 +46,14 @@ prove that content is trustworthy.
 ## Validation boundaries
 
 - Media and owner IDs use the existing canonical UUID representation.
-- Titles contain 1 through 200 Unicode characters after trimming.
+- Titles contain 1 through 200 Unicode characters after trimming. Control
+  characters are rejected.
 - An item has at most 20 authors. Each author contains 1 through 100 Unicode
-  characters after trimming, and an exact normalized duplicate is rejected.
+  characters after trimming, control characters are rejected, and an exact
+  normalized duplicate is rejected.
 - Original filenames contain 1 through 255 Unicode characters after trimming.
-  Path separators, control characters, `.` and `..` are rejected.
+  Path separators, drive designators, control characters, `.` and `..` are
+  rejected.
 - MIME types contain only a syntactically valid base media type without
   parameters and use at most 127 characters.
 - Byte size is positive and fits in a signed 64-bit integer. A future storage
@@ -113,9 +116,9 @@ Each step is delivered as a complete Conventional Commit.
 - [x] Minimal metadata and authorization semantics are documented.
 - [x] Authors are represented without introducing catalog-specific metadata.
 - [x] Storage paths and file transfer are explicitly outside the domain model.
-- [ ] Media IDs, types, titles, authors, filenames, MIME types, sizes,
+- [x] Media IDs, types, titles, authors, filenames, MIME types, sizes,
   checksums, owner IDs, and timestamps are validated.
-- [ ] Original filenames cannot be interpreted as storage paths.
+- [x] Original filenames cannot be interpreted as storage paths.
 - [ ] Owners receive all media permissions implicitly.
 - [ ] Active grantees receive only their explicit media permissions.
 - [ ] Inactive users receive no media permission.
