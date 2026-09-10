@@ -113,8 +113,8 @@ Each step is delivered as a complete Conventional Commit.
 - [x] The relational schema and ownership lifecycle are documented.
 - [x] Permission masks remain an internal persistence detail.
 - [x] Automatic deletion of owned media is explicitly prohibited.
-- [ ] Strict migrations create media, author, and grant tables exactly once.
-- [ ] Database constraints reject invalid media metadata and permission masks.
+- [x] Strict migrations create media, author, and grant tables exactly once.
+- [x] Database constraints reject invalid media metadata and permission masks.
 - [ ] Media items and ordered authors are created atomically.
 - [ ] Media metadata and authors can be found, updated, and deleted.
 - [ ] Grants can be saved, found, listed, replaced, and deleted.
