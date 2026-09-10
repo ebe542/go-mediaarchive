@@ -61,8 +61,10 @@ prove that content is trustworthy.
 - SHA-256 checksums contain exactly 32 bytes in the domain model.
 - Creation and update timestamps are non-zero, stored in UTC, and the update
   time cannot precede the creation time.
-- Grants contain exactly one valid media permission. The media ID and grantee
-  user ID must both be valid.
+- Grants contain a non-empty bitmask with only known permissions. The media ID
+  and grantee user ID must both be valid.
+- Persistence uses one grant per media and user. Public APIs present permission
+  names as an array and never expose the internal numeric bitmask.
 
 ## Permissions
 
@@ -78,7 +80,8 @@ The authorization model defines these media-specific permissions:
 | `share` | Grant or revoke permissions for other users. |
 
 The owner receives every permission implicitly. Other users receive only
-explicit grants. A grant is identified by media ID, user ID, and permission.
+explicit grants. A grant is identified by media ID and user ID and stores one
+or more permissions as a validated bitmask.
 Inactive users are never authorized by a stored grant.
 
 Global roles do not silently grant content access. In particular, the `admin`
@@ -119,13 +122,13 @@ Each step is delivered as a complete Conventional Commit.
 - [x] Media IDs, types, titles, authors, filenames, MIME types, sizes,
   checksums, owner IDs, and timestamps are validated.
 - [x] Original filenames cannot be interpreted as storage paths.
-- [ ] Owners receive all media permissions implicitly.
-- [ ] Active grantees receive only their explicit media permissions.
-- [ ] Inactive users receive no media permission.
-- [ ] Global administrator status does not imply content read or download.
-- [ ] Invalid grants and permissions are rejected.
-- [ ] Standard milestone checks pass.
-- [ ] Local quality gate checks pass.
+- [x] Owners receive all media permissions implicitly.
+- [x] Active grantees receive only their explicit media permissions.
+- [x] Inactive users receive no media permission.
+- [x] Global administrator status does not imply content read or download.
+- [x] Invalid grants and permissions are rejected.
+- [x] Standard milestone checks pass.
+- [x] Local quality gate checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-015` tag after all milestone commits are complete.
