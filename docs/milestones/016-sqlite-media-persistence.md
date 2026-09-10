@@ -115,8 +115,8 @@ Each step is delivered as a complete Conventional Commit.
 - [x] Automatic deletion of owned media is explicitly prohibited.
 - [x] Strict migrations create media, author, and grant tables exactly once.
 - [x] Database constraints reject invalid media metadata and permission masks.
-- [ ] Media items and ordered authors are created atomically.
-- [ ] Media metadata and authors can be found, updated, and deleted.
+- [x] Media items and ordered authors are created atomically.
+- [x] Media metadata and authors can be found, updated, and deleted.
 - [ ] Grants can be saved, found, listed, replaced, and deleted.
 - [ ] Grant persistence accepts only known non-empty permission masks.
 - [ ] User deletion removes grants held by the target user.
