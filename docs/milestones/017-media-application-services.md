@@ -112,12 +112,12 @@ behavior they specify rather than forming a separate test-only commit.
 - [x] Metadata and grant use cases are documented.
 - [x] Global creation roles are separated from media-specific permissions.
 - [x] Unauthorized media is indistinguishable from unknown media.
-- [ ] Only active editors and administrators can create media.
-- [ ] The authenticated creator becomes owner without caller override.
-- [ ] Metadata reads require `discover`.
-- [ ] Metadata updates preserve owner and creation time and require `update`.
-- [ ] Metadata deletion requires `delete`.
-- [ ] Authorization loads at most one actor-specific grant.
+- [x] Only active editors and administrators can create media.
+- [x] The authenticated creator becomes owner without caller override.
+- [x] Metadata reads require `discover`.
+- [x] Metadata updates preserve owner and creation time and require `update`.
+- [x] Metadata deletion requires `delete`.
+- [x] Authorization loads at most one actor-specific grant.
 - [ ] Grant replacement and inspection require `share`.
 - [ ] Grant recipients must exist and be active.
 - [ ] Owner grants and empty permission sets are rejected.
