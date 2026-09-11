@@ -20,7 +20,7 @@ verifiable increments.
 | `milestone-013` | [Interactive command-line tools](013-interactive-command-line-tools.md) | Complete |
 | `milestone-014` | [Safe user deletion](014-safe-user-deletion.md) | Complete |
 | `milestone-015` | [Secure media authorization model](015-secure-media-authorization.md) | Complete |
-| `milestone-016` | [SQLite media persistence](016-sqlite-media-persistence.md) | In progress |
+| `milestone-016` | [SQLite media persistence](016-sqlite-media-persistence.md) | Complete |
 
 ## Versioning rule
 

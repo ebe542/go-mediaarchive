@@ -22,6 +22,10 @@ checkpoints.
   automatic session revocation.
 - Safe administrator-only user deletion with transactional authentication-data
   removal, last-administrator protection, and explicit console confirmation.
+- Minimal media identities, ordered authors, and compact per-user permission
+  grants backed by strict transactional SQLite repositories.
+- Media ownership protection for user deletion with transactional cleanup of
+  grants held on other users' media.
 - Interactive end-user and administrator CLI applications with in-memory
   sessions, user-aware prompts, retryable field input, local-time presentation,
   and complete user-management commands.
