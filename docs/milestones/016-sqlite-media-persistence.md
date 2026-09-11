@@ -117,8 +117,8 @@ Each step is delivered as a complete Conventional Commit.
 - [x] Database constraints reject invalid media metadata and permission masks.
 - [x] Media items and ordered authors are created atomically.
 - [x] Media metadata and authors can be found, updated, and deleted.
-- [ ] Grants can be saved, found, listed, replaced, and deleted.
-- [ ] Grant persistence accepts only known non-empty permission masks.
+- [x] Grants can be saved, found, listed, replaced, and deleted.
+- [x] Grant persistence accepts only known non-empty permission masks.
 - [ ] User deletion removes grants held by the target user.
 - [ ] User deletion is blocked while the target user owns media.
 - [ ] Failed user deletion rolls back grant and authentication-data changes.
