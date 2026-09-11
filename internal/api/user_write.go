@@ -266,6 +266,13 @@ func writeUserApplicationError(
 			"last_administrator",
 			"The last active administrator must be preserved.",
 		)
+	case errors.Is(argError, identity.ErrUserOwnsMedia):
+		writeJSONError(
+			argResponse,
+			http.StatusConflict,
+			"owned_media",
+			"The user owns media that must be transferred or deleted first.",
+		)
 	default:
 		writeJSONError(
 			argResponse,

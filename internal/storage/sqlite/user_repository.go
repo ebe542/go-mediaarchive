@@ -226,6 +226,26 @@ func (repository *UserRepository) DeletePreservingLastAdministrator(
 		}
 	}
 
+	if _, err := transaction.ExecContext(
+		argContext,
+		`DELETE FROM media_grants WHERE user_id = ?`,
+		argID,
+	); err != nil {
+		return fmt.Errorf("delete user records from media_grants: %w", err)
+	}
+
+	var ownsMedia bool
+	if err := transaction.QueryRowContext(
+		argContext,
+		`SELECT EXISTS(SELECT 1 FROM media_items WHERE owner_id = ?)`,
+		argID,
+	).Scan(&ownsMedia); err != nil {
+		return fmt.Errorf("check user media ownership: %w", err)
+	}
+	if ownsMedia {
+		return identity.ErrUserOwnsMedia
+	}
+
 	relatedDeletes := []struct {
 		name  string
 		query string

@@ -728,6 +728,7 @@ func TestServicePreservesDeletionRepositoryErrors(t *testing.T) {
 	}{
 		{"unknown user", identity.ErrUserNotFound},
 		{"last administrator", identity.ErrLastAdministrator},
+		{"owned media", identity.ErrUserOwnsMedia},
 	}
 
 	for _, testCase := range tests {

@@ -15,6 +15,9 @@ var ErrUserConflict = errors.New("user conflict")
 // administrator.
 var ErrLastAdministrator = errors.New("last active administrator")
 
+// ErrUserOwnsMedia indicates that deletion would orphan owned media.
+var ErrUserOwnsMedia = errors.New("user owns media")
+
 // UserRepository defines persistence operations required by user services.
 type UserRepository interface {
 	Create(argContext context.Context, argUser User) error

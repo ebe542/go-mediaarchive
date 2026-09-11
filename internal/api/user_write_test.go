@@ -358,6 +358,7 @@ func TestDeleteUserEndpointMapsApplicationErrors(t *testing.T) {
 		"not found":          {identity.ErrUserNotFound, http.StatusNotFound, "not_found"},
 		"self deletion":      {appusers.ErrSelfDeletion, http.StatusConflict, "self_deletion"},
 		"last administrator": {identity.ErrLastAdministrator, http.StatusConflict, "last_administrator"},
+		"owned media":        {identity.ErrUserOwnsMedia, http.StatusConflict, "owned_media"},
 		"internal error":     {errors.New("database unavailable"), http.StatusInternalServerError, "internal_error"},
 	}
 

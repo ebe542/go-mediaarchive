@@ -348,10 +348,12 @@ Type username "archive_user" to permanently delete this user (blank cancels): ar
 Permanently deleted user archive_user (123e4567-e89b-12d3-a456-426614174000).
 ```
 
-An administrator cannot delete their own identity or the last active
-administrator. Before media ownership is introduced, its design must either
-require transferring owned records or block deletion. Future audit records
-must retain an independent actor snapshot and survive identity deletion.
+An administrator cannot delete their own identity, the last active
+administrator, or a user who still owns media. Media ownership must first be
+resolved by a future explicit transfer or media-deletion workflow. Grants held
+for media owned by other users are removed with the account. Future audit
+records must retain an independent actor snapshot and survive identity
+deletion.
 
 ## REST API mapping
 

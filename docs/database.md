@@ -149,6 +149,28 @@ and initial credential creation share one transaction, so neither change can
 be committed independently. The `password_enrollments_expires_at_index`
 supports later cleanup of expired records.
 
+### `media_items` and `media_authors`
+
+`media_items` stores minimal searchable identity and integrity metadata. It
+contains no file content or server filesystem path. Its SHA-256 checksum is a
+32-byte `BLOB`, and `owner_id` restricts user deletion while owned media exists.
+
+Ordered author names are stored in `media_authors` using the composite key
+`(media_id, position)`. Media creation and metadata updates persist the item and
+its complete author sequence in one transaction. Media deletion explicitly
+removes grants and authors before removing the item.
+
+### `media_grants`
+
+`media_grants` stores one row per media and user. Its `permissions` integer is a
+non-empty bitmask containing only the six domain permissions. Repository saves
+replace the complete mask; explicit deletion represents complete revocation.
+
+During user deletion, grants held by the target user are removed inside the
+same transaction as authentication data. If that user owns media, the deletion
+is rejected and all prior changes, including grant removal, are rolled back.
+Owned media is never removed by a user-deletion cascade.
+
 ## Storage and integrity rules
 
 - Domain tables use SQLite `STRICT` mode.
@@ -173,6 +195,7 @@ supports later cleanup of expired records.
 | `004` | [`004_create_sessions.sql`](../internal/storage/sqlite/migrations/004_create_sessions.sql) | Creates `sessions` and `sessions_user_id_index`. |
 | `005` | [`005_create_password_enrollments.sql`](../internal/storage/sqlite/migrations/005_create_password_enrollments.sql) | Creates replaceable, expiring password enrollments. |
 | `006` | [`006_create_users_pagination_index.sql`](../internal/storage/sqlite/migrations/006_create_users_pagination_index.sql) | Indexes the immutable user-directory ordering key. |
+| `007` | [`007_create_media.sql`](../internal/storage/sqlite/migrations/007_create_media.sql) | Creates media identities, ordered authors, and per-user permission grants. |
 
 New schema changes must be added as a new zero-padded migration. Existing
 migrations must remain immutable after publication because deployed databases

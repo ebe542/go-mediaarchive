@@ -854,6 +854,35 @@ func TestUserRepositoryRollsBackRelatedDeletionOnUserFailure(t *testing.T) {
 	); err != nil {
 		t.Fatalf("insert credential fixture: %v", err)
 	}
+	mediaOwner, err := identity.NewUser(
+		"223e4567-e89b-12d3-a456-426614174000",
+		"rollback_owner",
+		"Rollback Owner",
+		identity.RoleViewer,
+		user.CreatedAt,
+	)
+	if err != nil {
+		t.Fatalf("create media owner fixture: %v", err)
+	}
+	if err := repository.Create(ctx, mediaOwner); err != nil {
+		t.Fatalf("store media owner fixture: %v", err)
+	}
+	insertDeletionTestMedia(
+		t,
+		ctx,
+		database,
+		"323e4567-e89b-12d3-a456-426614174000",
+		mediaOwner.ID,
+	)
+	if _, err := database.ExecContext(
+		ctx,
+		`INSERT INTO media_grants (media_id, user_id, permissions) VALUES (?, ?, ?)`,
+		"323e4567-e89b-12d3-a456-426614174000",
+		user.ID,
+		1,
+	); err != nil {
+		t.Fatalf("insert rollback grant fixture: %v", err)
+	}
 	if _, err := database.ExecContext(
 		ctx,
 		`CREATE TRIGGER reject_test_user_deletion
@@ -879,6 +908,7 @@ func TestUserRepositoryRollsBackRelatedDeletionOnUserFailure(t *testing.T) {
 	if credentialCount != 1 {
 		t.Fatalf("expected credential rollback, got %d records", credentialCount)
 	}
+	assertTableRecordCount(t, ctx, database, "media_grants", "user_id", user.ID, 1)
 	if _, err := repository.FindByID(ctx, user.ID); err != nil {
 		t.Fatalf("expected user rollback: %v", err)
 	}

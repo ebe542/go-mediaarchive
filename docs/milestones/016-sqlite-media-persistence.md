@@ -119,11 +119,11 @@ Each step is delivered as a complete Conventional Commit.
 - [x] Media metadata and authors can be found, updated, and deleted.
 - [x] Grants can be saved, found, listed, replaced, and deleted.
 - [x] Grant persistence accepts only known non-empty permission masks.
-- [ ] User deletion removes grants held by the target user.
-- [ ] User deletion is blocked while the target user owns media.
-- [ ] Failed user deletion rolls back grant and authentication-data changes.
-- [ ] Standard milestone checks pass.
-- [ ] Local quality gate checks pass.
+- [x] User deletion removes grants held by the target user.
+- [x] User deletion is blocked while the target user owns media.
+- [x] Failed user deletion rolls back grant and authentication-data changes.
+- [x] Standard milestone checks pass.
+- [x] Local quality gate checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-016` tag after all milestone commits are complete.
