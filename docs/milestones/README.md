@@ -21,7 +21,7 @@ verifiable increments.
 | `milestone-014` | [Safe user deletion](014-safe-user-deletion.md) | Complete |
 | `milestone-015` | [Secure media authorization model](015-secure-media-authorization.md) | Complete |
 | `milestone-016` | [SQLite media persistence](016-sqlite-media-persistence.md) | Complete |
-| `milestone-017` | [Media application services](017-media-application-services.md) | In progress |
+| `milestone-017` | [Media application services](017-media-application-services.md) | Complete |
 
 ## Versioning rule
 
