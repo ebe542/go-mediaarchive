@@ -118,12 +118,12 @@ behavior they specify rather than forming a separate test-only commit.
 - [x] Metadata updates preserve owner and creation time and require `update`.
 - [x] Metadata deletion requires `delete`.
 - [x] Authorization loads at most one actor-specific grant.
-- [ ] Grant replacement and inspection require `share`.
-- [ ] Grant recipients must exist and be active.
-- [ ] Owner grants and empty permission sets are rejected.
-- [ ] Grant revocation explicitly deletes the stored grant.
-- [ ] Standard milestone checks pass.
-- [ ] Local quality gate checks pass.
+- [x] Grant replacement and inspection require `share`.
+- [x] Grant recipients must exist and be active.
+- [x] Owner grants and empty permission sets are rejected.
+- [x] Grant revocation explicitly deletes the stored grant.
+- [x] Standard milestone checks pass.
+- [x] Local quality gate checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-017` tag after all milestone commits are complete.

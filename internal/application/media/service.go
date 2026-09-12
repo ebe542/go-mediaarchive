@@ -18,10 +18,15 @@ var (
 	ErrMediaNotFound = errors.New("media not found")
 )
 
+// MediaFinder retrieves a media identity for authorization and inspection.
+type MediaFinder interface {
+	FindByID(context.Context, string) (domainmedia.Item, error)
+}
+
 // Repository persists media identities and ordered authors.
 type Repository interface {
+	MediaFinder
 	Create(context.Context, domainmedia.Item) error
-	FindByID(context.Context, string) (domainmedia.Item, error)
 	Update(context.Context, domainmedia.Item) error
 	Delete(context.Context, string) error
 }
@@ -198,7 +203,25 @@ func (service *Service) authorizedItem(
 	argID string,
 	argPermission domainmedia.Permission,
 ) (domainmedia.Item, error) {
-	item, err := service.repository.FindByID(argContext, argID)
+	return authorizeItem(
+		argContext,
+		argActor,
+		argID,
+		argPermission,
+		service.repository,
+		service.grants,
+	)
+}
+
+func authorizeItem(
+	argContext context.Context,
+	argActor identity.User,
+	argID string,
+	argPermission domainmedia.Permission,
+	argRepository MediaFinder,
+	argGrants GrantFinder,
+) (domainmedia.Item, error) {
+	item, err := argRepository.FindByID(argContext, argID)
 	if errors.Is(err, domainmedia.ErrItemNotFound) {
 		return domainmedia.Item{}, ErrMediaNotFound
 	}
@@ -208,7 +231,7 @@ func (service *Service) authorizedItem(
 
 	var grants []domainmedia.Grant
 	if argActor.ID != item.OwnerID {
-		grant, grantErr := service.grants.Find(argContext, item.ID, argActor.ID)
+		grant, grantErr := argGrants.Find(argContext, item.ID, argActor.ID)
 		switch {
 		case grantErr == nil:
 			grants = []domainmedia.Grant{grant}
