@@ -12,10 +12,16 @@ type recordingRunner struct {
 	outputs     map[string]string
 	runErrors   map[string]error
 	lookupError map[string]error
+	onRun       func(Command) error
 }
 
 func (runner *recordingRunner) Run(argCommand Command) error {
 	runner.commands = append(runner.commands, argCommand)
+	if runner.onRun != nil {
+		if err := runner.onRun(argCommand); err != nil {
+			return err
+		}
+	}
 
 	return runner.runErrors[commandKey(argCommand)]
 }

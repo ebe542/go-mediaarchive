@@ -16,6 +16,7 @@ type Command struct {
 	Name string
 	Args []string
 	Dir  string
+	Env  []string
 }
 
 type commandRunner interface {
@@ -32,6 +33,7 @@ type execRunner struct {
 func (runner execRunner) Run(argCommand Command) error {
 	command := exec.Command(argCommand.Name, argCommand.Args...)
 	command.Dir = argCommand.Dir
+	command.Env = append(os.Environ(), argCommand.Env...)
 	command.Stdout = runner.stdout
 	command.Stderr = runner.stderr
 
@@ -41,6 +43,7 @@ func (runner execRunner) Run(argCommand Command) error {
 func (runner execRunner) Output(argCommand Command) (string, error) {
 	command := exec.Command(argCommand.Name, argCommand.Args...)
 	command.Dir = argCommand.Dir
+	command.Env = append(os.Environ(), argCommand.Env...)
 	var stdout bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = runner.stderr

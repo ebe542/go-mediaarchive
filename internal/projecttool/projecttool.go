@@ -11,6 +11,7 @@ const usage = `Usage: projectctl COMMAND [OPTIONS]
 Commands:
   check         Run the standard project checks.
   quality-gate  Validate workflows and reproduce the quality gate locally.
+  release       Validate or build a release.
 
 Run "projectctl COMMAND --help" for command-specific options.
 `
@@ -59,6 +60,8 @@ func (app application) run(argArguments []string) int {
 		err = app.runCheckCommand(argArguments[1:])
 	case "quality-gate":
 		err = app.runQualityGateCommand(argArguments[1:])
+	case "release":
+		err = app.runReleaseCommand(argArguments[1:])
 	default:
 		fmt.Fprintf(app.stderr, "Error: unknown command: %s\n\n%s", argArguments[0], usage)
 
