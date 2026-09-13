@@ -13,7 +13,7 @@ adding persistence, authentication, or media management.
 - Test the endpoint through the public HTTP handler contract.
 - Provide an executable server with CLI-based address configuration.
 - Configure explicit HTTP timeouts and graceful shutdown.
-- Provide a script that verifies milestone quality.
+- Provide automation that verifies milestone quality.
 - Publish the initial project to GitHub under the MIT License.
 
 ## API contract
@@ -45,21 +45,21 @@ Content-Type: application/json; charset=utf-8
 - [x] The server address can be supplied with `--addr`.
 - [x] The server configures defensive HTTP timeouts.
 - [x] `SIGINT` and `SIGTERM` trigger graceful shutdown.
-- [x] The milestone script passes its standard checks.
-- [x] A local script validates and optionally emulates the CI workflow.
+- [x] The project tool passes its standard checks.
+- [x] The project tool validates and optionally emulates the CI workflow.
 - [x] The public repository contains the MIT License.
 - [x] The initial commit is available on GitHub.
 
 ## Verification
 
-```bash
-./scripts/check_milestone.sh
+```console
+go run ./cmd/projectctl check
 ```
 
 Optional race-detector verification:
 
-```bash
-./scripts/check_milestone.sh --race
+```console
+go run ./cmd/projectctl check --race
 ```
 
 Manual smoke test:

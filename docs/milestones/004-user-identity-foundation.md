@@ -98,8 +98,8 @@ The repository returns a stable domain-level not-found error rather than leaking
 
 ## Verification
 
-```bash
-./scripts/check_ci.sh
+```console
+go run ./cmd/projectctl quality-gate
 ```
 
 ## Out of scope

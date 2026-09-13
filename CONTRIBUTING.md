@@ -25,7 +25,7 @@ The project currently uses:
 
 - Go 1.26.6 or newer within the Go 1.26 release line;
 - Git;
-- Git Bash or Windows PowerShell for documented project checks;
+- a terminal supported by Go for the cross-platform project checks;
 - LF line endings for all text files;
 - VS Code with the official Go extension as the recommended editor setup.
 
@@ -55,20 +55,14 @@ The project follows red-green-refactor development:
 
 Run the standard quality checks with:
 
-```bash
-./scripts/check_milestone.sh
+```console
+go run ./cmd/projectctl check
 ```
 
 Run the additional race detector when the local toolchain supports it:
 
-```bash
-./scripts/check_milestone.sh --race
-```
-
-Run the equivalent checks from Windows PowerShell with:
-
-```powershell
-.\scripts\check_milestone.ps1 -Race
+```console
+go run ./cmd/projectctl check --race
 ```
 
 The standard check verifies formatting, module files, static analysis, tests,
@@ -77,14 +71,8 @@ coverage execution, builds, and Git whitespace.
 Before changing a GitHub Actions workflow, validate its syntax and reproduce its
 project checks locally:
 
-```bash
-./scripts/check_ci.sh
-```
-
-The equivalent Windows PowerShell command is:
-
-```powershell
-.\scripts\check_ci.ps1
+```console
+go run ./cmd/projectctl quality-gate
 ```
 
 This requires `actionlint`. Install it with:
@@ -96,8 +84,8 @@ go install github.com/rhysd/actionlint/cmd/actionlint@latest
 To emulate the complete GitHub Actions `verify` job, install Docker and `act`,
 then run:
 
-```bash
-./scripts/check_ci.sh --act
+```console
+go run ./cmd/projectctl quality-gate --act
 ```
 
 Local emulation reduces CI feedback cycles but does not guarantee that GitHub's
@@ -227,7 +215,7 @@ Before committing, review the staged changes and run the checks:
 
 ```bash
 git diff --check && git diff --staged && \
-  ./scripts/check_milestone.sh
+  go run ./cmd/projectctl check
 ```
 
 ## Pull requests
@@ -250,8 +238,8 @@ tests, documentation, or a clear explanation of why no change is needed.
 Documentation, code identifiers, filenames, comments, API fields, log messages,
 and error messages are written in English. Shell commands in project
 documentation use Git Bash and should be combined with `&&` when later commands
-depend on earlier commands succeeding. Project checks also provide native
-Windows PowerShell scripts.
+depend on earlier commands succeeding. The Go project tool provides the same
+quality and release commands on every supported operating system.
 
 Update the relevant milestone document whenever its scope, acceptance criteria,
 or completion status changes.

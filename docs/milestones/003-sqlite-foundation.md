@@ -108,8 +108,8 @@ Tests will query these values rather than assuming successful configuration.
 
 ## Verification
 
-```bash
-go mod verify && ./scripts/check_milestone.sh
+```console
+go run ./cmd/projectctl check
 ```
 
 Run the server with an explicit development database:

@@ -94,8 +94,8 @@ application functionality and must not be registered as a public handler.
 
 ## Verification
 
-```bash
-./scripts/check_ci.sh
+```console
+go run ./cmd/projectctl quality-gate
 ```
 
 ## Out of scope

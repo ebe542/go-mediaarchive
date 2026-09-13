@@ -1,8 +1,8 @@
 # Command reference
 
 This page documents the commands currently provided by Go Media Archive. Run
-development commands from the repository root in Git Bash unless a PowerShell
-alternative is shown explicitly.
+development commands from the repository root. Examples use Git Bash, while
+the Go project tool behaves consistently across supported operating systems.
 
 ## Programs
 
@@ -387,49 +387,34 @@ Tokens, passwords, and enrollment secrets must not be logged or placed in URLs.
 
 ## Development checks
 
-### Milestone checks
+### Project checks
 
-```bash
-./scripts/check_milestone.sh
+```console
+go run ./cmd/projectctl check
 ```
 
 Include the race detector:
 
-```bash
-./scripts/check_milestone.sh --race
-```
-
-PowerShell equivalents:
-
-```powershell
-.\scripts\check_milestone.ps1
-.\scripts\check_milestone.ps1 -Race
+```console
+go run ./cmd/projectctl check --race
 ```
 
 ### Local Quality Gate
 
-```bash
-./scripts/check_ci.sh
+```console
+go run ./cmd/projectctl quality-gate
 ```
 
 Skip the race detector when it is unavailable:
 
-```bash
-./scripts/check_ci.sh --skip-race
+```console
+go run ./cmd/projectctl quality-gate --skip-race
 ```
 
 Run the GitHub Actions `verify` job locally with `act` and Docker:
 
-```bash
-./scripts/check_ci.sh --act
-```
-
-PowerShell equivalents:
-
-```powershell
-.\scripts\check_ci.ps1
-.\scripts\check_ci.ps1 -SkipRace
-.\scripts\check_ci.ps1 -Act
+```console
+go run ./cmd/projectctl quality-gate --act
 ```
 
 ### Individual Go checks
@@ -456,21 +441,17 @@ go run ./tools/archdoc -output docs/architecture.md
 
 ### Release archives
 
-Git Bash:
-
 ```bash
-./scripts/build_release.sh \
+go run ./cmd/projectctl release build \
   --version v0.1.0 \
   --output-directory dist && \
 (cd dist && sha256sum -c SHA256SUMS)
 ```
 
-PowerShell:
+Validate an existing annotated release tag and its changelog entry:
 
-```powershell
-.\scripts\build_release.ps1 `
-  -Version v0.1.0 `
-  -OutputDirectory dist
+```console
+go run ./cmd/projectctl release validate --version v0.1.0
 ```
 
 Local release builds do not publish files. Publishing is triggered only by an

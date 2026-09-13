@@ -32,4 +32,4 @@ jobs:
           cache: true
 
       - name: Run quality gate
-        run: bash ./scripts/check_milestone.sh --race
+        run: go run ./cmd/projectctl check --race

@@ -40,7 +40,7 @@ Milestone 17 is complete. The project currently provides:
 - storage-independent media application services for authorized metadata and
   per-user grant management;
 - one-time initial password enrollment and authenticated password changes;
-- a repeatable milestone verification script.
+- a cross-platform Go project tool for quality gates and release builds.
 
 ## Requirements
 
@@ -161,38 +161,26 @@ administrator console.
 
 Run the standard checks:
 
-```bash
-./scripts/check_milestone.sh
+```console
+go run ./cmd/projectctl check
 ```
 
 Run the additional race detector when the local toolchain supports it:
 
-```bash
-./scripts/check_milestone.sh --race
-```
-
-Run the equivalent checks from Windows PowerShell:
-
-```powershell
-.\scripts\check_milestone.ps1 -Race
+```console
+go run ./cmd/projectctl check --race
 ```
 
 Validate the GitHub Actions workflow and reproduce its project checks locally:
 
-```bash
-./scripts/check_ci.sh
-```
-
-From Windows PowerShell, run:
-
-```powershell
-.\scripts\check_ci.ps1
+```console
+go run ./cmd/projectctl quality-gate
 ```
 
 Run the complete `verify` job locally with `act` and Docker:
 
-```bash
-./scripts/check_ci.sh --act
+```console
+go run ./cmd/projectctl quality-gate --act
 ```
 
 ## Project direction

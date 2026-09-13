@@ -101,16 +101,8 @@ password is committed to the repository.
 
 ## Verification
 
-Git Bash:
-
-```bash
-./scripts/check_ci.sh
-```
-
-Windows PowerShell:
-
-```powershell
-.\scripts\check_ci.ps1
+```console
+go run ./cmd/projectctl quality-gate
 ```
 
 ## Out of scope

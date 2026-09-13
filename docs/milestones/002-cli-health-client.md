@@ -65,8 +65,8 @@ coupling those details to individual commands.
 
 Run all automated milestone checks:
 
-```bash
-./scripts/check_milestone.sh
+```console
+go run ./cmd/projectctl check
 ```
 
 Run the server:

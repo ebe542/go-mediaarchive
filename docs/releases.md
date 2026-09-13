@@ -45,20 +45,12 @@ configuration are never included.
 
 ## Local release build
 
-Build all release archives from Git Bash:
+Build all release archives:
 
-```bash
-./scripts/build_release.sh \
+```console
+go run ./cmd/projectctl release build \
   --version v0.1.0 \
   --output-directory dist
-```
-
-Run the equivalent build from Windows PowerShell:
-
-```powershell
-.\scripts\build_release.ps1 `
-  -Version v0.1.0 `
-  -OutputDirectory dist
 ```
 
 The `dist` directory is ignored by Git. Local builds validate packaging but do

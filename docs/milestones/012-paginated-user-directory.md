@@ -107,16 +107,8 @@ GitHub Actions passing on `main` is the external gate for creating the immutable
 
 ## Verification
 
-Git Bash:
-
-```bash
-./scripts/check_ci.sh
-```
-
-Windows PowerShell:
-
-```powershell
-.\scripts\check_ci.ps1
+```console
+go run ./cmd/projectctl quality-gate
 ```
 
 ## Out of scope
