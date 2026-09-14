@@ -171,6 +171,31 @@ func NewHandler(argOptions ...Option) http.Handler {
 		mux.Handle("GET /api/v1/users", listUsers)
 	}
 
+	if configuration.mediaResolver != nil &&
+		configuration.mediaMetadata != nil {
+		mediaHandler := &mediaMetadataHandler{media: configuration.mediaMetadata}
+		authenticated := func(argHandler http.Handler) http.Handler {
+			return RequireAuthentication(configuration.mediaResolver, argHandler)
+		}
+
+		mux.Handle(
+			"POST /api/v1/media",
+			authenticated(http.HandlerFunc(mediaHandler.create)),
+		)
+		mux.Handle(
+			"GET /api/v1/media/{id}",
+			authenticated(http.HandlerFunc(mediaHandler.read)),
+		)
+		mux.Handle(
+			"PUT /api/v1/media/{id}",
+			authenticated(http.HandlerFunc(mediaHandler.update)),
+		)
+		mux.Handle(
+			"DELETE /api/v1/media/{id}",
+			authenticated(http.HandlerFunc(mediaHandler.delete)),
+		)
+	}
+
 	return mux
 }
 

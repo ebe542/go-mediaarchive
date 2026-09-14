@@ -72,6 +72,8 @@ type handlerConfiguration struct {
 	passwordChanges            PasswordChangeService
 	userDirectoryResolver      SessionResolver
 	userLister                 UserLister
+	mediaResolver              SessionResolver
+	mediaMetadata              MediaMetadataService
 }
 
 // Option configures optional API capabilities.

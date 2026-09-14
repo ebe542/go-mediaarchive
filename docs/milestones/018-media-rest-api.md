@@ -162,8 +162,8 @@ same commit as the behavior they specify.
 - [x] Media and grant routes and JSON representations are documented.
 - [x] HTTP status and security error mappings are documented.
 - [x] Interactive commands and file-content operations are explicitly excluded.
-- [ ] All media routes require authentication.
-- [ ] Metadata endpoints preserve application authorization and not-found masking.
+- [x] All media routes require authentication.
+- [x] Metadata endpoints preserve application authorization and not-found masking.
 - [ ] Grant endpoints require application-level `share` authorization.
 - [ ] Permission names and hexadecimal checksums are strictly validated.
 - [ ] Empty grant lists are encoded as JSON arrays.
