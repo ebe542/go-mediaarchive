@@ -196,6 +196,31 @@ func NewHandler(argOptions ...Option) http.Handler {
 		)
 	}
 
+	if configuration.mediaGrantResolver != nil &&
+		configuration.mediaGrants != nil {
+		grantHandler := &mediaGrantHandler{grants: configuration.mediaGrants}
+		authenticated := func(argHandler http.Handler) http.Handler {
+			return RequireAuthentication(configuration.mediaGrantResolver, argHandler)
+		}
+
+		mux.Handle(
+			"PUT /api/v1/media/{id}/grants/{userId}",
+			authenticated(http.HandlerFunc(grantHandler.replace)),
+		)
+		mux.Handle(
+			"GET /api/v1/media/{id}/grants/{userId}",
+			authenticated(http.HandlerFunc(grantHandler.read)),
+		)
+		mux.Handle(
+			"GET /api/v1/media/{id}/grants",
+			authenticated(http.HandlerFunc(grantHandler.list)),
+		)
+		mux.Handle(
+			"DELETE /api/v1/media/{id}/grants/{userId}",
+			authenticated(http.HandlerFunc(grantHandler.revoke)),
+		)
+	}
+
 	return mux
 }
 

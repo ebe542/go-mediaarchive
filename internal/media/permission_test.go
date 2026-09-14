@@ -39,6 +39,31 @@ func TestPermissionValidAndString(t *testing.T) {
 	}
 }
 
+func TestParsePermissionAcceptsOnlyStableExternalNames(t *testing.T) {
+	for _, permission := range []media.Permission{
+		media.PermissionDiscover,
+		media.PermissionRead,
+		media.PermissionDownload,
+		media.PermissionUpdate,
+		media.PermissionDelete,
+		media.PermissionShare,
+	} {
+		parsed, err := media.ParsePermission(permission.String())
+		if err != nil {
+			t.Fatalf("parse permission %q: %v", permission, err)
+		}
+		if parsed != permission {
+			t.Errorf("expected %s, got %s", permission, parsed)
+		}
+	}
+
+	for _, name := range []string{"", "Read", " read", "read ", "unknown"} {
+		if _, err := media.ParsePermission(name); !errors.Is(err, media.ErrInvalidPermission) {
+			t.Errorf("%q: expected ErrInvalidPermission, got %v", name, err)
+		}
+	}
+}
+
 func TestNewPermissionSetCombinesAndListsPermissions(t *testing.T) {
 	permissions, err := media.NewPermissionSet(
 		media.PermissionDownload,

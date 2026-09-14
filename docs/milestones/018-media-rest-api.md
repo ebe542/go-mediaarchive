@@ -162,11 +162,11 @@ same commit as the behavior they specify.
 - [x] Media and grant routes and JSON representations are documented.
 - [x] HTTP status and security error mappings are documented.
 - [x] Interactive commands and file-content operations are explicitly excluded.
-- [x] All media routes require authentication.
+- [x] All metadata routes require authentication.
 - [x] Metadata endpoints preserve application authorization and not-found masking.
-- [ ] Grant endpoints require application-level `share` authorization.
-- [ ] Permission names and hexadecimal checksums are strictly validated.
-- [ ] Empty grant lists are encoded as JSON arrays.
+- [x] Grant endpoints require application-level `share` authorization.
+- [x] Permission names and hexadecimal checksums are strictly validated.
+- [x] Empty grant lists are encoded as JSON arrays.
 - [ ] The executable server wires real SQLite-backed media services.
 - [ ] The typed client supports every media and grant endpoint.
 - [ ] Standard project checks pass.

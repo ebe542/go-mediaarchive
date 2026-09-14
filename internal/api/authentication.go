@@ -74,6 +74,8 @@ type handlerConfiguration struct {
 	userLister                 UserLister
 	mediaResolver              SessionResolver
 	mediaMetadata              MediaMetadataService
+	mediaGrantResolver         SessionResolver
+	mediaGrants                MediaGrantService
 }
 
 // Option configures optional API capabilities.

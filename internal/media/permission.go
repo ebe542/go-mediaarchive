@@ -78,6 +78,26 @@ func (permission Permission) String() string {
 	}
 }
 
+// ParsePermission returns the permission represented by one stable external name.
+func ParsePermission(argName string) (Permission, error) {
+	switch argName {
+	case "discover":
+		return PermissionDiscover, nil
+	case "read":
+		return PermissionRead, nil
+	case "download":
+		return PermissionDownload, nil
+	case "update":
+		return PermissionUpdate, nil
+	case "delete":
+		return PermissionDelete, nil
+	case "share":
+		return PermissionShare, nil
+	default:
+		return 0, fmt.Errorf("%w: %q", ErrInvalidPermission, argName)
+	}
+}
+
 // PermissionSet stores one or more permissions as a validated bitmask.
 type PermissionSet uint8
 
