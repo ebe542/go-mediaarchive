@@ -16,6 +16,7 @@ import (
 	"github.com/ebe542/go-mediaarchive/internal/api"
 	"github.com/ebe542/go-mediaarchive/internal/credential"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
+	"github.com/ebe542/go-mediaarchive/internal/media"
 	"github.com/ebe542/go-mediaarchive/internal/password"
 	"github.com/ebe542/go-mediaarchive/internal/session"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
@@ -65,6 +66,154 @@ func TestDatabasePathFromEnvironment(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestApplicationHandlerPersistsMediaAndGrantThroughSQLite(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlitestore.Open(ctx, filepath.Join(t.TempDir(), "mediaarchive.db"))
+	if err != nil {
+		t.Fatalf("open SQLite database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	now := time.Date(2026, time.September, 14, 10, 0, 0, 0, time.UTC)
+	administrator, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"media_admin",
+		"Media Administrator",
+		identity.RoleAdmin,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create administrator fixture: %v", err)
+	}
+	plainPassword := []byte("synthetic media passphrase")
+	encodedHash, err := password.NewDefaultHasher().Hash(plainPassword)
+	if err != nil {
+		t.Fatalf("hash administrator password: %v", err)
+	}
+	passwordCredential, err := credential.NewPasswordCredential(
+		administrator.ID,
+		encodedHash,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create password credential: %v", err)
+	}
+	if err := sqlitestore.NewAdminBootstrapRepository(database).BootstrapAdmin(
+		ctx,
+		administrator,
+		passwordCredential,
+	); err != nil {
+		t.Fatalf("store administrator fixture: %v", err)
+	}
+
+	grantee, err := identity.NewUser(
+		"223e4567-e89b-12d3-a456-426614174000",
+		"media_viewer",
+		"Media Viewer",
+		identity.RoleViewer,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create grantee fixture: %v", err)
+	}
+	if err := sqlitestore.NewUserRepository(database).Create(ctx, grantee); err != nil {
+		t.Fatalf("store grantee fixture: %v", err)
+	}
+
+	handler, err := newApplicationHandler(database, defaultEnrollmentLifetime)
+	if err != nil {
+		t.Fatalf("create application handler: %v", err)
+	}
+	loginRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/sessions",
+		strings.NewReader(
+			`{"username":"media_admin","password":"synthetic media passphrase"}`,
+		),
+	)
+	loginRequest.Header.Set("Content-Type", "application/json")
+	loginRequest.RemoteAddr = "192.0.2.20:12345"
+	loginResponse := httptest.NewRecorder()
+	handler.ServeHTTP(loginResponse, loginRequest)
+	if loginResponse.Code != http.StatusCreated {
+		t.Fatalf("expected login status 201, got %d: %s", loginResponse.Code, loginResponse.Body.String())
+	}
+	var sessionBody struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if err := json.NewDecoder(loginResponse.Body).Decode(&sessionBody); err != nil {
+		t.Fatalf("decode login response: %v", err)
+	}
+
+	createRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/media",
+		strings.NewReader(
+			`{"title":"Integration Book","authors":["Example Author"],`+
+				`"originalFilename":"integration-book.pdf","type":"book",`+
+				`"mimeType":"application/pdf","size":4096,`+
+				`"sha256":"`+strings.Repeat("5a", 32)+`"}`,
+		),
+	)
+	createRequest.Header.Set("Content-Type", "application/json")
+	createRequest.Header.Set("Authorization", "Bearer "+sessionBody.AccessToken)
+	createResponse := httptest.NewRecorder()
+	handler.ServeHTTP(createResponse, createRequest)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("expected media creation status 201, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+	var mediaBody struct {
+		ID      string `json:"id"`
+		OwnerID string `json:"ownerId"`
+	}
+	if err := json.NewDecoder(createResponse.Body).Decode(&mediaBody); err != nil {
+		t.Fatalf("decode media response: %v", err)
+	}
+	if mediaBody.OwnerID != administrator.ID {
+		t.Fatalf("expected authenticated administrator as owner, got %q", mediaBody.OwnerID)
+	}
+
+	grantRequest := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/media/"+mediaBody.ID+"/grants/"+grantee.ID,
+		strings.NewReader(`{"permissions":["discover","read"]}`),
+	)
+	grantRequest.Header.Set("Content-Type", "application/json")
+	grantRequest.Header.Set("Authorization", "Bearer "+sessionBody.AccessToken)
+	grantResponse := httptest.NewRecorder()
+	handler.ServeHTTP(grantResponse, grantRequest)
+	if grantResponse.Code != http.StatusOK {
+		t.Fatalf("expected grant replacement status 200, got %d: %s", grantResponse.Code, grantResponse.Body.String())
+	}
+
+	storedItem, err := sqlitestore.NewMediaRepository(database).FindByID(ctx, mediaBody.ID)
+	if err != nil {
+		t.Fatalf("retrieve stored media: %v", err)
+	}
+	if storedItem.OwnerID != administrator.ID || storedItem.Title != "Integration Book" {
+		t.Fatalf("unexpected stored media %+v", storedItem)
+	}
+	storedGrant, err := sqlitestore.NewMediaGrantRepository(database).Find(
+		ctx,
+		mediaBody.ID,
+		grantee.ID,
+	)
+	if err != nil {
+		t.Fatalf("retrieve stored grant: %v", err)
+	}
+	if !storedGrant.Permissions.Has(media.PermissionDiscover) ||
+		!storedGrant.Permissions.Has(media.PermissionRead) {
+		t.Fatalf("unexpected stored permissions %v", storedGrant.Permissions.Values())
 	}
 }
 

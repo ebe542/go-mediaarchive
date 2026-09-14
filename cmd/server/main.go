@@ -20,6 +20,7 @@ import (
 
 	"github.com/ebe542/go-mediaarchive/internal/api"
 	"github.com/ebe542/go-mediaarchive/internal/application/authentication"
+	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
 	apppasswords "github.com/ebe542/go-mediaarchive/internal/application/passwords"
 	appsessions "github.com/ebe542/go-mediaarchive/internal/application/sessions"
 	appusers "github.com/ebe542/go-mediaarchive/internal/application/users"
@@ -336,6 +337,19 @@ func newApplicationHandler(
 		passwordHasher,
 		time.Now,
 	)
+	mediaRepository := sqlitestore.NewMediaRepository(argDatabase)
+	grantRepository := sqlitestore.NewMediaGrantRepository(argDatabase)
+	mediaService := appmedia.NewService(
+		mediaRepository,
+		grantRepository,
+		uuid.NewString,
+		time.Now,
+	)
+	grantService := appmedia.NewGrantService(
+		mediaRepository,
+		grantRepository,
+		userRepository,
+	)
 
 	return api.NewHandler(
 		api.WithAuthentication(
@@ -364,6 +378,14 @@ func newApplicationHandler(
 		api.WithPasswordChangeAPI(
 			sessionService,
 			passwordChangeService,
+		),
+		api.WithMediaMetadataAPI(
+			sessionService,
+			mediaService,
+		),
+		api.WithMediaGrantAPI(
+			sessionService,
+			grantService,
 		),
 	), nil
 }
