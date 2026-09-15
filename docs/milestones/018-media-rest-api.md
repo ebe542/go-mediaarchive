@@ -168,7 +168,7 @@ same commit as the behavior they specify.
 - [x] Permission names and hexadecimal checksums are strictly validated.
 - [x] Empty grant lists are encoded as JSON arrays.
 - [x] The executable server wires real SQLite-backed media services.
-- [ ] The typed client supports every media and grant endpoint.
+- [x] The typed client supports every media and grant endpoint.
 - [ ] Standard project checks pass.
 - [ ] Local quality gate checks pass.
 
