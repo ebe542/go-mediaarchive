@@ -22,7 +22,7 @@ verifiable increments.
 | `milestone-015` | [Secure media authorization model](015-secure-media-authorization.md) | Complete |
 | `milestone-016` | [SQLite media persistence](016-sqlite-media-persistence.md) | Complete |
 | `milestone-017` | [Media application services](017-media-application-services.md) | Complete |
-| `milestone-018` | [Media REST API](018-media-rest-api.md) | In progress |
+| `milestone-018` | [Media REST API](018-media-rest-api.md) | Complete |
 
 ## Versioning rule
 

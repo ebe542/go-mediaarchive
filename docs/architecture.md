@@ -6,7 +6,7 @@ This page describes the production packages in `github.com/ebe542/go-mediaarchiv
 
 Regenerate it after changing package boundaries or imports:
 
-```bash
+```console
 go run ./tools/archdoc -output docs/architecture.md
 ```
 
@@ -23,73 +23,88 @@ flowchart LR
   subgraph commands["Commands"]
     package0["cmd/admin"]
     package1["cmd/client"]
-    package2["cmd/server"]
+    package2["cmd/projectctl"]
+    package3["cmd/server"]
   end
   subgraph transport["HTTP transport"]
-    package3["internal/api"]
+    package4["internal/api"]
   end
   subgraph application["Application services"]
-    package4["internal/application/authentication"]
-    package5["internal/application/bootstrap"]
-    package6["internal/application/passwords"]
-    package7["internal/application/sessions"]
-    package8["internal/application/users"]
+    package5["internal/application/authentication"]
+    package6["internal/application/bootstrap"]
+    package7["internal/application/media"]
+    package8["internal/application/passwords"]
+    package9["internal/application/sessions"]
+    package10["internal/application/users"]
   end
   subgraph domain["Domain"]
-    package11["internal/credential"]
-    package12["internal/identity"]
-    package13["internal/password"]
-    package14["internal/session"]
+    package13["internal/credential"]
+    package14["internal/identity"]
+    package15["internal/media"]
+    package16["internal/password"]
+    package18["internal/session"]
   end
   subgraph infrastructure["Infrastructure"]
-    package15["internal/storage/sqlite"]
+    package19["internal/storage/sqlite"]
   end
   subgraph client["Client"]
-    package9["internal/cli"]
-    package10["internal/client"]
+    package11["internal/cli"]
+    package12["internal/client"]
   end
-  package0 --> package5
-  package0 --> package9
-  package0 --> package10
+  subgraph tooling["Development tooling"]
+    package17["internal/projecttool"]
+  end
+  package0 --> package6
+  package0 --> package11
   package0 --> package12
-  package0 --> package13
-  package0 --> package15
-  package1 --> package9
-  package1 --> package10
-  package2 --> package3
-  package2 --> package4
-  package2 --> package6
-  package2 --> package7
-  package2 --> package8
-  package2 --> package11
-  package2 --> package13
-  package2 --> package14
-  package2 --> package15
+  package0 --> package14
+  package0 --> package16
+  package0 --> package19
+  package1 --> package11
+  package1 --> package12
+  package2 --> package17
   package3 --> package4
-  package3 --> package6
+  package3 --> package5
   package3 --> package7
   package3 --> package8
-  package3 --> package11
-  package3 --> package12
+  package3 --> package9
+  package3 --> package10
   package3 --> package13
-  package4 --> package11
-  package4 --> package12
-  package5 --> package11
-  package5 --> package12
+  package3 --> package16
+  package3 --> package18
+  package3 --> package19
+  package4 --> package5
+  package4 --> package7
+  package4 --> package8
+  package4 --> package9
+  package4 --> package10
+  package4 --> package13
+  package4 --> package14
+  package4 --> package15
+  package4 --> package16
   package5 --> package13
-  package6 --> package11
-  package6 --> package12
+  package5 --> package14
   package6 --> package13
-  package7 --> package12
+  package6 --> package14
+  package6 --> package16
   package7 --> package14
-  package8 --> package12
-  package9 --> package10
-  package10 --> package12
+  package7 --> package15
+  package8 --> package13
+  package8 --> package14
+  package8 --> package16
+  package9 --> package14
+  package9 --> package18
+  package10 --> package14
   package11 --> package12
-  package15 --> package8
-  package15 --> package11
-  package15 --> package12
+  package12 --> package14
+  package12 --> package15
+  package13 --> package14
   package15 --> package14
+  package19 --> package10
+  package19 --> package13
+  package19 --> package14
+  package19 --> package15
+  package19 --> package18
 ```
 
 ## Modules
@@ -98,10 +113,12 @@ flowchart LR
 | --- | --- | --- |
 | [`cmd/admin`](../cmd/admin) | Commands | Not documented yet. |
 | [`cmd/client`](../cmd/client) | Commands | Not documented yet. |
+| [`cmd/projectctl`](../cmd/projectctl) | Commands | Command projectctl provides repository-local development automation. |
 | [`cmd/server`](../cmd/server) | Commands | Not documented yet. |
 | [`internal/api`](../internal/api) | HTTP transport | Not documented yet. |
 | [`internal/application/authentication`](../internal/application/authentication) | Application services | Package authentication verifies user credentials. |
 | [`internal/application/bootstrap`](../internal/application/bootstrap) | Application services | Package bootstrap coordinates initial administrator creation. |
+| [`internal/application/media`](../internal/application/media) | Application services | Package media coordinates authorized media metadata use cases. |
 | [`internal/application/passwords`](../internal/application/passwords) | Application services | Package passwords coordinates password enrollment and credential lifecycle. |
 | [`internal/application/sessions`](../internal/application/sessions) | Application services | Package sessions coordinates authenticated server-side sessions. |
 | [`internal/application/users`](../internal/application/users) | Application services | Package users coordinates user identity application operations. |
@@ -109,6 +126,8 @@ flowchart LR
 | [`internal/client`](../internal/client) | Client | Package client provides a typed client for the Media Archive REST API. |
 | [`internal/credential`](../internal/credential) | Domain | Package credential defines authentication credentials independently of users. |
 | [`internal/identity`](../internal/identity) | Domain | Package identity defines users and global security roles. |
+| [`internal/media`](../internal/media) | Domain | Package media defines stored-media identities and content permissions. |
 | [`internal/password`](../internal/password) | Domain | Package password provides password hashing and verification. |
+| [`internal/projecttool`](../internal/projecttool) | Development tooling | Package projecttool provides cross-platform repository automation. |
 | [`internal/session`](../internal/session) | Domain | Package session defines opaque server-side authentication sessions. |
 | [`internal/storage/sqlite`](../internal/storage/sqlite) | Infrastructure | Package sqlite provides SQLite persistence for Media Archive. |

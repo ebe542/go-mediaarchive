@@ -71,6 +71,17 @@ func TestGroupForPackageClassifiesClientAdapters(t *testing.T) {
 	}
 }
 
+func TestGroupForPackageClassifiesDevelopmentTooling(t *testing.T) {
+	group := groupForPackage(
+		"example.com/mediaarchive",
+		"example.com/mediaarchive/internal/projecttool",
+	)
+
+	if group != "tooling" {
+		t.Fatalf("expected tooling group, got %q", group)
+	}
+}
+
 func TestGenerateDocumentSortsPackagesAndIncludesInternalImports(t *testing.T) {
 	moduleDirectory := t.TempDir()
 	module := &listedModule{

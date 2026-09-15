@@ -169,8 +169,8 @@ same commit as the behavior they specify.
 - [x] Empty grant lists are encoded as JSON arrays.
 - [x] The executable server wires real SQLite-backed media services.
 - [x] The typed client supports every media and grant endpoint.
-- [ ] Standard project checks pass.
-- [ ] Local quality gate checks pass.
+- [x] Standard project checks pass.
+- [x] Local quality gate checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-018` tag after all milestone commits are complete.

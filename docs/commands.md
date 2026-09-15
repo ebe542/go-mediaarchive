@@ -375,6 +375,14 @@ directly with the same HTTPS JSON API and implement equivalent session handling.
 | Issue enrollment | `POST /api/v1/users/{id}/password-enrollment` | Administrator |
 | Complete enrollment | `POST /api/v1/auth/password-enrollments` | Public, token protected and rate limited |
 | Change own password | `PUT /api/v1/users/me/password` | Authenticated |
+| Create media metadata | `POST /api/v1/media` | Active editor or administrator |
+| Read media metadata | `GET /api/v1/media/{id}` | Owner or explicit `discover` permission |
+| Replace media metadata | `PUT /api/v1/media/{id}` | Owner or explicit `update` permission |
+| Delete media | `DELETE /api/v1/media/{id}` | Owner or explicit `delete` permission |
+| Replace media grant | `PUT /api/v1/media/{id}/grants/{userId}` | Owner or explicit `share` permission |
+| Read media grant | `GET /api/v1/media/{id}/grants/{userId}` | Owner or explicit `share` permission |
+| List media grants | `GET /api/v1/media/{id}/grants` | Owner or explicit `share` permission |
+| Revoke media grant | `DELETE /api/v1/media/{id}/grants/{userId}` | Owner or explicit `share` permission |
 
 Successful API responses use JSON except operations returning HTTP `204 No
 Content`. Authenticated requests send the opaque token as:
@@ -384,6 +392,8 @@ Authorization: Bearer <access-token>
 ```
 
 Tokens, passwords, and enrollment secrets must not be logged or placed in URLs.
+Media responses never expose internal storage locations. Administrators receive
+no implicit access to media owned by another user.
 
 ## Development checks
 

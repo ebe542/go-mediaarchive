@@ -46,6 +46,7 @@ var packageGroups = []packageGroup{
 	{ID: "domain", Title: "Domain"},
 	{ID: "infrastructure", Title: "Infrastructure"},
 	{ID: "client", Title: "Client"},
+	{ID: "tooling", Title: "Development tooling"},
 }
 
 func main() {
@@ -163,7 +164,7 @@ func generateDocument(packages []listedPackage) ([]byte, error) {
 	document.WriteString(modulePath)
 	document.WriteString("`. It is generated from the package metadata returned by `go list -json ./...`.\n\n")
 	document.WriteString("Regenerate it after changing package boundaries or imports:\n\n")
-	document.WriteString("```bash\n")
+	document.WriteString("```console\n")
 	document.WriteString("go run ./tools/archdoc -output docs/architecture.md\n")
 	document.WriteString("```\n\n")
 	document.WriteString("## Related documentation\n\n")
@@ -257,6 +258,8 @@ func groupForPackage(modulePath string, importPath string) string {
 		return "infrastructure"
 	case relativePath == "internal/cli", relativePath == "internal/client":
 		return "client"
+	case relativePath == "internal/projecttool":
+		return "tooling"
 	default:
 		return "domain"
 	}

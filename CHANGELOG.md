@@ -24,12 +24,17 @@ checkpoints.
   removal, last-administrator protection, and explicit console confirmation.
 - Minimal media identities, ordered authors, and compact per-user permission
   grants backed by strict transactional SQLite repositories.
+- Storage-independent media application services with centralized object-level
+  authorization and indistinguishable unknown and unauthorized media.
+- Authenticated media metadata and per-user grant REST endpoints with strict
+  JSON representations and a typed Go client for every operation.
 - Media ownership protection for user deletion with transactional cleanup of
   grants held on other users' media.
 - Interactive end-user and administrator CLI applications with in-memory
   sessions, user-aware prompts, retryable field input, local-time presentation,
   and complete user-management commands.
 - Generated Go package architecture and SQLite database documentation.
-- Quality Gate and semantic-version release automation.
+- Cross-platform Go project tooling for Quality Gate checks, reproducible
+  release archives, checksums, and semantic-version release validation.
 
 [Unreleased]: https://github.com/ebe542/go-mediaarchive/compare/milestone-010...HEAD
