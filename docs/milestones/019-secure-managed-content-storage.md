@@ -180,7 +180,7 @@ remain in the same commit as the behavior they specify.
 - [x] Storage, upload, API, and security contracts are documented.
 - [x] Managed paths are derived exclusively from server-controlled identifiers.
 - [x] Filesystem writes are bounded, streamed, private, and atomically published.
-- [ ] SQLite persists opaque relative content keys without absolute paths.
+- [x] SQLite persists opaque relative content keys without absolute paths.
 - [x] Upload size and SHA-256 are derived from received bytes.
 - [x] Empty and oversized uploads are rejected without retaining partial files.
 - [ ] Metadata failures compensate by removing newly stored content.

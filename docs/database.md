@@ -1,7 +1,8 @@
 # Database structure
 
-Media Archive stores authentication and user metadata in SQLite. The embedded
-SQL migrations in [`internal/storage/sqlite/migrations`](../internal/storage/sqlite/migrations)
+Media Archive stores authentication, user, media, grant, and managed-content
+location metadata in SQLite. The embedded SQL migrations in
+[`internal/storage/sqlite/migrations`](../internal/storage/sqlite/migrations)
 are the authoritative schema definition. This document provides a readable
 overview of the current schema after all migrations have been applied.
 
@@ -12,6 +13,11 @@ erDiagram
     users ||--|| password_credentials : "has"
     users ||--o| password_enrollments : "may receive"
     users ||--o{ sessions : "owns"
+    users ||--o{ media_items : "owns"
+    users ||--o{ media_grants : "receives"
+    media_items ||--o{ media_authors : "has"
+    media_items ||--o{ media_grants : "authorizes"
+    media_items ||--o| media_contents : "stores"
 
     schema_migrations {
         INTEGER version PK
@@ -50,6 +56,37 @@ erDiagram
         TEXT last_seen_at
         TEXT expires_at
         TEXT revoked_at
+    }
+
+    media_items {
+        TEXT id PK
+        TEXT title
+        TEXT original_filename
+        TEXT media_type
+        TEXT mime_type
+        INTEGER size
+        BLOB checksum
+        TEXT owner_id FK
+        TEXT created_at
+        TEXT updated_at
+    }
+
+    media_authors {
+        TEXT media_id PK,FK
+        INTEGER position PK
+        TEXT name
+    }
+
+    media_grants {
+        TEXT media_id PK,FK
+        TEXT user_id PK,FK
+        INTEGER permissions
+    }
+
+    media_contents {
+        TEXT media_id PK,FK
+        TEXT storage_key UK
+        TEXT stored_at
     }
 ```
 
@@ -158,7 +195,9 @@ contains no file content or server filesystem path. Its SHA-256 checksum is a
 Ordered author names are stored in `media_authors` using the composite key
 `(media_id, position)`. Media creation and metadata updates persist the item and
 its complete author sequence in one transaction. Media deletion explicitly
-removes grants and authors before removing the item.
+removes grants and authors before removing the item. A managed-content
+association restricts that deletion until the application has coordinated the
+file lifecycle and removed the association explicitly.
 
 ### `media_grants`
 
@@ -170,6 +209,18 @@ During user deletion, grants held by the target user are removed inside the
 same transaction as authentication data. If that user owns media, the deletion
 is rejected and all prior changes, including grant removal, are rolled back.
 Owned media is never removed by a user-deletion cascade.
+
+### `media_contents`
+
+`media_contents` associates at most one managed file with a media identity. Its
+unique `storage_key` is an opaque normalized relative key, not an absolute
+filesystem path and not the original filename. `stored_at` records when the
+content was successfully published by the storage adapter.
+
+The media foreign key uses restricted deletion. This deliberately prevents the
+existing metadata repository from deleting an item while a managed file is
+still attached. The application layer must coordinate file removal, location
+removal, and metadata removal explicitly.
 
 ## Storage and integrity rules
 
@@ -196,6 +247,7 @@ Owned media is never removed by a user-deletion cascade.
 | `005` | [`005_create_password_enrollments.sql`](../internal/storage/sqlite/migrations/005_create_password_enrollments.sql) | Creates replaceable, expiring password enrollments. |
 | `006` | [`006_create_users_pagination_index.sql`](../internal/storage/sqlite/migrations/006_create_users_pagination_index.sql) | Indexes the immutable user-directory ordering key. |
 | `007` | [`007_create_media.sql`](../internal/storage/sqlite/migrations/007_create_media.sql) | Creates media identities, ordered authors, and per-user permission grants. |
+| `008` | [`008_create_media_contents.sql`](../internal/storage/sqlite/migrations/008_create_media_contents.sql) | Associates media identities with opaque managed-content keys. |
 
 New schema changes must be added as a new zero-padded migration. Existing
 migrations must remain immutable after publication because deployed databases
