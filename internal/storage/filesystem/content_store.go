@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -26,6 +27,14 @@ type ContentStore struct {
 
 // Verify at compile time that ContentStore implements the content contract.
 var _ content.Store = (*ContentStore)(nil)
+var _ content.DeletionStore = (*ContentStore)(nil)
+
+type stagedDeletion struct {
+	mutex        sync.Mutex
+	originalPath string
+	stagedPath   string
+	finished     bool
+}
 
 // NewContentStore prepares a private root for managed content.
 func NewContentStore(argRoot string) (*ContentStore, error) {
@@ -188,6 +197,98 @@ func (store *ContentStore) Delete(
 	return nil
 }
 
+// StageDelete atomically hides managed content under an internal deletion name.
+func (store *ContentStore) StageDelete(
+	argContext context.Context,
+	argStorageKey string,
+) (content.StagedDeletion, error) {
+	mediaID, err := mediaIDFromStorageKey(argStorageKey)
+	if err != nil {
+		return nil, err
+	}
+	if err := argContext.Err(); err != nil {
+		return nil, err
+	}
+	if err := requirePrivateDirectory(store.root); err != nil {
+		return nil, fmt.Errorf("validate content root: %w", err)
+	}
+
+	shardPath := filepath.Join(store.root, mediaID[:2])
+	if err := requirePrivateDirectory(shardPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, content.ErrNotFound
+		}
+
+		return nil, fmt.Errorf("validate content directory: %w", err)
+	}
+
+	originalPath := filepath.Join(store.root, filepath.FromSlash(argStorageKey))
+	info, err := os.Lstat(originalPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, content.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("inspect content for staged deletion: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("managed content is not a regular file")
+	}
+
+	stagedPath := filepath.Join(shardPath, ".delete-"+mediaID)
+	if _, err := os.Lstat(stagedPath); err == nil {
+		return nil, content.ErrConflict
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("inspect staged deletion path: %w", err)
+	}
+	if err := os.Rename(originalPath, stagedPath); err != nil {
+		return nil, fmt.Errorf("stage content deletion: %w", err)
+	}
+
+	return &stagedDeletion{
+		originalPath: originalPath,
+		stagedPath:   stagedPath,
+	}, nil
+}
+
+func (deletion *stagedDeletion) Commit(argContext context.Context) error {
+	deletion.mutex.Lock()
+	defer deletion.mutex.Unlock()
+	if deletion.finished {
+		return errors.New("staged deletion is already finalized")
+	}
+	if err := argContext.Err(); err != nil {
+		return err
+	}
+	if err := os.Remove(deletion.stagedPath); err != nil {
+		return fmt.Errorf("commit content deletion: %w", err)
+	}
+	deletion.finished = true
+
+	return nil
+}
+
+func (deletion *stagedDeletion) Rollback(argContext context.Context) error {
+	deletion.mutex.Lock()
+	defer deletion.mutex.Unlock()
+	if deletion.finished {
+		return errors.New("staged deletion is already finalized")
+	}
+	if err := argContext.Err(); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(deletion.originalPath); err == nil {
+		return content.ErrConflict
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect content rollback path: %w", err)
+	}
+	if err := os.Rename(deletion.stagedPath, deletion.originalPath); err != nil {
+		return fmt.Errorf("roll back content deletion: %w", err)
+	}
+	deletion.finished = true
+
+	return nil
+}
+
 func copyBounded(
 	argContext context.Context,
 	argDestination io.Writer,
@@ -225,7 +326,7 @@ func copyBounded(
 			return written, nil
 		}
 		if readErr != nil {
-			return 0, fmt.Errorf("read content source: %w", readErr)
+			return 0, fmt.Errorf("%w: %w", content.ErrInvalidSource, readErr)
 		}
 	}
 }

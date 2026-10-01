@@ -53,3 +53,18 @@ type Store interface {
 	) (Stored, error)
 	Delete(argContext context.Context, argStorageKey string) error
 }
+
+// StagedDeletion represents content hidden from its published key but not yet
+// irreversibly removed.
+type StagedDeletion interface {
+	Commit(argContext context.Context) error
+	Rollback(argContext context.Context) error
+}
+
+// DeletionStore temporarily hides managed content before permanent deletion.
+type DeletionStore interface {
+	StageDelete(
+		argContext context.Context,
+		argStorageKey string,
+	) (StagedDeletion, error)
+}

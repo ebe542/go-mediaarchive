@@ -237,6 +237,64 @@ func (repository *MediaRepository) Delete(
 	return nil
 }
 
+// DeleteManaged atomically removes a matching content location, grants,
+// authors, and media identity.
+func (repository *MediaRepository) DeleteManaged(
+	argContext context.Context,
+	argID string,
+	argStorageKey string,
+) error {
+	transaction, err := repository.database.BeginTx(argContext, nil)
+	if err != nil {
+		return fmt.Errorf("begin managed media deletion: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	result, err := transaction.ExecContext(
+		argContext,
+		`DELETE FROM media_contents WHERE media_id = ? AND storage_key = ?`,
+		argID,
+		argStorageKey,
+	)
+	if err != nil {
+		return fmt.Errorf("delete managed content location: %w", err)
+	}
+	if err := requireOneContentLocationRow(result); err != nil {
+		return err
+	}
+	for _, relatedDelete := range []struct {
+		name  string
+		query string
+	}{
+		{"grants", `DELETE FROM media_grants WHERE media_id = ?`},
+		{"authors", `DELETE FROM media_authors WHERE media_id = ?`},
+	} {
+		if _, err := transaction.ExecContext(
+			argContext,
+			relatedDelete.query,
+			argID,
+		); err != nil {
+			return fmt.Errorf("delete managed media %s: %w", relatedDelete.name, err)
+		}
+	}
+	result, err = transaction.ExecContext(
+		argContext,
+		`DELETE FROM media_items WHERE id = ?`,
+		argID,
+	)
+	if err != nil {
+		return fmt.Errorf("delete managed media item: %w", err)
+	}
+	if err := requireOneMediaRow(result); err != nil {
+		return err
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit managed media deletion: %w", err)
+	}
+
+	return nil
+}
+
 func validateMediaItem(argItem media.Item) (media.Item, error) {
 	return media.NewItem(
 		argItem.ID,

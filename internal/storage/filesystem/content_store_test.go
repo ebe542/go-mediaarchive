@@ -201,6 +201,74 @@ func TestContentStoreDeleteRemovesManagedContent(t *testing.T) {
 	}
 }
 
+func TestContentStoreStagesAndCommitsDeletion(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewContentStore(root)
+	if err != nil {
+		t.Fatalf("create content store: %v", err)
+	}
+	stored, err := store.Put(
+		context.Background(),
+		testMediaID,
+		strings.NewReader("content"),
+		100,
+	)
+	if err != nil {
+		t.Fatalf("put content: %v", err)
+	}
+
+	deletion, err := store.StageDelete(context.Background(), stored.StorageKey)
+	if err != nil {
+		t.Fatalf("stage deletion: %v", err)
+	}
+	originalPath := filepath.Join(root, "12", testMediaID)
+	stagedPath := filepath.Join(root, "12", ".delete-"+testMediaID)
+	if _, err := os.Stat(originalPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected published content to be hidden, got %v", err)
+	}
+	if _, err := os.Stat(stagedPath); err != nil {
+		t.Fatalf("expected staged content: %v", err)
+	}
+	if err := deletion.Commit(context.Background()); err != nil {
+		t.Fatalf("commit deletion: %v", err)
+	}
+	if _, err := os.Stat(stagedPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected staged content removal, got %v", err)
+	}
+}
+
+func TestContentStoreRollsBackStagedDeletion(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewContentStore(root)
+	if err != nil {
+		t.Fatalf("create content store: %v", err)
+	}
+	stored, err := store.Put(
+		context.Background(),
+		testMediaID,
+		strings.NewReader("content"),
+		100,
+	)
+	if err != nil {
+		t.Fatalf("put content: %v", err)
+	}
+	deletion, err := store.StageDelete(context.Background(), stored.StorageKey)
+	if err != nil {
+		t.Fatalf("stage deletion: %v", err)
+	}
+	if err := deletion.Rollback(context.Background()); err != nil {
+		t.Fatalf("roll back deletion: %v", err)
+	}
+
+	written, err := os.ReadFile(filepath.Join(root, "12", testMediaID))
+	if err != nil {
+		t.Fatalf("read restored content: %v", err)
+	}
+	if string(written) != "content" {
+		t.Fatalf("expected restored content, got %q", written)
+	}
+}
+
 func TestContentStoreDeleteRejectsUnsafeKeys(t *testing.T) {
 	store, err := NewContentStore(t.TempDir())
 	if err != nil {

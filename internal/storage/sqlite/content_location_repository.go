@@ -130,3 +130,15 @@ func (repository *ContentLocationRepository) Delete(
 
 	return nil
 }
+
+func requireOneContentLocationRow(argResult sql.Result) error {
+	affectedRows, err := argResult.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read affected content location row count: %w", err)
+	}
+	if affectedRows != 1 {
+		return content.ErrLocationNotFound
+	}
+
+	return nil
+}
