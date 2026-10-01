@@ -178,11 +178,11 @@ remain in the same commit as the behavior they specify.
 ## Acceptance criteria
 
 - [x] Storage, upload, API, and security contracts are documented.
-- [ ] Managed paths are derived exclusively from server-controlled identifiers.
-- [ ] Filesystem writes are bounded, streamed, private, and atomically published.
+- [x] Managed paths are derived exclusively from server-controlled identifiers.
+- [x] Filesystem writes are bounded, streamed, private, and atomically published.
 - [ ] SQLite persists opaque relative content keys without absolute paths.
-- [ ] Upload size and SHA-256 are derived from received bytes.
-- [ ] Empty and oversized uploads are rejected without retaining partial files.
+- [x] Upload size and SHA-256 are derived from received bytes.
+- [x] Empty and oversized uploads are rejected without retaining partial files.
 - [ ] Metadata failures compensate by removing newly stored content.
 - [ ] The multipart endpoint requires authentication and existing creation authorization.
 - [ ] Upload errors do not disclose internal filesystem or database details.

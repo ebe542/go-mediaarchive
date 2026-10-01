@@ -38,73 +38,76 @@ flowchart LR
     package10["internal/application/users"]
   end
   subgraph domain["Domain"]
-    package13["internal/credential"]
-    package14["internal/identity"]
-    package15["internal/media"]
-    package16["internal/password"]
-    package18["internal/session"]
+    package13["internal/content"]
+    package14["internal/credential"]
+    package15["internal/identity"]
+    package16["internal/media"]
+    package17["internal/password"]
+    package19["internal/session"]
   end
   subgraph infrastructure["Infrastructure"]
-    package19["internal/storage/sqlite"]
+    package20["internal/storage/filesystem"]
+    package21["internal/storage/sqlite"]
   end
   subgraph client["Client"]
     package11["internal/cli"]
     package12["internal/client"]
   end
   subgraph tooling["Development tooling"]
-    package17["internal/projecttool"]
+    package18["internal/projecttool"]
   end
   package0 --> package6
   package0 --> package11
   package0 --> package12
-  package0 --> package14
-  package0 --> package16
-  package0 --> package19
+  package0 --> package15
+  package0 --> package17
+  package0 --> package21
   package1 --> package11
   package1 --> package12
-  package2 --> package17
+  package2 --> package18
   package3 --> package4
   package3 --> package5
   package3 --> package7
   package3 --> package8
   package3 --> package9
   package3 --> package10
-  package3 --> package13
-  package3 --> package16
-  package3 --> package18
+  package3 --> package14
+  package3 --> package17
   package3 --> package19
+  package3 --> package21
   package4 --> package5
   package4 --> package7
   package4 --> package8
   package4 --> package9
   package4 --> package10
-  package4 --> package13
   package4 --> package14
   package4 --> package15
   package4 --> package16
-  package5 --> package13
+  package4 --> package17
   package5 --> package14
-  package6 --> package13
+  package5 --> package15
   package6 --> package14
-  package6 --> package16
-  package7 --> package14
+  package6 --> package15
+  package6 --> package17
   package7 --> package15
-  package8 --> package13
+  package7 --> package16
   package8 --> package14
-  package8 --> package16
-  package9 --> package14
-  package9 --> package18
-  package10 --> package14
+  package8 --> package15
+  package8 --> package17
+  package9 --> package15
+  package9 --> package19
+  package10 --> package15
   package11 --> package12
-  package12 --> package14
   package12 --> package15
-  package13 --> package14
-  package15 --> package14
-  package19 --> package10
-  package19 --> package13
-  package19 --> package14
-  package19 --> package15
-  package19 --> package18
+  package12 --> package16
+  package14 --> package15
+  package16 --> package15
+  package20 --> package13
+  package21 --> package10
+  package21 --> package14
+  package21 --> package15
+  package21 --> package16
+  package21 --> package19
 ```
 
 ## Modules
@@ -124,10 +127,12 @@ flowchart LR
 | [`internal/application/users`](../internal/application/users) | Application services | Package users coordinates user identity application operations. |
 | [`internal/cli`](../internal/cli) | Client | Package cli provides shared primitives for interactive command-line tools. |
 | [`internal/client`](../internal/client) | Client | Package client provides a typed client for the Media Archive REST API. |
+| [`internal/content`](../internal/content) | Domain | Package content defines storage-independent managed-content contracts. |
 | [`internal/credential`](../internal/credential) | Domain | Package credential defines authentication credentials independently of users. |
 | [`internal/identity`](../internal/identity) | Domain | Package identity defines users and global security roles. |
 | [`internal/media`](../internal/media) | Domain | Package media defines stored-media identities and content permissions. |
 | [`internal/password`](../internal/password) | Domain | Package password provides password hashing and verification. |
 | [`internal/projecttool`](../internal/projecttool) | Development tooling | Package projecttool provides cross-platform repository automation. |
 | [`internal/session`](../internal/session) | Domain | Package session defines opaque server-side authentication sessions. |
+| [`internal/storage/filesystem`](../internal/storage/filesystem) | Infrastructure | Package filesystem stores managed media content on a local filesystem. |
 | [`internal/storage/sqlite`](../internal/storage/sqlite) | Infrastructure | Package sqlite provides SQLite persistence for Media Archive. |
