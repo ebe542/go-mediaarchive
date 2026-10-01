@@ -29,6 +29,8 @@ command-line flag > environment variable > built-in default
 | --- | --- | --- | --- |
 | Server listener | `--addr` | `MEDIAARCHIVE_ADDR` | `127.0.0.1:8080` |
 | SQLite database | `--database` | `MEDIAARCHIVE_DATABASE` | `data/mediaarchive.db` |
+| Managed content | `--content-directory` | `MEDIAARCHIVE_CONTENT_DIRECTORY` | `data/content` |
+| Maximum upload bytes | `--maximum-upload-size` | `MEDIAARCHIVE_MAXIMUM_UPLOAD_SIZE` | `1073741824` |
 | TLS certificate | `--tls-certificate` | `MEDIAARCHIVE_TLS_CERTIFICATE` | disabled |
 | TLS private key | `--tls-private-key` | `MEDIAARCHIVE_TLS_PRIVATE_KEY` | disabled |
 | Enrollment lifetime | `--password-enrollment-lifetime` | `MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME` | `24h` |
@@ -47,7 +49,9 @@ Plain HTTP is permitted only for loopback development addresses:
 ```bash
 go run ./cmd/server \
   --addr 127.0.0.1:8080 \
-  --database ./data/mediaarchive.db
+  --database ./data/mediaarchive.db \
+  --content-directory ./data/content \
+  --maximum-upload-size 1073741824
 ```
 
 ### HTTPS server
@@ -79,6 +83,8 @@ go run ./cmd/server --password-enrollment-lifetime 12h
 export CERTIFICATE_DIRECTORY=/path/to/go-mediaarchive-certificates && \
 export MEDIAARCHIVE_ADDR=127.0.0.1:8443 && \
 export MEDIAARCHIVE_DATABASE=./data/mediaarchive.db && \
+export MEDIAARCHIVE_CONTENT_DIRECTORY=./data/content && \
+export MEDIAARCHIVE_MAXIMUM_UPLOAD_SIZE=1073741824 && \
 export MEDIAARCHIVE_TLS_CERTIFICATE="$CERTIFICATE_DIRECTORY/server.crt" && \
 export MEDIAARCHIVE_TLS_PRIVATE_KEY="$CERTIFICATE_DIRECTORY/server.key" && \
 export MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME=12h && \
@@ -376,6 +382,7 @@ directly with the same HTTPS JSON API and implement equivalent session handling.
 | Complete enrollment | `POST /api/v1/auth/password-enrollments` | Public, token protected and rate limited |
 | Change own password | `PUT /api/v1/users/me/password` | Authenticated |
 | Create media metadata | `POST /api/v1/media` | Active editor or administrator |
+| Upload managed media | `POST /api/v1/media/uploads` | Active editor or administrator |
 | Read media metadata | `GET /api/v1/media/{id}` | Owner or explicit `discover` permission |
 | Replace media metadata | `PUT /api/v1/media/{id}` | Owner or explicit `update` permission |
 | Delete media | `DELETE /api/v1/media/{id}` | Owner or explicit `delete` permission |
@@ -394,6 +401,20 @@ Authorization: Bearer <access-token>
 Tokens, passwords, and enrollment secrets must not be logged or placed in URLs.
 Media responses never expose internal storage locations. Administrators receive
 no implicit access to media owned by another user.
+
+Upload managed content with the JSON metadata part first and the file part last:
+
+```bash
+export MEDIAARCHIVE_TOKEN='<access-token>' && \
+curl --fail-with-body --silent --show-error \
+  --header "Authorization: Bearer $MEDIAARCHIVE_TOKEN" \
+  --form 'metadata={"title":"Security Engineering","authors":["Example Author"],"type":"book"};type=application/json' \
+  --form 'file=@/path/to/security-engineering.pdf;type=application/pdf' \
+  https://archive.example.test:8443/api/v1/media/uploads
+```
+
+The server derives the original filename, byte size, and SHA-256 checksum from
+the file part. It never accepts a client-supplied storage path.
 
 ## Development checks
 

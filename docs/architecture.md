@@ -71,15 +71,18 @@ flowchart LR
   package3 --> package8
   package3 --> package9
   package3 --> package10
+  package3 --> package13
   package3 --> package14
   package3 --> package17
   package3 --> package19
+  package3 --> package20
   package3 --> package21
   package4 --> package5
   package4 --> package7
   package4 --> package8
   package4 --> package9
   package4 --> package10
+  package4 --> package13
   package4 --> package14
   package4 --> package15
   package4 --> package16

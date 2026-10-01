@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -24,15 +25,19 @@ import (
 	apppasswords "github.com/ebe542/go-mediaarchive/internal/application/passwords"
 	appsessions "github.com/ebe542/go-mediaarchive/internal/application/sessions"
 	appusers "github.com/ebe542/go-mediaarchive/internal/application/users"
+	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/credential"
 	"github.com/ebe542/go-mediaarchive/internal/password"
 	"github.com/ebe542/go-mediaarchive/internal/session"
+	filesystemstore "github.com/ebe542/go-mediaarchive/internal/storage/filesystem"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
 
 const (
 	defaultServerAddress      = "127.0.0.1:8080"
 	defaultDatabasePath       = "data/mediaarchive.db"
+	defaultContentDirectory   = "data/content"
+	defaultMaximumUploadSize  = int64(1024 * 1024 * 1024)
 	sessionAbsoluteLifetime   = 8 * time.Hour
 	sessionIdleTimeout        = 30 * time.Minute
 	loginLimitWindow          = 15 * time.Minute
@@ -65,6 +70,18 @@ func run(args []string, getenv func(string) string) error {
 		"path to the SQLite database file",
 	)
 
+	contentDirectory := flags.String(
+		"content-directory",
+		contentDirectoryFromEnvironment(getenv),
+		"root directory for managed media content",
+	)
+
+	maximumUploadSizeValue := flags.String(
+		"maximum-upload-size",
+		maximumUploadSizeDefault(getenv),
+		"maximum uploaded file size in bytes",
+	)
+
 	certificatePath := flags.String(
 		"tls-certificate",
 		tlsCertificatePathFromEnvironment(getenv),
@@ -92,6 +109,10 @@ func run(args []string, getenv func(string) string) error {
 			"unexpected positional arguments: %v",
 			flags.Args(),
 		)
+	}
+	maximumUploadSize, err := parseMaximumUploadSize(*maximumUploadSizeValue)
+	if err != nil {
+		return err
 	}
 
 	enrollmentLifetime, err := parsePasswordEnrollmentLifetime(
@@ -138,8 +159,17 @@ func run(args []string, getenv func(string) string) error {
 	if err := sqlitestore.Migrate(ctx, database); err != nil {
 		return fmt.Errorf("migrate SQLite database: %w", err)
 	}
+	contentStore, err := filesystemstore.NewContentStore(*contentDirectory)
+	if err != nil {
+		return fmt.Errorf("initialize managed content store: %w", err)
+	}
 
-	handler, err := newApplicationHandler(database, enrollmentLifetime)
+	handler, err := newApplicationHandlerWithContent(
+		database,
+		enrollmentLifetime,
+		contentStore,
+		maximumUploadSize,
+	)
 	if err != nil {
 		return fmt.Errorf(
 			"initialize application handler: %w",
@@ -177,6 +207,8 @@ func run(args []string, getenv func(string) string) error {
 		*address,
 		"database",
 		*databasePath,
+		"content_directory",
+		*contentDirectory,
 		"tls",
 		tlsEnabled,
 	)
@@ -273,6 +305,25 @@ func newApplicationHandler(
 	argDatabase *sql.DB,
 	argEnrollmentLifetime time.Duration,
 ) (http.Handler, error) {
+	return newApplicationHandlerWithContent(
+		argDatabase,
+		argEnrollmentLifetime,
+		nil,
+		0,
+	)
+}
+
+type managedContentStore interface {
+	content.Store
+	content.DeletionStore
+}
+
+func newApplicationHandlerWithContent(
+	argDatabase *sql.DB,
+	argEnrollmentLifetime time.Duration,
+	argContentStore managedContentStore,
+	argMaximumUploadSize int64,
+) (http.Handler, error) {
 	passwordHasher := password.NewDefaultHasher()
 
 	// The dummy hash ensures that unknown-user authentication performs the same
@@ -350,8 +401,8 @@ func newApplicationHandler(
 		grantRepository,
 		userRepository,
 	)
-
-	return api.NewHandler(
+	mediaMetadataService := api.MediaMetadataService(mediaService)
+	options := []api.Option{
 		api.WithAuthentication(
 			sessionService,
 			loginLimiter,
@@ -379,15 +430,47 @@ func newApplicationHandler(
 			sessionService,
 			passwordChangeService,
 		),
-		api.WithMediaMetadataAPI(
-			sessionService,
-			mediaService,
-		),
 		api.WithMediaGrantAPI(
 			sessionService,
 			grantService,
 		),
-	), nil
+	}
+	if argContentStore != nil {
+		locationRepository := sqlitestore.NewContentLocationRepository(argDatabase)
+		mediaMetadataService = appmedia.NewManagedService(
+			mediaService,
+			locationRepository,
+			mediaRepository,
+			argContentStore,
+		)
+		uploadService, err := appmedia.NewUploadService(
+			mediaRepository,
+			argContentStore,
+			uuid.NewString,
+			time.Now,
+			argMaximumUploadSize,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("initialize media upload service: %w", err)
+		}
+		options = append(
+			options,
+			api.WithMediaUploadAPI(
+				sessionService,
+				uploadService,
+				argMaximumUploadSize,
+			),
+		)
+	}
+	options = append(
+		options,
+		api.WithMediaMetadataAPI(
+			sessionService,
+			mediaMetadataService,
+		),
+	)
+
+	return api.NewHandler(options...), nil
 }
 
 func createDatabaseDirectory(databasePath string) error {
@@ -418,6 +501,35 @@ func databasePathFromEnvironment(getenv func(string) string) string {
 	}
 
 	return defaultDatabasePath
+}
+
+func contentDirectoryFromEnvironment(argGetenv func(string) string) string {
+	if directory := argGetenv("MEDIAARCHIVE_CONTENT_DIRECTORY"); directory != "" {
+		return directory
+	}
+
+	return defaultContentDirectory
+}
+
+func maximumUploadSizeDefault(argGetenv func(string) string) string {
+	value := argGetenv("MEDIAARCHIVE_MAXIMUM_UPLOAD_SIZE")
+	if value != "" {
+		return value
+	}
+
+	return strconv.FormatInt(defaultMaximumUploadSize, 10)
+}
+
+func parseMaximumUploadSize(argValue string) (int64, error) {
+	maximumSize, err := strconv.ParseInt(argValue, 10, 64)
+	if err != nil || maximumSize <= 0 {
+		return 0, fmt.Errorf(
+			"invalid maximum upload size %q: expected a positive byte count",
+			argValue,
+		)
+	}
+
+	return maximumSize, nil
 }
 
 func tlsCertificatePathFromEnvironment(

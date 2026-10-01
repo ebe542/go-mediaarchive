@@ -257,6 +257,8 @@ func writeMediaApplicationError(argResponse http.ResponseWriter, argError error)
 		writeJSONError(argResponse, http.StatusForbidden, "forbidden", "Access forbidden.")
 	case errors.Is(argError, appmedia.ErrMediaNotFound):
 		writeJSONError(argResponse, http.StatusNotFound, "not_found", "Resource not found.")
+	case errors.Is(argError, domainmedia.ErrItemConflict):
+		writeJSONError(argResponse, http.StatusConflict, "conflict", "Resource conflict.")
 	default:
 		writeMediaContextError(argResponse)
 	}

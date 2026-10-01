@@ -11,8 +11,14 @@ import (
 	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
 )
 
-// ErrInvalidMaximumUploadSize indicates a non-positive service size limit.
-var ErrInvalidMaximumUploadSize = errors.New("invalid maximum upload size")
+var (
+	// ErrInvalidMaximumUploadSize indicates a non-positive service size limit.
+	ErrInvalidMaximumUploadSize = errors.New("invalid maximum upload size")
+
+	// ErrUploadCompensationFailed indicates that failed upload persistence also
+	// left newly stored content requiring operational reconciliation.
+	ErrUploadCompensationFailed = errors.New("upload compensation failed")
+)
 
 // ManagedCreator atomically persists a media identity and content location.
 type ManagedCreator interface {
@@ -138,6 +144,7 @@ func (service *UploadService) compensateStoredContent(
 		argStorageKey,
 	); err != nil {
 		return errors.Join(
+			ErrUploadCompensationFailed,
 			argCause,
 			fmt.Errorf("remove stored content after failure: %w", err),
 		)

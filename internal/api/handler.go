@@ -196,6 +196,22 @@ func NewHandler(argOptions ...Option) http.Handler {
 		)
 	}
 
+	if configuration.mediaUploadResolver != nil &&
+		configuration.mediaUploads != nil &&
+		configuration.maximumUploadSize > 0 {
+		uploadHandler := &mediaUploadHandler{
+			uploads:     configuration.mediaUploads,
+			maximumSize: configuration.maximumUploadSize,
+		}
+		mux.Handle(
+			"POST /api/v1/media/uploads",
+			RequireAuthentication(
+				configuration.mediaUploadResolver,
+				http.HandlerFunc(uploadHandler.upload),
+			),
+		)
+	}
+
 	if configuration.mediaGrantResolver != nil &&
 		configuration.mediaGrants != nil {
 		grantHandler := &mediaGrantHandler{grants: configuration.mediaGrants}

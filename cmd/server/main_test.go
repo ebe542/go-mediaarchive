@@ -19,6 +19,7 @@ import (
 	"github.com/ebe542/go-mediaarchive/internal/media"
 	"github.com/ebe542/go-mediaarchive/internal/password"
 	"github.com/ebe542/go-mediaarchive/internal/session"
+	filesystemstore "github.com/ebe542/go-mediaarchive/internal/storage/filesystem"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
 
@@ -66,6 +67,59 @@ func TestDatabasePathFromEnvironment(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestContentDirectoryFromEnvironment(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		environment string
+		expected    string
+	}{
+		"environment": {"runtime/content", "runtime/content"},
+		"default":     {"", defaultContentDirectory},
+	} {
+		t.Run(name, func(t *testing.T) {
+			actual := contentDirectoryFromEnvironment(func(argName string) string {
+				if argName == "MEDIAARCHIVE_CONTENT_DIRECTORY" {
+					return testCase.environment
+				}
+
+				return ""
+			})
+			if actual != testCase.expected {
+				t.Fatalf("expected %q, got %q", testCase.expected, actual)
+			}
+		})
+	}
+}
+
+func TestMaximumUploadSizeConfiguration(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		value       string
+		expected    int64
+		expectError bool
+	}{
+		"valid":     {"4096", 4096, false},
+		"zero":      {"0", 0, true},
+		"negative":  {"-1", 0, true},
+		"malformed": {"large", 0, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			actual, err := parseMaximumUploadSize(testCase.value)
+			if (err != nil) != testCase.expectError {
+				t.Fatalf("unexpected error state: %v", err)
+			}
+			if actual != testCase.expected {
+				t.Fatalf("expected %d, got %d", testCase.expected, actual)
+			}
+		})
+	}
+
+	if actual := maximumUploadSizeDefault(func(string) string { return "" }); actual != "1073741824" {
+		t.Fatalf("unexpected default upload size %q", actual)
+	}
+	if actual := maximumUploadSizeDefault(func(string) string { return "8192" }); actual != "8192" {
+		t.Fatalf("unexpected environment upload size %q", actual)
 	}
 }
 
@@ -214,6 +268,38 @@ func TestApplicationHandlerPersistsMediaAndGrantThroughSQLite(t *testing.T) {
 	if !storedGrant.Permissions.Has(media.PermissionDiscover) ||
 		!storedGrant.Permissions.Has(media.PermissionRead) {
 		t.Fatalf("unexpected stored permissions %v", storedGrant.Permissions.Values())
+	}
+}
+
+func TestApplicationHandlerRegistersManagedUploadRoute(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlitestore.Open(ctx, filepath.Join(t.TempDir(), "mediaarchive.db"))
+	if err != nil {
+		t.Fatalf("open SQLite database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+	contentStore, err := filesystemstore.NewContentStore(filepath.Join(t.TempDir(), "content"))
+	if err != nil {
+		t.Fatalf("create content store: %v", err)
+	}
+	handler, err := newApplicationHandlerWithContent(
+		database,
+		defaultEnrollmentLifetime,
+		contentStore,
+		1024,
+	)
+	if err != nil {
+		t.Fatalf("create application handler: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/media/uploads", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected upload route status 401, got %d", response.Code)
 	}
 }
 
