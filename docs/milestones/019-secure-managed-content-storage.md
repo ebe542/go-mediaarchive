@@ -183,7 +183,7 @@ remain in the same commit as the behavior they specify.
 - [x] SQLite persists opaque relative content keys without absolute paths.
 - [x] Upload size and SHA-256 are derived from received bytes.
 - [x] Empty and oversized uploads are rejected without retaining partial files.
-- [ ] Metadata failures compensate by removing newly stored content.
+- [x] Metadata failures compensate by removing newly stored content.
 - [ ] The multipart endpoint requires authentication and existing creation authorization.
 - [ ] Upload errors do not disclose internal filesystem or database details.
 - [ ] Server configuration follows flag, environment, and default precedence.

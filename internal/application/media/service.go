@@ -85,8 +85,7 @@ func (service *Service) CreateItem(
 	argActor identity.User,
 	argInput CreateItemInput,
 ) (domainmedia.Item, error) {
-	if !argActor.Active ||
-		(argActor.Role != identity.RoleEditor && argActor.Role != identity.RoleAdmin) {
+	if !mayCreateMedia(argActor) {
 		return domainmedia.Item{}, ErrCreationForbidden
 	}
 
@@ -112,6 +111,11 @@ func (service *Service) CreateItem(
 	}
 
 	return item, nil
+}
+
+func mayCreateMedia(argActor identity.User) bool {
+	return argActor.Active &&
+		(argActor.Role == identity.RoleEditor || argActor.Role == identity.RoleAdmin)
 }
 
 // ItemByID returns discoverable metadata while masking unauthorized items.

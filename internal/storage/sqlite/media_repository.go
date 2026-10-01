@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/media"
 )
 
@@ -52,6 +53,59 @@ func (repository *MediaRepository) Create(
 	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit media creation: %w", err)
+	}
+
+	return nil
+}
+
+// CreateManaged atomically persists a media identity, ordered authors, and its
+// managed-content location.
+func (repository *MediaRepository) CreateManaged(
+	argContext context.Context,
+	argItem media.Item,
+	argLocation content.Location,
+) error {
+	item, err := validateMediaItem(argItem)
+	if err != nil {
+		return fmt.Errorf("validate managed media for creation: %w", err)
+	}
+	location, err := content.NewLocation(
+		argLocation.MediaID,
+		argLocation.StorageKey,
+		argLocation.StoredAt,
+	)
+	if err != nil {
+		return fmt.Errorf("validate managed content location: %w", err)
+	}
+	if location.MediaID != item.ID {
+		return content.ErrLocationMediaMismatch
+	}
+
+	transaction, err := repository.database.BeginTx(argContext, nil)
+	if err != nil {
+		return fmt.Errorf("begin managed media creation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	if err := insertMediaItem(argContext, transaction, item); err != nil {
+		if isUniqueConstraintError(err) {
+			return fmt.Errorf("%w: %w", media.ErrItemConflict, err)
+		}
+
+		return fmt.Errorf("insert managed media item: %w", err)
+	}
+	if err := insertMediaAuthors(argContext, transaction, item.ID, item.Authors); err != nil {
+		return err
+	}
+	if err := insertContentLocation(argContext, transaction, location); err != nil {
+		if isUniqueConstraintError(err) {
+			return fmt.Errorf("%w: %w", content.ErrLocationConflict, err)
+		}
+
+		return fmt.Errorf("insert managed content location: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit managed media creation: %w", err)
 	}
 
 	return nil

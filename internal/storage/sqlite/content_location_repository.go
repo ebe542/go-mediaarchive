@@ -37,16 +37,7 @@ func (repository *ContentLocationRepository) Create(
 		return fmt.Errorf("validate content location for creation: %w", err)
 	}
 
-	_, err = repository.database.ExecContext(
-		argContext,
-		`
-			INSERT INTO media_contents (media_id, storage_key, stored_at)
-			VALUES (?, ?, ?)
-		`,
-		location.MediaID,
-		location.StorageKey,
-		location.StoredAt.Format(time.RFC3339Nano),
-	)
+	err = insertContentLocation(argContext, repository.database, location)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			return fmt.Errorf("%w: %w", content.ErrLocationConflict, err)
@@ -56,6 +47,25 @@ func (repository *ContentLocationRepository) Create(
 	}
 
 	return nil
+}
+
+func insertContentLocation(
+	argContext context.Context,
+	argExecutor statementExecutor,
+	argLocation content.Location,
+) error {
+	_, err := argExecutor.ExecContext(
+		argContext,
+		`
+			INSERT INTO media_contents (media_id, storage_key, stored_at)
+			VALUES (?, ?, ?)
+		`,
+		argLocation.MediaID,
+		argLocation.StorageKey,
+		argLocation.StoredAt.Format(time.RFC3339Nano),
+	)
+
+	return err
 }
 
 // FindByMediaID retrieves the managed-content association for one medium.

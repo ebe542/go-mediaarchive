@@ -24,6 +24,10 @@ var (
 
 	// ErrLocationNotFound indicates that a medium has no managed content.
 	ErrLocationNotFound = errors.New("content location not found")
+
+	// ErrLocationMediaMismatch indicates a location associated with a different
+	// media identity than the metadata stored with it.
+	ErrLocationMediaMismatch = errors.New("content location media mismatch")
 )
 
 // Location associates a media identity with an opaque relative storage key.

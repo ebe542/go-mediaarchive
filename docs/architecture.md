@@ -89,6 +89,7 @@ flowchart LR
   package6 --> package14
   package6 --> package15
   package6 --> package17
+  package7 --> package13
   package7 --> package15
   package7 --> package16
   package8 --> package14
