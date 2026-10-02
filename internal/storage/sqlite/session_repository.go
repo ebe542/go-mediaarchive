@@ -20,19 +20,19 @@ type SessionRepository struct {
 var _ session.Repository = (*SessionRepository)(nil)
 
 // NewSessionRepository creates a SQLite session repository.
-func NewSessionRepository(argDatabase *sql.DB) *SessionRepository {
+func NewSessionRepository(database *sql.DB) *SessionRepository {
 	return &SessionRepository{
-		database: argDatabase,
+		database: database,
 	}
 }
 
 // Create persists a new server-side session.
 func (repository *SessionRepository) Create(
-	argContext context.Context,
-	argSession session.Session,
+	ctx context.Context,
+	session session.Session,
 ) error {
 	_, err := repository.database.ExecContext(
-		argContext,
+		ctx,
 		`
 			INSERT INTO sessions (
 				token_hash,
@@ -44,11 +44,11 @@ func (repository *SessionRepository) Create(
 			)
 			VALUES (?, ?, ?, ?, ?, ?)
 		`,
-		argSession.TokenHash[:],
-		argSession.UserID,
-		argSession.CreatedAt.Format(time.RFC3339Nano),
-		argSession.LastSeenAt.Format(time.RFC3339Nano),
-		argSession.ExpiresAt.Format(time.RFC3339Nano),
+		session.TokenHash[:],
+		session.UserID,
+		session.CreatedAt.Format(time.RFC3339Nano),
+		session.LastSeenAt.Format(time.RFC3339Nano),
+		session.ExpiresAt.Format(time.RFC3339Nano),
 		nil,
 	)
 	if err != nil {
@@ -60,8 +60,8 @@ func (repository *SessionRepository) Create(
 
 // FindByTokenHash retrieves a session by its token storage hash.
 func (repository *SessionRepository) FindByTokenHash(
-	argContext context.Context,
-	argTokenHash [sha256.Size]byte,
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
 ) (session.Session, error) {
 	var storedSession session.Session
 	var storedTokenHash []byte
@@ -71,7 +71,7 @@ func (repository *SessionRepository) FindByTokenHash(
 	var revokedAt sql.NullString
 
 	err := repository.database.QueryRowContext(
-		argContext,
+		ctx,
 		`
 			SELECT
 				token_hash,
@@ -83,7 +83,7 @@ func (repository *SessionRepository) FindByTokenHash(
 			FROM sessions
 			WHERE token_hash = ?
 		`,
-		argTokenHash[:],
+		tokenHash[:],
 	).Scan(
 		&storedTokenHash,
 		&storedSession.UserID,
@@ -147,14 +147,14 @@ func (repository *SessionRepository) FindByTokenHash(
 }
 
 func parseSessionTime(
-	argName string,
-	argValue string,
+	name string,
+	value string,
 ) (time.Time, error) {
-	parsedTime, err := time.Parse(time.RFC3339Nano, argValue)
+	parsedTime, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
 		return time.Time{}, fmt.Errorf(
 			"parse session %s time: %w",
-			argName,
+			name,
 			err,
 		)
 	}
@@ -164,20 +164,20 @@ func parseSessionTime(
 
 // Touch records recent activity for a non-revoked session.
 func (repository *SessionRepository) Touch(
-	argContext context.Context,
-	argTokenHash [sha256.Size]byte,
-	argNow time.Time,
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
+	now time.Time,
 ) error {
 	result, err := repository.database.ExecContext(
-		argContext,
+		ctx,
 		`
 			UPDATE sessions
 			SET last_seen_at = ?
 			WHERE token_hash = ?
 			  AND revoked_at IS NULL
 		`,
-		argNow.UTC().Format(time.RFC3339Nano),
-		argTokenHash[:],
+		now.UTC().Format(time.RFC3339Nano),
+		tokenHash[:],
 	)
 	if err != nil {
 		return fmt.Errorf("touch session: %w", err)
@@ -199,19 +199,19 @@ func (repository *SessionRepository) Touch(
 
 // Revoke idempotently records the first session revocation time.
 func (repository *SessionRepository) Revoke(
-	argContext context.Context,
-	argTokenHash [sha256.Size]byte,
-	argNow time.Time,
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
+	now time.Time,
 ) error {
 	_, err := repository.database.ExecContext(
-		argContext,
+		ctx,
 		`
 			UPDATE sessions
 			SET revoked_at = COALESCE(revoked_at, ?)
 			WHERE token_hash = ?
 		`,
-		argNow.UTC().Format(time.RFC3339Nano),
-		argTokenHash[:],
+		now.UTC().Format(time.RFC3339Nano),
+		tokenHash[:],
 	)
 	if err != nil {
 		return fmt.Errorf("revoke session: %w", err)

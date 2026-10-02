@@ -23,13 +23,13 @@ type recordingPasswordChangeService struct {
 
 func (service *recordingPasswordChangeService) ChangePassword(
 	_ context.Context,
-	argUserID string,
-	argCurrentPassword []byte,
-	argNewPassword []byte,
+	userID string,
+	currentPassword []byte,
+	newPassword []byte,
 ) error {
-	service.userID = argUserID
-	service.currentPassword = append([]byte(nil), argCurrentPassword...)
-	service.newPassword = append([]byte(nil), argNewPassword...)
+	service.userID = userID
+	service.currentPassword = append([]byte(nil), currentPassword...)
+	service.newPassword = append([]byte(nil), newPassword...)
 
 	return service.err
 }
@@ -147,7 +147,7 @@ func TestPasswordChangeRequiresAuthentication(t *testing.T) {
 }
 
 func passwordChangeTestHandler(
-	argService api.PasswordChangeService,
+	service api.PasswordChangeService,
 ) http.Handler {
 	return api.NewHandler(
 		api.WithPasswordChangeAPI(
@@ -157,7 +157,7 @@ func passwordChangeTestHandler(
 					Role: identity.RoleViewer,
 				},
 			},
-			argService,
+			service,
 		),
 	)
 }

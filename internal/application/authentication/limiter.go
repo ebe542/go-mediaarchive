@@ -29,14 +29,14 @@ type AttemptLimiter struct {
 
 // NewAttemptLimiter creates an in-memory authentication attempt limiter.
 func NewAttemptLimiter(
-	argUsernameLimit int,
-	argIPLimit int,
-	argWindow time.Duration,
+	usernameLimit int,
+	ipLimit int,
+	window time.Duration,
 ) *AttemptLimiter {
 	return &AttemptLimiter{
-		usernameLimit: argUsernameLimit,
-		ipLimit:       argIPLimit,
-		window:        argWindow,
+		usernameLimit: usernameLimit,
+		ipLimit:       ipLimit,
+		window:        window,
 		usernames:     make(map[string]attemptBucket),
 		ipAddresses:   make(map[string]attemptBucket),
 	}
@@ -44,42 +44,42 @@ func NewAttemptLimiter(
 
 // Allow reports whether both independent failure buckets permit an attempt.
 func (limiter *AttemptLimiter) Allow(
-	argUsername string,
-	argSourceIP string,
-	argNow time.Time,
+	username string,
+	sourceIP string,
+	now time.Time,
 ) bool {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
-	limiter.cleanupExpired(argNow)
+	limiter.cleanupExpired(now)
 
-	username := limiterUsernameKey(argUsername)
+	usernameKey := limiterUsernameKey(username)
 
-	usernameBucket := limiter.usernames[username]
-	ipBucket := limiter.ipAddresses[argSourceIP]
+	usernameBucket := limiter.usernames[usernameKey]
+	ipBucket := limiter.ipAddresses[sourceIP]
 
 	if !bucketAllows(
 		usernameBucket,
 		limiter.usernameLimit,
-		argNow,
+		now,
 		limiter.window,
 	) || !bucketAllows(
 		ipBucket,
 		limiter.ipLimit,
-		argNow,
+		now,
 		limiter.window,
 	) {
 		return false
 	}
 
-	limiter.usernames[username] = reserveBucket(
+	limiter.usernames[usernameKey] = reserveBucket(
 		usernameBucket,
-		argNow,
+		now,
 		limiter.window,
 	)
-	limiter.ipAddresses[argSourceIP] = reserveBucket(
+	limiter.ipAddresses[sourceIP] = reserveBucket(
 		ipBucket,
-		argNow,
+		now,
 		limiter.window,
 	)
 
@@ -88,67 +88,67 @@ func (limiter *AttemptLimiter) Allow(
 
 // RecordFailure increments both independent failure buckets.
 func (limiter *AttemptLimiter) RecordFailure(
-	argUsername string,
-	argSourceIP string,
-	argNow time.Time,
+	username string,
+	sourceIP string,
+	now time.Time,
 ) {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
-	limiter.cleanupExpired(argNow)
+	limiter.cleanupExpired(now)
 
-	username := limiterUsernameKey(argUsername)
+	usernameKey := limiterUsernameKey(username)
 
-	limiter.usernames[username] = completeFailedAttempt(
-		limiter.usernames[username],
-		argNow,
+	limiter.usernames[usernameKey] = completeFailedAttempt(
+		limiter.usernames[usernameKey],
+		now,
 		limiter.window,
 	)
-	limiter.ipAddresses[argSourceIP] = completeFailedAttempt(
-		limiter.ipAddresses[argSourceIP],
-		argNow,
+	limiter.ipAddresses[sourceIP] = completeFailedAttempt(
+		limiter.ipAddresses[sourceIP],
+		now,
 		limiter.window,
 	)
 }
 
 // RecordSuccess clears username failures and releases the IP reservation.
 func (limiter *AttemptLimiter) RecordSuccess(
-	argUsername string,
-	argSourceIP string,
+	username string,
+	sourceIP string,
 ) {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
 	delete(
 		limiter.usernames,
-		limiterUsernameKey(argUsername),
+		limiterUsernameKey(username),
 	)
-	releaseReservation(limiter.ipAddresses, argSourceIP)
+	releaseReservation(limiter.ipAddresses, sourceIP)
 }
 
 // Cancel releases a reserved attempt without recording a failure.
 func (limiter *AttemptLimiter) Cancel(
-	argUsername string,
-	argSourceIP string,
+	username string,
+	sourceIP string,
 ) {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
 	releaseReservation(
 		limiter.usernames,
-		limiterUsernameKey(argUsername),
+		limiterUsernameKey(username),
 	)
 	releaseReservation(
 		limiter.ipAddresses,
-		argSourceIP,
+		sourceIP,
 	)
 }
 
 func releaseReservation(
-	argBuckets map[string]attemptBucket,
-	argKey string,
+	buckets map[string]attemptBucket,
+	key string,
 ) {
-	bucket, exists := argBuckets[argKey]
+	bucket, exists := buckets[key]
 	if !exists {
 		return
 	}
@@ -158,94 +158,94 @@ func releaseReservation(
 	}
 
 	if bucket.failures == 0 && bucket.pending == 0 {
-		delete(argBuckets, argKey)
+		delete(buckets, key)
 
 		return
 	}
 
-	argBuckets[argKey] = bucket
+	buckets[key] = bucket
 }
 
-func limiterUsernameKey(argUsername string) string {
-	normalizedUsername, err := identity.NormalizeUsername(argUsername)
+func limiterUsernameKey(username string) string {
+	normalizedUsername, err := identity.NormalizeUsername(username)
 	if err == nil {
 		return normalizedUsername
 	}
 
-	return strings.ToLower(strings.TrimSpace(argUsername))
+	return strings.ToLower(strings.TrimSpace(username))
 }
 
 func bucketAllows(
-	argBucket attemptBucket,
-	argLimit int,
-	argNow time.Time,
-	argWindow time.Duration,
+	bucket attemptBucket,
+	limit int,
+	now time.Time,
+	window time.Duration,
 ) bool {
-	if argBucket.startedAt.IsZero() ||
-		!argNow.Before(argBucket.startedAt.Add(argWindow)) {
+	if bucket.startedAt.IsZero() ||
+		!now.Before(bucket.startedAt.Add(window)) {
 		return true
 	}
 
-	return argBucket.failures+argBucket.pending < argLimit
+	return bucket.failures+bucket.pending < limit
 }
 
 func reserveBucket(
-	argBucket attemptBucket,
-	argNow time.Time,
-	argWindow time.Duration,
+	bucket attemptBucket,
+	now time.Time,
+	window time.Duration,
 ) attemptBucket {
-	if argBucket.startedAt.IsZero() ||
-		!argNow.Before(argBucket.startedAt.Add(argWindow)) {
+	if bucket.startedAt.IsZero() ||
+		!now.Before(bucket.startedAt.Add(window)) {
 		return attemptBucket{
 			pending:   1,
-			startedAt: argNow,
+			startedAt: now,
 		}
 	}
 
-	argBucket.pending++
+	bucket.pending++
 
-	return argBucket
+	return bucket
 }
 
 func completeFailedAttempt(
-	argBucket attemptBucket,
-	argNow time.Time,
-	argWindow time.Duration,
+	bucket attemptBucket,
+	now time.Time,
+	window time.Duration,
 ) attemptBucket {
-	if argBucket.startedAt.IsZero() ||
-		!argNow.Before(argBucket.startedAt.Add(argWindow)) {
+	if bucket.startedAt.IsZero() ||
+		!now.Before(bucket.startedAt.Add(window)) {
 		return attemptBucket{
 			failures:  1,
-			startedAt: argNow,
+			startedAt: now,
 		}
 	}
 
-	if argBucket.pending > 0 {
-		argBucket.pending--
+	if bucket.pending > 0 {
+		bucket.pending--
 	}
 
-	argBucket.failures++
+	bucket.failures++
 
-	return argBucket
+	return bucket
 }
 
-func (limiter *AttemptLimiter) cleanupExpired(argNow time.Time) {
+func (limiter *AttemptLimiter) cleanupExpired(now time.Time) {
 	if !limiter.nextCleanup.IsZero() &&
-		argNow.Before(limiter.nextCleanup) {
+		now.Before(limiter.nextCleanup) {
 		return
 	}
 
 	for key, bucket := range limiter.usernames {
-		if !argNow.Before(bucket.startedAt.Add(limiter.window)) {
+		if !now.Before(bucket.startedAt.Add(limiter.window)) {
 			delete(limiter.usernames, key)
 		}
 	}
 
 	for key, bucket := range limiter.ipAddresses {
-		if !argNow.Before(bucket.startedAt.Add(limiter.window)) {
+		if !now.Before(bucket.startedAt.Add(limiter.window)) {
 			delete(limiter.ipAddresses, key)
 		}
 	}
 
-	limiter.nextCleanup = argNow.Add(limiter.window)
+	limiter.nextCleanup = now.Add(limiter.window)
 }

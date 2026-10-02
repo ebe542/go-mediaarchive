@@ -13,7 +13,7 @@ import (
 
 // PasswordHasher creates an encoded password hash.
 type PasswordHasher interface {
-	Hash(argPassword []byte) (string, error)
+	Hash(password []byte) (string, error)
 }
 
 // IDGenerator creates a stable user identifier.
@@ -39,30 +39,30 @@ type Service struct {
 
 // NewService creates an administrator bootstrap service.
 func NewService(
-	argBootstrapper credential.AdminBootstrapper,
-	argHasher PasswordHasher,
-	argIDGenerator IDGenerator,
-	argClock Clock,
+	bootstrapper credential.AdminBootstrapper,
+	hasher PasswordHasher,
+	idGenerator IDGenerator,
+	clock Clock,
 ) *Service {
 	return &Service{
-		bootstrapper: argBootstrapper,
-		hasher:       argHasher,
-		generateID:   argIDGenerator,
-		currentTime:  argClock,
+		bootstrapper: bootstrapper,
+		hasher:       hasher,
+		generateID:   idGenerator,
+		currentTime:  clock,
 	}
 }
 
 // BootstrapAdmin validates and atomically stores the first administrator.
 func (service *Service) BootstrapAdmin(
-	argContext context.Context,
-	argInput Input,
+	ctx context.Context,
+	input Input,
 ) (identity.User, error) {
 	currentTime := service.currentTime()
 
 	adminUser, err := identity.NewUser(
 		service.generateID(),
-		argInput.Username,
-		argInput.DisplayName,
+		input.Username,
+		input.DisplayName,
 		identity.RoleAdmin,
 		currentTime,
 	)
@@ -73,14 +73,14 @@ func (service *Service) BootstrapAdmin(
 		)
 	}
 
-	if err := password.Validate(argInput.Password); err != nil {
+	if err := password.Validate(input.Password); err != nil {
 		return identity.User{}, fmt.Errorf(
 			"validate bootstrap password: %w",
 			err,
 		)
 	}
 
-	encodedHash, err := service.hasher.Hash(argInput.Password)
+	encodedHash, err := service.hasher.Hash(input.Password)
 	if err != nil {
 		return identity.User{}, fmt.Errorf(
 			"hash bootstrap password: %w",
@@ -101,7 +101,7 @@ func (service *Service) BootstrapAdmin(
 	}
 
 	if err := service.bootstrapper.BootstrapAdmin(
-		argContext,
+		ctx,
 		adminUser,
 		passwordCredential,
 	); err != nil {

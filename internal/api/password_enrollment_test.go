@@ -33,11 +33,11 @@ func (service *recordingPasswordEnrollmentService) IssueEnrollment(
 
 func (service *recordingPasswordEnrollmentService) CompleteEnrollment(
 	_ context.Context,
-	argToken string,
-	argPassword []byte,
+	token string,
+	password []byte,
 ) error {
-	service.completedToken = argToken
-	service.completedPassword = append([]byte(nil), argPassword...)
+	service.completedToken = token
+	service.completedPassword = append([]byte(nil), password...)
 
 	return service.completeError
 }
@@ -51,31 +51,31 @@ type recordingPasswordEnrollmentLimiter struct {
 }
 
 func (limiter *recordingPasswordEnrollmentLimiter) Allow(
-	argSourceIP string,
+	sourceIP string,
 	_ time.Time,
 ) bool {
-	limiter.allowedIP = argSourceIP
+	limiter.allowedIP = sourceIP
 
 	return limiter.allowed
 }
 
 func (limiter *recordingPasswordEnrollmentLimiter) RecordFailure(
-	argSourceIP string,
+	sourceIP string,
 	_ time.Time,
 ) {
-	limiter.failureIP = argSourceIP
+	limiter.failureIP = sourceIP
 }
 
 func (limiter *recordingPasswordEnrollmentLimiter) RecordSuccess(
-	argSourceIP string,
+	sourceIP string,
 ) {
-	limiter.successIP = argSourceIP
+	limiter.successIP = sourceIP
 }
 
 func (limiter *recordingPasswordEnrollmentLimiter) Cancel(
-	argSourceIP string,
+	sourceIP string,
 ) {
-	limiter.canceledIP = argSourceIP
+	limiter.canceledIP = sourceIP
 }
 
 type passwordEnrollmentSessionResolver struct {
@@ -288,15 +288,15 @@ func TestPasswordEnrollmentCompletionRejectsLimitedSource(t *testing.T) {
 }
 
 func passwordEnrollmentTestHandler(
-	argResolver api.SessionResolver,
-	argService api.PasswordEnrollmentService,
-	argLimiter api.PasswordEnrollmentAttemptLimiter,
+	resolver api.SessionResolver,
+	service api.PasswordEnrollmentService,
+	limiter api.PasswordEnrollmentAttemptLimiter,
 ) http.Handler {
 	return api.NewHandler(
 		api.WithPasswordEnrollmentAPI(
-			argResolver,
-			argService,
-			argLimiter,
+			resolver,
+			service,
+			limiter,
 			func() time.Time {
 				return time.Date(2026, time.August, 28, 10, 0, 0, 0, time.UTC)
 			},
@@ -306,18 +306,18 @@ func passwordEnrollmentTestHandler(
 
 func assertPasswordEnrollmentError(
 	t *testing.T,
-	argResponse *httptest.ResponseRecorder,
-	argExpectedStatus int,
-	argExpectedCode string,
+	response *httptest.ResponseRecorder,
+	expectedStatus int,
+	expectedCode string,
 ) {
 	t.Helper()
 
-	if argResponse.Code != argExpectedStatus {
+	if response.Code != expectedStatus {
 		t.Fatalf(
 			"expected status %d, got %d: %s",
-			argExpectedStatus,
-			argResponse.Code,
-			argResponse.Body.String(),
+			expectedStatus,
+			response.Code,
+			response.Body.String(),
 		)
 	}
 
@@ -326,13 +326,13 @@ func assertPasswordEnrollmentError(
 			Code string `json:"code"`
 		} `json:"error"`
 	}
-	if err := json.NewDecoder(argResponse.Body).Decode(&responseBody); err != nil {
+	if err := json.NewDecoder(response.Body).Decode(&responseBody); err != nil {
 		t.Fatalf("decode error response: %v", err)
 	}
-	if responseBody.Error.Code != argExpectedCode {
+	if responseBody.Error.Code != expectedCode {
 		t.Fatalf(
 			"expected error code %q, got %q",
-			argExpectedCode,
+			expectedCode,
 			responseBody.Error.Code,
 		)
 	}

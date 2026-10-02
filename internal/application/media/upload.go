@@ -23,9 +23,9 @@ var (
 // ManagedCreator atomically persists a media identity and content location.
 type ManagedCreator interface {
 	CreateManaged(
-		argContext context.Context,
-		argItem domainmedia.Item,
-		argLocation content.Location,
+		ctx context.Context,
+		item domainmedia.Item,
+		location content.Location,
 	) error
 }
 
@@ -50,41 +50,41 @@ type UploadService struct {
 
 // NewUploadService creates a managed-content upload service.
 func NewUploadService(
-	argRepository ManagedCreator,
-	argStore content.Store,
-	argIDGenerator IDGenerator,
-	argClock Clock,
-	argMaximumSize int64,
+	repository ManagedCreator,
+	store content.Store,
+	idGenerator IDGenerator,
+	clock Clock,
+	maximumSize int64,
 ) (*UploadService, error) {
-	if argMaximumSize <= 0 {
+	if maximumSize <= 0 {
 		return nil, ErrInvalidMaximumUploadSize
 	}
 
 	return &UploadService{
-		repository:  argRepository,
-		store:       argStore,
-		generateID:  argIDGenerator,
-		clock:       argClock,
-		maximumSize: argMaximumSize,
+		repository:  repository,
+		store:       store,
+		generateID:  idGenerator,
+		clock:       clock,
+		maximumSize: maximumSize,
 	}, nil
 }
 
 // UploadItem stores a file and atomically persists its derived metadata and
 // location. A database or validation failure removes the newly stored file.
 func (service *UploadService) UploadItem(
-	argContext context.Context,
-	argActor identity.User,
-	argInput UploadInput,
+	ctx context.Context,
+	actor identity.User,
+	input UploadInput,
 ) (domainmedia.Item, error) {
-	if !mayCreateMedia(argActor) {
+	if !mayCreateMedia(actor) {
 		return domainmedia.Item{}, ErrCreationForbidden
 	}
 
 	mediaID := service.generateID()
 	stored, err := service.store.Put(
-		argContext,
+		ctx,
 		mediaID,
-		argInput.Source,
+		input.Source,
 		service.maximumSize,
 	)
 	if err != nil {
@@ -94,20 +94,20 @@ func (service *UploadService) UploadItem(
 	now := service.clock()
 	item, err := domainmedia.NewItem(
 		mediaID,
-		argInput.Title,
-		argInput.Authors,
-		argInput.OriginalFilename,
-		argInput.Type,
-		argInput.MIMEType,
+		input.Title,
+		input.Authors,
+		input.OriginalFilename,
+		input.Type,
+		input.MIMEType,
 		stored.Size,
 		stored.Checksum[:],
-		argActor.ID,
+		actor.ID,
 		now,
 		now,
 	)
 	if err != nil {
 		return domainmedia.Item{}, service.compensateStoredContent(
-			argContext,
+			ctx,
 			stored.StorageKey,
 			fmt.Errorf("create uploaded media identity: %w", err),
 		)
@@ -116,14 +116,14 @@ func (service *UploadService) UploadItem(
 	location, err := content.NewLocation(item.ID, stored.StorageKey, now)
 	if err != nil {
 		return domainmedia.Item{}, service.compensateStoredContent(
-			argContext,
+			ctx,
 			stored.StorageKey,
 			fmt.Errorf("create uploaded content location: %w", err),
 		)
 	}
-	if err := service.repository.CreateManaged(argContext, item, location); err != nil {
+	if err := service.repository.CreateManaged(ctx, item, location); err != nil {
 		return domainmedia.Item{}, service.compensateStoredContent(
-			argContext,
+			ctx,
 			stored.StorageKey,
 			fmt.Errorf("persist uploaded media: %w", err),
 		)
@@ -133,22 +133,22 @@ func (service *UploadService) UploadItem(
 }
 
 func (service *UploadService) compensateStoredContent(
-	argContext context.Context,
-	argStorageKey string,
-	argCause error,
+	ctx context.Context,
+	storageKey string,
+	cause error,
 ) error {
 	// Cleanup must still be attempted when the request context was canceled
 	// after the content store completed its write.
 	if err := service.store.Delete(
-		context.WithoutCancel(argContext),
-		argStorageKey,
+		context.WithoutCancel(ctx),
+		storageKey,
 	); err != nil {
 		return errors.Join(
 			ErrUploadCompensationFailed,
-			argCause,
+			cause,
 			fmt.Errorf("remove stored content after failure: %w", err),
 		)
 	}
 
-	return argCause
+	return cause
 }

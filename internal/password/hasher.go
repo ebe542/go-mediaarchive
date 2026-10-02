@@ -50,12 +50,12 @@ type Hasher struct {
 
 // NewHasher creates an Argon2id hasher with explicit dependencies.
 func NewHasher(
-	argParameters Parameters,
-	argRandom io.Reader,
+	parameters Parameters,
+	random io.Reader,
 ) *Hasher {
 	return &Hasher{
-		parameters: argParameters,
-		random:     argRandom,
+		parameters: parameters,
+		random:     random,
 	}
 }
 
@@ -74,7 +74,7 @@ func NewDefaultHasher() *Hasher {
 }
 
 // Hash creates a salted, self-describing Argon2id password hash.
-func (hasher *Hasher) Hash(argPassword []byte) (string, error) {
+func (hasher *Hasher) Hash(password []byte) (string, error) {
 	if err := validateParameters(hasher.parameters); err != nil {
 		return "", err
 	}
@@ -85,7 +85,7 @@ func (hasher *Hasher) Hash(argPassword []byte) (string, error) {
 	}
 
 	derivedKey := argon2.IDKey(
-		argPassword,
+		password,
 		salt,
 		hasher.parameters.Iterations,
 		hasher.parameters.Memory,
@@ -98,16 +98,16 @@ func (hasher *Hasher) Hash(argPassword []byte) (string, error) {
 
 // Verify reports whether a password matches an encoded Argon2id hash.
 func (hasher *Hasher) Verify(
-	argPassword []byte,
-	argEncodedHash string,
+	password []byte,
+	encodedHash string,
 ) (bool, error) {
-	parameters, salt, expectedKey, err := parseHash(argEncodedHash)
+	parameters, salt, expectedKey, err := parseHash(encodedHash)
 	if err != nil {
 		return false, err
 	}
 
 	actualKey := argon2.IDKey(
-		argPassword,
+		password,
 		salt,
 		parameters.Iterations,
 		parameters.Memory,
@@ -119,27 +119,27 @@ func (hasher *Hasher) Verify(
 }
 
 func encodeHash(
-	argParameters Parameters,
-	argSalt []byte,
-	argDerivedKey []byte,
+	parameters Parameters,
+	salt []byte,
+	derivedKey []byte,
 ) string {
 	encoding := base64.RawStdEncoding
 
 	return fmt.Sprintf(
 		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version,
-		argParameters.Memory,
-		argParameters.Iterations,
-		argParameters.Parallelism,
-		encoding.EncodeToString(argSalt),
-		encoding.EncodeToString(argDerivedKey),
+		parameters.Memory,
+		parameters.Iterations,
+		parameters.Parallelism,
+		encoding.EncodeToString(salt),
+		encoding.EncodeToString(derivedKey),
 	)
 }
 
 func parseHash(
-	argEncodedHash string,
+	encodedHash string,
 ) (Parameters, []byte, []byte, error) {
-	parts := strings.Split(argEncodedHash, "$")
+	parts := strings.Split(encodedHash, "$")
 	if len(parts) != 6 ||
 		parts[0] != "" ||
 		parts[1] != "argon2id" {
@@ -200,41 +200,41 @@ func parseHash(
 	return parameters, salt, derivedKey, nil
 }
 
-func validateParameters(argParameters Parameters) error {
-	if argParameters.Memory < 8*uint32(argParameters.Parallelism) ||
-		argParameters.Memory > maximumMemory {
+func validateParameters(parameters Parameters) error {
+	if parameters.Memory < 8*uint32(parameters.Parallelism) ||
+		parameters.Memory > maximumMemory {
 		return fmt.Errorf(
 			"%w: unsupported memory cost",
 			ErrInvalidParameters,
 		)
 	}
 
-	if argParameters.Iterations == 0 ||
-		argParameters.Iterations > maximumIterations {
+	if parameters.Iterations == 0 ||
+		parameters.Iterations > maximumIterations {
 		return fmt.Errorf(
 			"%w: unsupported iteration count",
 			ErrInvalidParameters,
 		)
 	}
 
-	if argParameters.Parallelism == 0 ||
-		argParameters.Parallelism > maximumParallelism {
+	if parameters.Parallelism == 0 ||
+		parameters.Parallelism > maximumParallelism {
 		return fmt.Errorf(
 			"%w: unsupported parallelism",
 			ErrInvalidParameters,
 		)
 	}
 
-	if argParameters.SaltLength == 0 ||
-		argParameters.SaltLength > maximumSaltLength {
+	if parameters.SaltLength == 0 ||
+		parameters.SaltLength > maximumSaltLength {
 		return fmt.Errorf(
 			"%w: unsupported salt length",
 			ErrInvalidParameters,
 		)
 	}
 
-	if argParameters.KeyLength == 0 ||
-		argParameters.KeyLength > maximumKeyLength {
+	if parameters.KeyLength == 0 ||
+		parameters.KeyLength > maximumKeyLength {
 		return fmt.Errorf(
 			"%w: unsupported key length",
 			ErrInvalidParameters,

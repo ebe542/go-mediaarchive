@@ -143,11 +143,11 @@ func TestMediaRepositoryPreservesManagedMediaForWrongKey(t *testing.T) {
 	}
 }
 
-func mediaRepositoryItemWithID(argTest *testing.T, argID string) media.Item {
-	argTest.Helper()
-	item := mediaRepositoryItem(argTest, nil)
+func mediaRepositoryItemWithID(test *testing.T, id string) media.Item {
+	test.Helper()
+	item := mediaRepositoryItem(test, nil)
 	created, err := media.NewItem(
-		argID,
+		id,
 		item.Title,
 		item.Authors,
 		item.OriginalFilename,
@@ -160,7 +160,7 @@ func mediaRepositoryItemWithID(argTest *testing.T, argID string) media.Item {
 		item.UpdatedAt,
 	)
 	if err != nil {
-		argTest.Fatalf("create media item with ID: %v", err)
+		test.Fatalf("create media item with ID: %v", err)
 	}
 
 	return created

@@ -13,24 +13,24 @@ var ErrNotFound = errors.New("session not found")
 // Repository stores and retrieves server-side sessions.
 type Repository interface {
 	Create(
-		argContext context.Context,
-		argSession Session,
+		ctx context.Context,
+		session Session,
 	) error
 
 	FindByTokenHash(
-		argContext context.Context,
-		argTokenHash [sha256.Size]byte,
+		ctx context.Context,
+		tokenHash [sha256.Size]byte,
 	) (Session, error)
 
 	Touch(
-		argContext context.Context,
-		argTokenHash [sha256.Size]byte,
-		argNow time.Time,
+		ctx context.Context,
+		tokenHash [sha256.Size]byte,
+		now time.Time,
 	) error
 
 	Revoke(
-		argContext context.Context,
-		argTokenHash [sha256.Size]byte,
-		argNow time.Time,
+		ctx context.Context,
+		tokenHash [sha256.Size]byte,
+		now time.Time,
 	) error
 }

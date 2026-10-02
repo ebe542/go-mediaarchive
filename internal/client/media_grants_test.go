@@ -25,16 +25,16 @@ func TestMediaGrantOperationsUseTypedHTTPContract(t *testing.T) {
 	}{
 		{
 			"replace", http.MethodPut, clientGrantPath(), http.StatusOK, true,
-			func(argClient *client.Client) (client.MediaGrant, error) {
-				return argClient.ReplaceMediaGrant(
+			func(client *client.Client) (client.MediaGrant, error) {
+				return client.ReplaceMediaGrant(
 					context.Background(), "access-token", clientMediaID, clientGranteeID, permissions,
 				)
 			},
 		},
 		{
 			"read", http.MethodGet, clientGrantPath(), http.StatusOK, false,
-			func(argClient *client.Client) (client.MediaGrant, error) {
-				return argClient.MediaGrantByUser(
+			func(client *client.Client) (client.MediaGrant, error) {
+				return client.MediaGrantByUser(
 					context.Background(), "access-token", clientMediaID, clientGranteeID,
 				)
 			},
@@ -81,8 +81,8 @@ func TestListAndRevokeMediaGrants(t *testing.T) {
 	}{
 		{
 			"list", http.MethodGet, "/api/v1/media/" + clientMediaID + "/grants", http.StatusOK,
-			func(argClient *client.Client) error {
-				grants, err := argClient.ListMediaGrants(context.Background(), "access-token", clientMediaID)
+			func(client *client.Client) error {
+				grants, err := client.ListMediaGrants(context.Background(), "access-token", clientMediaID)
 				if err == nil && (len(grants) != 1 || !grants[0].Permissions.Has(domainmedia.PermissionRead)) {
 					return errors.New("unexpected media grants")
 				}
@@ -92,8 +92,8 @@ func TestListAndRevokeMediaGrants(t *testing.T) {
 		},
 		{
 			"revoke", http.MethodDelete, clientGrantPath(), http.StatusNoContent,
-			func(argClient *client.Client) error {
-				return argClient.RevokeMediaGrant(
+			func(client *client.Client) error {
+				return client.RevokeMediaGrant(
 					context.Background(), "access-token", clientMediaID, clientGranteeID,
 				)
 			},
@@ -195,15 +195,15 @@ func clientGrantPath() string {
 }
 
 func clientPermissionSet(
-	argTest *testing.T,
-	argPermissions ...domainmedia.Permission,
+	test *testing.T,
+	requested ...domainmedia.Permission,
 ) domainmedia.PermissionSet {
-	argTest.Helper()
+	test.Helper()
 
-	permissions, err := domainmedia.NewPermissionSet(argPermissions...)
+	permissionSet, err := domainmedia.NewPermissionSet(requested...)
 	if err != nil {
-		argTest.Fatalf("create permission set: %v", err)
+		test.Fatalf("create permission set: %v", err)
 	}
 
-	return permissions
+	return permissionSet
 }

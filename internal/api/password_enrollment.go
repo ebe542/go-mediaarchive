@@ -16,37 +16,37 @@ import (
 // PasswordEnrollmentService issues tokens and creates initial credentials.
 type PasswordEnrollmentService interface {
 	IssueEnrollment(
-		argContext context.Context,
-		argUserID string,
+		ctx context.Context,
+		userID string,
 	) (apppasswords.IssuedEnrollment, error)
 
 	CompleteEnrollment(
-		argContext context.Context,
-		argToken string,
-		argPassword []byte,
+		ctx context.Context,
+		token string,
+		password []byte,
 	) error
 }
 
 // PasswordEnrollmentAttemptLimiter limits public attempts by source IP.
 type PasswordEnrollmentAttemptLimiter interface {
-	Allow(argSourceIP string, argNow time.Time) bool
-	RecordFailure(argSourceIP string, argNow time.Time)
-	RecordSuccess(argSourceIP string)
-	Cancel(argSourceIP string)
+	Allow(sourceIP string, now time.Time) bool
+	RecordFailure(sourceIP string, now time.Time)
+	RecordSuccess(sourceIP string)
+	Cancel(sourceIP string)
 }
 
 // WithPasswordEnrollmentAPI enables password enrollment HTTP endpoints.
 func WithPasswordEnrollmentAPI(
-	argResolver SessionResolver,
-	argService PasswordEnrollmentService,
-	argLimiter PasswordEnrollmentAttemptLimiter,
-	argClock Clock,
+	resolver SessionResolver,
+	service PasswordEnrollmentService,
+	limiter PasswordEnrollmentAttemptLimiter,
+	clock Clock,
 ) Option {
-	return func(argConfiguration *handlerConfiguration) {
-		argConfiguration.passwordEnrollmentResolver = argResolver
-		argConfiguration.passwordEnrollments = argService
-		argConfiguration.passwordEnrollmentLimiter = argLimiter
-		argConfiguration.passwordEnrollmentClock = argClock
+	return func(configuration *handlerConfiguration) {
+		configuration.passwordEnrollmentResolver = resolver
+		configuration.passwordEnrollments = service
+		configuration.passwordEnrollmentLimiter = limiter
+		configuration.passwordEnrollmentClock = clock
 	}
 }
 
@@ -57,27 +57,27 @@ type passwordEnrollmentHandler struct {
 }
 
 func (handler *passwordEnrollmentHandler) issue(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
 	issued, err := handler.service.IssueEnrollment(
-		argRequest.Context(),
-		argRequest.PathValue("id"),
+		request.Context(),
+		request.PathValue("id"),
 	)
 	if err != nil {
-		writePasswordEnrollmentIssueError(argResponse, err)
+		writePasswordEnrollmentIssueError(response, err)
 
 		return
 	}
 
-	argResponse.Header().Set(
+	response.Header().Set(
 		"Content-Type",
 		"application/json; charset=utf-8",
 	)
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusCreated)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusCreated)
 
-	_ = json.NewEncoder(argResponse).Encode(struct {
+	_ = json.NewEncoder(response).Encode(struct {
 		Token     string    `json:"token"`
 		ExpiresAt time.Time `json:"expiresAt"`
 	}{
@@ -87,26 +87,26 @@ func (handler *passwordEnrollmentHandler) issue(
 }
 
 func (handler *passwordEnrollmentHandler) complete(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
 	var requestBody struct {
 		Token    string `json:"token"`
 		Password string `json:"password"`
 	}
 	if err := decodeJSONRequest(
-		argResponse,
-		argRequest,
+		response,
+		request,
 		&requestBody,
 	); err != nil || requestBody.Token == "" || requestBody.Password == "" {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
 
-	sourceIP, err := sourceIPAddress(argRequest.RemoteAddr)
+	sourceIP, err := sourceIPAddress(request.RemoteAddr)
 	if err != nil {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
@@ -114,7 +114,7 @@ func (handler *passwordEnrollmentHandler) complete(
 	currentTime := handler.clock().UTC()
 	if !handler.limiter.Allow(sourceIP, currentTime) {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusTooManyRequests,
 			"too_many_requests",
 			"Too many password enrollment attempts.",
@@ -127,14 +127,14 @@ func (handler *passwordEnrollmentHandler) complete(
 	defer clearBytes(passwordBytes)
 
 	err = handler.service.CompleteEnrollment(
-		argRequest.Context(),
+		request.Context(),
 		requestBody.Token,
 		passwordBytes,
 	)
 	if errors.Is(err, apppasswords.ErrInvalidEnrollment) {
 		handler.limiter.RecordFailure(sourceIP, currentTime)
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusUnauthorized,
 			"invalid_enrollment",
 			"Invalid password enrollment.",
@@ -144,14 +144,14 @@ func (handler *passwordEnrollmentHandler) complete(
 	}
 	if errors.Is(err, password.ErrInvalidPassword) {
 		handler.limiter.Cancel(sourceIP)
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
 	if err != nil {
 		handler.limiter.Cancel(sourceIP)
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -161,34 +161,34 @@ func (handler *passwordEnrollmentHandler) complete(
 	}
 
 	handler.limiter.RecordSuccess(sourceIP)
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusNoContent)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusNoContent)
 }
 
 func writePasswordEnrollmentIssueError(
-	argResponse http.ResponseWriter,
-	argError error,
+	response http.ResponseWriter,
+	inputError error,
 ) {
 	switch {
-	case errors.Is(argError, identity.ErrInvalidUserID):
-		writeInvalidRequest(argResponse)
-	case errors.Is(argError, identity.ErrUserNotFound):
+	case errors.Is(inputError, identity.ErrInvalidUserID):
+		writeInvalidRequest(response)
+	case errors.Is(inputError, identity.ErrUserNotFound):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusNotFound,
 			"not_found",
 			"Resource not found.",
 		)
-	case errors.Is(argError, credential.ErrPasswordCredentialExists):
+	case errors.Is(inputError, credential.ErrPasswordCredentialExists):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusConflict,
 			"credential_exists",
 			"A password credential already exists.",
 		)
 	default:
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",

@@ -39,8 +39,8 @@ func TestUserCursorCodecRoundTripsCanonicalValues(t *testing.T) {
 }
 
 func TestUserCursorDecoderRejectsMalformedDocuments(t *testing.T) {
-	encodeDocument := func(argDocument string) string {
-		return base64.RawURLEncoding.EncodeToString([]byte(argDocument))
+	encodeDocument := func(document string) string {
+		return base64.RawURLEncoding.EncodeToString([]byte(document))
 	}
 
 	testCases := map[string]string{

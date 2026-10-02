@@ -66,83 +66,83 @@ type Service struct {
 
 // NewService creates a storage-independent media application service.
 func NewService(
-	argRepository Repository,
-	argGrants GrantFinder,
-	argIDGenerator IDGenerator,
-	argClock Clock,
+	repository Repository,
+	grantFinder GrantFinder,
+	idGenerator IDGenerator,
+	clock Clock,
 ) *Service {
 	return &Service{
-		repository: argRepository,
-		grants:     argGrants,
-		generateID: argIDGenerator,
-		clock:      argClock,
+		repository: repository,
+		grants:     grantFinder,
+		generateID: idGenerator,
+		clock:      clock,
 	}
 }
 
 // CreateItem validates, owns, and persists new media metadata.
 func (service *Service) CreateItem(
-	argContext context.Context,
-	argActor identity.User,
-	argInput CreateItemInput,
+	ctx context.Context,
+	actor identity.User,
+	input CreateItemInput,
 ) (domainmedia.Item, error) {
-	if !mayCreateMedia(argActor) {
+	if !mayCreateMedia(actor) {
 		return domainmedia.Item{}, ErrCreationForbidden
 	}
 
 	now := service.clock()
 	item, err := domainmedia.NewItem(
 		service.generateID(),
-		argInput.Title,
-		argInput.Authors,
-		argInput.OriginalFilename,
-		argInput.Type,
-		argInput.MIMEType,
-		argInput.Size,
-		argInput.Checksum,
-		argActor.ID,
+		input.Title,
+		input.Authors,
+		input.OriginalFilename,
+		input.Type,
+		input.MIMEType,
+		input.Size,
+		input.Checksum,
+		actor.ID,
 		now,
 		now,
 	)
 	if err != nil {
 		return domainmedia.Item{}, fmt.Errorf("create media identity: %w", err)
 	}
-	if err := service.repository.Create(argContext, item); err != nil {
+	if err := service.repository.Create(ctx, item); err != nil {
 		return domainmedia.Item{}, fmt.Errorf("persist media identity: %w", err)
 	}
 
 	return item, nil
 }
 
-func mayCreateMedia(argActor identity.User) bool {
-	return argActor.Active &&
-		(argActor.Role == identity.RoleEditor || argActor.Role == identity.RoleAdmin)
+func mayCreateMedia(actor identity.User) bool {
+	return actor.Active &&
+		(actor.Role == identity.RoleEditor || actor.Role == identity.RoleAdmin)
 }
 
 // ItemByID returns discoverable metadata while masking unauthorized items.
 func (service *Service) ItemByID(
-	argContext context.Context,
-	argActor identity.User,
-	argID string,
+	ctx context.Context,
+	actor identity.User,
+	id string,
 ) (domainmedia.Item, error) {
 	return service.authorizedItem(
-		argContext,
-		argActor,
-		argID,
+		ctx,
+		actor,
+		id,
 		domainmedia.PermissionDiscover,
 	)
 }
 
 // UpdateItem replaces authorized mutable metadata.
 func (service *Service) UpdateItem(
-	argContext context.Context,
-	argActor identity.User,
-	argID string,
-	argInput UpdateItemInput,
+	ctx context.Context,
+	actor identity.User,
+	id string,
+	input UpdateItemInput,
 ) (domainmedia.Item, error) {
 	existing, err := service.authorizedItem(
-		argContext,
-		argActor,
-		argID,
+		ctx,
+		actor,
+		id,
 		domainmedia.PermissionUpdate,
 	)
 	if err != nil {
@@ -151,13 +151,13 @@ func (service *Service) UpdateItem(
 
 	updated, err := domainmedia.NewItem(
 		existing.ID,
-		argInput.Title,
-		argInput.Authors,
-		argInput.OriginalFilename,
-		argInput.Type,
-		argInput.MIMEType,
-		argInput.Size,
-		argInput.Checksum,
+		input.Title,
+		input.Authors,
+		input.OriginalFilename,
+		input.Type,
+		input.MIMEType,
+		input.Size,
+		input.Checksum,
 		existing.OwnerID,
 		existing.CreatedAt,
 		service.clock(),
@@ -165,7 +165,7 @@ func (service *Service) UpdateItem(
 	if err != nil {
 		return domainmedia.Item{}, fmt.Errorf("update media identity: %w", err)
 	}
-	if err := service.repository.Update(argContext, updated); err != nil {
+	if err := service.repository.Update(ctx, updated); err != nil {
 		if errors.Is(err, domainmedia.ErrItemNotFound) {
 			return domainmedia.Item{}, ErrMediaNotFound
 		}
@@ -178,19 +178,19 @@ func (service *Service) UpdateItem(
 
 // DeleteItem removes authorized media metadata and its dependent records.
 func (service *Service) DeleteItem(
-	argContext context.Context,
-	argActor identity.User,
-	argID string,
+	ctx context.Context,
+	actor identity.User,
+	id string,
 ) error {
 	if _, err := service.authorizedItem(
-		argContext,
-		argActor,
-		argID,
+		ctx,
+		actor,
+		id,
 		domainmedia.PermissionDelete,
 	); err != nil {
 		return err
 	}
-	if err := service.repository.Delete(argContext, argID); err != nil {
+	if err := service.repository.Delete(ctx, id); err != nil {
 		if errors.Is(err, domainmedia.ErrItemNotFound) {
 			return ErrMediaNotFound
 		}
@@ -202,30 +202,30 @@ func (service *Service) DeleteItem(
 }
 
 func (service *Service) authorizedItem(
-	argContext context.Context,
-	argActor identity.User,
-	argID string,
-	argPermission domainmedia.Permission,
+	ctx context.Context,
+	actor identity.User,
+	id string,
+	permission domainmedia.Permission,
 ) (domainmedia.Item, error) {
 	return authorizeItem(
-		argContext,
-		argActor,
-		argID,
-		argPermission,
+		ctx,
+		actor,
+		id,
+		permission,
 		service.repository,
 		service.grants,
 	)
 }
 
 func authorizeItem(
-	argContext context.Context,
-	argActor identity.User,
-	argID string,
-	argPermission domainmedia.Permission,
-	argRepository MediaFinder,
-	argGrants GrantFinder,
+	ctx context.Context,
+	actor identity.User,
+	id string,
+	permission domainmedia.Permission,
+	repository MediaFinder,
+	grantFinder GrantFinder,
 ) (domainmedia.Item, error) {
-	item, err := argRepository.FindByID(argContext, argID)
+	item, err := repository.FindByID(ctx, id)
 	if errors.Is(err, domainmedia.ErrItemNotFound) {
 		return domainmedia.Item{}, ErrMediaNotFound
 	}
@@ -234,8 +234,8 @@ func authorizeItem(
 	}
 
 	var grants []domainmedia.Grant
-	if argActor.ID != item.OwnerID {
-		grant, grantErr := argGrants.Find(argContext, item.ID, argActor.ID)
+	if actor.ID != item.OwnerID {
+		grant, grantErr := grantFinder.Find(ctx, item.ID, actor.ID)
 		switch {
 		case grantErr == nil:
 			grants = []domainmedia.Grant{grant}
@@ -245,7 +245,7 @@ func authorizeItem(
 		}
 	}
 
-	allowed, err := domainmedia.Authorize(argActor, item, argPermission, grants)
+	allowed, err := domainmedia.Authorize(actor, item, permission, grants)
 	if err != nil {
 		return domainmedia.Item{}, fmt.Errorf("authorize media operation: %w", err)
 	}

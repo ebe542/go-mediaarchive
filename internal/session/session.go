@@ -33,64 +33,64 @@ type Session struct {
 
 // New validates and creates an active server-side session.
 func New(
-	argTokenHash [sha256.Size]byte,
-	argUserID string,
-	argNow time.Time,
-	argLifetime time.Duration,
+	tokenHash [sha256.Size]byte,
+	userID string,
+	now time.Time,
+	lifetime time.Duration,
 ) (Session, error) {
-	if argTokenHash == [sha256.Size]byte{} {
+	if tokenHash == [sha256.Size]byte{} {
 		return Session{}, ErrInvalidTokenHash
 	}
 
-	parsedUserID, err := uuid.Parse(argUserID)
+	parsedUserID, err := uuid.Parse(userID)
 	if err != nil ||
 		parsedUserID == uuid.Nil ||
-		parsedUserID.String() != argUserID {
+		parsedUserID.String() != userID {
 		return Session{}, fmt.Errorf(
 			"%w: expected a canonical lowercase UUID",
 			ErrInvalidUserID,
 		)
 	}
 
-	if argNow.IsZero() {
+	if now.IsZero() {
 		return Session{}, fmt.Errorf(
 			"%w: creation time must not be zero",
 			ErrInvalidTimestamp,
 		)
 	}
 
-	if argLifetime <= 0 {
+	if lifetime <= 0 {
 		return Session{}, fmt.Errorf(
 			"%w: expected a positive duration",
 			ErrInvalidLifetime,
 		)
 	}
 
-	timestamp := argNow.UTC()
+	timestamp := now.UTC()
 
 	return Session{
-		TokenHash:  argTokenHash,
-		UserID:     argUserID,
+		TokenHash:  tokenHash,
+		UserID:     userID,
 		CreatedAt:  timestamp,
 		LastSeenAt: timestamp,
-		ExpiresAt:  timestamp.Add(argLifetime),
+		ExpiresAt:  timestamp.Add(lifetime),
 	}, nil
 }
 
 // IsValidAt reports whether a session may authenticate an active user.
 func (session Session) IsValidAt(
-	argNow time.Time,
-	argIdleTimeout time.Duration,
-	argUserActive bool,
+	now time.Time,
+	idleTimeout time.Duration,
+	userActive bool,
 ) bool {
-	if argNow.IsZero() ||
-		argIdleTimeout <= 0 ||
-		!argUserActive ||
+	if now.IsZero() ||
+		idleTimeout <= 0 ||
+		!userActive ||
 		!session.RevokedAt.IsZero() {
 		return false
 	}
 
-	timestamp := argNow.UTC()
+	timestamp := now.UTC()
 
 	if timestamp.Before(session.CreatedAt) {
 		return false
@@ -100,7 +100,7 @@ func (session Session) IsValidAt(
 		return false
 	}
 
-	idleExpiration := session.LastSeenAt.Add(argIdleTimeout)
+	idleExpiration := session.LastSeenAt.Add(idleTimeout)
 	if !timestamp.Before(idleExpiration) {
 		return false
 	}

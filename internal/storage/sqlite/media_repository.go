@@ -21,34 +21,34 @@ type MediaRepository struct {
 var _ media.Repository = (*MediaRepository)(nil)
 
 // NewMediaRepository creates a SQLite-backed media repository.
-func NewMediaRepository(argDatabase *sql.DB) *MediaRepository {
-	return &MediaRepository{database: argDatabase}
+func NewMediaRepository(database *sql.DB) *MediaRepository {
+	return &MediaRepository{database: database}
 }
 
 // Create atomically persists a media identity and its ordered authors.
 func (repository *MediaRepository) Create(
-	argContext context.Context,
-	argItem media.Item,
+	ctx context.Context,
+	item media.Item,
 ) error {
-	item, err := validateMediaItem(argItem)
+	item, err := validateMediaItem(item)
 	if err != nil {
 		return fmt.Errorf("validate media for creation: %w", err)
 	}
 
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin media creation: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
 
-	if err := insertMediaItem(argContext, transaction, item); err != nil {
+	if err := insertMediaItem(ctx, transaction, item); err != nil {
 		if isUniqueConstraintError(err) {
 			return fmt.Errorf("%w: %w", media.ErrItemConflict, err)
 		}
 
 		return fmt.Errorf("insert media item: %w", err)
 	}
-	if err := insertMediaAuthors(argContext, transaction, item.ID, item.Authors); err != nil {
+	if err := insertMediaAuthors(ctx, transaction, item.ID, item.Authors); err != nil {
 		return err
 	}
 	if err := transaction.Commit(); err != nil {
@@ -61,18 +61,18 @@ func (repository *MediaRepository) Create(
 // CreateManaged atomically persists a media identity, ordered authors, and its
 // managed-content location.
 func (repository *MediaRepository) CreateManaged(
-	argContext context.Context,
-	argItem media.Item,
-	argLocation content.Location,
+	ctx context.Context,
+	candidateItem media.Item,
+	candidateLocation content.Location,
 ) error {
-	item, err := validateMediaItem(argItem)
+	item, err := validateMediaItem(candidateItem)
 	if err != nil {
 		return fmt.Errorf("validate managed media for creation: %w", err)
 	}
 	location, err := content.NewLocation(
-		argLocation.MediaID,
-		argLocation.StorageKey,
-		argLocation.StoredAt,
+		candidateLocation.MediaID,
+		candidateLocation.StorageKey,
+		candidateLocation.StoredAt,
 	)
 	if err != nil {
 		return fmt.Errorf("validate managed content location: %w", err)
@@ -81,23 +81,23 @@ func (repository *MediaRepository) CreateManaged(
 		return content.ErrLocationMediaMismatch
 	}
 
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin managed media creation: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
 
-	if err := insertMediaItem(argContext, transaction, item); err != nil {
+	if err := insertMediaItem(ctx, transaction, item); err != nil {
 		if isUniqueConstraintError(err) {
 			return fmt.Errorf("%w: %w", media.ErrItemConflict, err)
 		}
 
 		return fmt.Errorf("insert managed media item: %w", err)
 	}
-	if err := insertMediaAuthors(argContext, transaction, item.ID, item.Authors); err != nil {
+	if err := insertMediaAuthors(ctx, transaction, item.ID, item.Authors); err != nil {
 		return err
 	}
-	if err := insertContentLocation(argContext, transaction, location); err != nil {
+	if err := insertContentLocation(ctx, transaction, location); err != nil {
 		if isUniqueConstraintError(err) {
 			return fmt.Errorf("%w: %w", content.ErrLocationConflict, err)
 		}
@@ -113,11 +113,11 @@ func (repository *MediaRepository) CreateManaged(
 
 // FindByID retrieves a media identity and authors from one read snapshot.
 func (repository *MediaRepository) FindByID(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) (media.Item, error) {
 	transaction, err := repository.database.BeginTx(
-		argContext,
+		ctx,
 		&sql.TxOptions{ReadOnly: true},
 	)
 	if err != nil {
@@ -125,7 +125,7 @@ func (repository *MediaRepository) FindByID(
 	}
 	defer func() { _ = transaction.Rollback() }()
 
-	item, err := findMediaItemByID(argContext, transaction, argID)
+	item, err := findMediaItemByID(ctx, transaction, id)
 	if err != nil {
 		return media.Item{}, err
 	}
@@ -139,22 +139,22 @@ func (repository *MediaRepository) FindByID(
 // Update atomically replaces mutable metadata and ordered authors while
 // preserving ownership and creation time.
 func (repository *MediaRepository) Update(
-	argContext context.Context,
-	argItem media.Item,
+	ctx context.Context,
+	item media.Item,
 ) error {
-	item, err := validateMediaItem(argItem)
+	item, err := validateMediaItem(item)
 	if err != nil {
 		return fmt.Errorf("validate media for update: %w", err)
 	}
 
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin media update: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
 
 	result, err := transaction.ExecContext(
-		argContext,
+		ctx,
 		`
 			UPDATE media_items
 			SET title = ?, original_filename = ?, media_type = ?, mime_type = ?,
@@ -177,13 +177,13 @@ func (repository *MediaRepository) Update(
 		return err
 	}
 	if _, err := transaction.ExecContext(
-		argContext,
+		ctx,
 		`DELETE FROM media_authors WHERE media_id = ?`,
 		item.ID,
 	); err != nil {
 		return fmt.Errorf("delete replaced media authors: %w", err)
 	}
-	if err := insertMediaAuthors(argContext, transaction, item.ID, item.Authors); err != nil {
+	if err := insertMediaAuthors(ctx, transaction, item.ID, item.Authors); err != nil {
 		return err
 	}
 	if err := transaction.Commit(); err != nil {
@@ -195,10 +195,10 @@ func (repository *MediaRepository) Update(
 
 // Delete atomically removes grants, authors, and one media identity.
 func (repository *MediaRepository) Delete(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) error {
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin media deletion: %w", err)
 	}
@@ -212,17 +212,17 @@ func (repository *MediaRepository) Delete(
 		{"authors", `DELETE FROM media_authors WHERE media_id = ?`},
 	} {
 		if _, err := transaction.ExecContext(
-			argContext,
+			ctx,
 			relatedDelete.query,
-			argID,
+			id,
 		); err != nil {
 			return fmt.Errorf("delete media %s: %w", relatedDelete.name, err)
 		}
 	}
 	result, err := transaction.ExecContext(
-		argContext,
+		ctx,
 		`DELETE FROM media_items WHERE id = ?`,
-		argID,
+		id,
 	)
 	if err != nil {
 		return fmt.Errorf("delete media item: %w", err)
@@ -240,21 +240,21 @@ func (repository *MediaRepository) Delete(
 // DeleteManaged atomically removes a matching content location, grants,
 // authors, and media identity.
 func (repository *MediaRepository) DeleteManaged(
-	argContext context.Context,
-	argID string,
-	argStorageKey string,
+	ctx context.Context,
+	id string,
+	storageKey string,
 ) error {
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin managed media deletion: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
 
 	result, err := transaction.ExecContext(
-		argContext,
+		ctx,
 		`DELETE FROM media_contents WHERE media_id = ? AND storage_key = ?`,
-		argID,
-		argStorageKey,
+		id,
+		storageKey,
 	)
 	if err != nil {
 		return fmt.Errorf("delete managed content location: %w", err)
@@ -270,17 +270,17 @@ func (repository *MediaRepository) DeleteManaged(
 		{"authors", `DELETE FROM media_authors WHERE media_id = ?`},
 	} {
 		if _, err := transaction.ExecContext(
-			argContext,
+			ctx,
 			relatedDelete.query,
-			argID,
+			id,
 		); err != nil {
 			return fmt.Errorf("delete managed media %s: %w", relatedDelete.name, err)
 		}
 	}
 	result, err = transaction.ExecContext(
-		argContext,
+		ctx,
 		`DELETE FROM media_items WHERE id = ?`,
-		argID,
+		id,
 	)
 	if err != nil {
 		return fmt.Errorf("delete managed media item: %w", err)
@@ -295,29 +295,29 @@ func (repository *MediaRepository) DeleteManaged(
 	return nil
 }
 
-func validateMediaItem(argItem media.Item) (media.Item, error) {
+func validateMediaItem(item media.Item) (media.Item, error) {
 	return media.NewItem(
-		argItem.ID,
-		argItem.Title,
-		argItem.Authors,
-		argItem.OriginalFilename,
-		argItem.Type,
-		argItem.MIMEType,
-		argItem.Size,
-		argItem.Checksum[:],
-		argItem.OwnerID,
-		argItem.CreatedAt,
-		argItem.UpdatedAt,
+		item.ID,
+		item.Title,
+		item.Authors,
+		item.OriginalFilename,
+		item.Type,
+		item.MIMEType,
+		item.Size,
+		item.Checksum[:],
+		item.OwnerID,
+		item.CreatedAt,
+		item.UpdatedAt,
 	)
 }
 
 func insertMediaItem(
-	argContext context.Context,
-	argExecutor statementExecutor,
-	argItem media.Item,
+	ctx context.Context,
+	executor statementExecutor,
+	item media.Item,
 ) error {
-	_, err := argExecutor.ExecContext(
-		argContext,
+	_, err := executor.ExecContext(
+		ctx,
 		`
 			INSERT INTO media_items (
 				id, title, original_filename, media_type, mime_type, size,
@@ -325,32 +325,32 @@ func insertMediaItem(
 			)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
-		argItem.ID,
-		argItem.Title,
-		argItem.OriginalFilename,
-		argItem.Type,
-		argItem.MIMEType,
-		argItem.Size,
-		argItem.Checksum[:],
-		argItem.OwnerID,
-		argItem.CreatedAt.Format(time.RFC3339Nano),
-		argItem.UpdatedAt.Format(time.RFC3339Nano),
+		item.ID,
+		item.Title,
+		item.OriginalFilename,
+		item.Type,
+		item.MIMEType,
+		item.Size,
+		item.Checksum[:],
+		item.OwnerID,
+		item.CreatedAt.Format(time.RFC3339Nano),
+		item.UpdatedAt.Format(time.RFC3339Nano),
 	)
 
 	return err
 }
 
 func insertMediaAuthors(
-	argContext context.Context,
-	argExecutor statementExecutor,
-	argMediaID string,
-	argAuthors []string,
+	ctx context.Context,
+	executor statementExecutor,
+	mediaID string,
+	authors []string,
 ) error {
-	for position, author := range argAuthors {
-		if _, err := argExecutor.ExecContext(
-			argContext,
+	for position, author := range authors {
+		if _, err := executor.ExecContext(
+			ctx,
 			`INSERT INTO media_authors (media_id, position, name) VALUES (?, ?, ?)`,
-			argMediaID,
+			mediaID,
 			position,
 			author,
 		); err != nil {
@@ -362,24 +362,24 @@ func insertMediaAuthors(
 }
 
 func findMediaItemByID(
-	argContext context.Context,
-	argTransaction *sql.Tx,
-	argID string,
+	ctx context.Context,
+	transaction *sql.Tx,
+	id string,
 ) (media.Item, error) {
 	var stored media.Item
 	var mediaType string
 	var checksum []byte
 	var createdAt string
 	var updatedAt string
-	err := argTransaction.QueryRowContext(
-		argContext,
+	err := transaction.QueryRowContext(
+		ctx,
 		`
 			SELECT id, title, original_filename, media_type, mime_type, size,
 				checksum, owner_id, created_at, updated_at
 			FROM media_items
 			WHERE id = ?
 		`,
-		argID,
+		id,
 	).Scan(
 		&stored.ID,
 		&stored.Title,
@@ -393,16 +393,16 @@ func findMediaItemByID(
 		&updatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return media.Item{}, fmt.Errorf("%w: ID %q", media.ErrItemNotFound, argID)
+		return media.Item{}, fmt.Errorf("%w: ID %q", media.ErrItemNotFound, id)
 	}
 	if err != nil {
 		return media.Item{}, fmt.Errorf("select media item: %w", err)
 	}
 
-	rows, err := argTransaction.QueryContext(
-		argContext,
+	rows, err := transaction.QueryContext(
+		ctx,
 		`SELECT name FROM media_authors WHERE media_id = ? ORDER BY position`,
-		argID,
+		id,
 	)
 	if err != nil {
 		return media.Item{}, fmt.Errorf("select media authors: %w", err)
@@ -450,8 +450,8 @@ func findMediaItemByID(
 	return validated, nil
 }
 
-func requireOneMediaRow(argResult sql.Result) error {
-	affectedRows, err := argResult.RowsAffected()
+func requireOneMediaRow(result sql.Result) error {
+	affectedRows, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("read affected media row count: %w", err)
 	}

@@ -99,52 +99,52 @@ func TestNewItemRejectsInvalidScalarMetadata(t *testing.T) {
 		expectedError error
 	}{
 		"invalid media ID": {
-			mutate:        func(argArguments *itemArguments) { argArguments.id = "media-id" },
+			mutate:        func(arguments *itemArguments) { arguments.id = "media-id" },
 			expectedError: media.ErrInvalidMediaID,
 		},
 		"nil media ID": {
-			mutate:        func(argArguments *itemArguments) { argArguments.id = "00000000-0000-0000-0000-000000000000" },
+			mutate:        func(arguments *itemArguments) { arguments.id = "00000000-0000-0000-0000-000000000000" },
 			expectedError: media.ErrInvalidMediaID,
 		},
 		"empty title": {
-			mutate:        func(argArguments *itemArguments) { argArguments.title = "  " },
+			mutate:        func(arguments *itemArguments) { arguments.title = "  " },
 			expectedError: media.ErrInvalidTitle,
 		},
 		"long title": {
-			mutate:        func(argArguments *itemArguments) { argArguments.title = strings.Repeat("x", 201) },
+			mutate:        func(arguments *itemArguments) { arguments.title = strings.Repeat("x", 201) },
 			expectedError: media.ErrInvalidTitle,
 		},
 		"title control character": {
-			mutate:        func(argArguments *itemArguments) { argArguments.title = "Security\nNotes" },
+			mutate:        func(arguments *itemArguments) { arguments.title = "Security\nNotes" },
 			expectedError: media.ErrInvalidTitle,
 		},
 		"unknown type": {
-			mutate:        func(argArguments *itemArguments) { argArguments.mediaType = media.Type("audio") },
+			mutate:        func(arguments *itemArguments) { arguments.mediaType = media.Type("audio") },
 			expectedError: media.ErrInvalidMediaType,
 		},
 		"zero size": {
-			mutate:        func(argArguments *itemArguments) { argArguments.size = 0 },
+			mutate:        func(arguments *itemArguments) { arguments.size = 0 },
 			expectedError: media.ErrInvalidSize,
 		},
 		"negative size": {
-			mutate:        func(argArguments *itemArguments) { argArguments.size = -1 },
+			mutate:        func(arguments *itemArguments) { arguments.size = -1 },
 			expectedError: media.ErrInvalidSize,
 		},
 		"invalid owner ID": {
-			mutate:        func(argArguments *itemArguments) { argArguments.ownerID = "owner-id" },
+			mutate:        func(arguments *itemArguments) { arguments.ownerID = "owner-id" },
 			expectedError: media.ErrInvalidOwnerID,
 		},
 		"zero creation time": {
-			mutate:        func(argArguments *itemArguments) { argArguments.createdAt = time.Time{} },
+			mutate:        func(arguments *itemArguments) { arguments.createdAt = time.Time{} },
 			expectedError: media.ErrInvalidTimestamp,
 		},
 		"zero update time": {
-			mutate:        func(argArguments *itemArguments) { argArguments.updatedAt = time.Time{} },
+			mutate:        func(arguments *itemArguments) { arguments.updatedAt = time.Time{} },
 			expectedError: media.ErrInvalidTimestamp,
 		},
 		"update before creation": {
-			mutate: func(argArguments *itemArguments) {
-				argArguments.updatedAt = argArguments.createdAt.Add(-time.Second)
+			mutate: func(arguments *itemArguments) {
+				arguments.updatedAt = arguments.createdAt.Add(-time.Second)
 			},
 			expectedError: media.ErrInvalidTimestamp,
 		},
@@ -277,9 +277,9 @@ func validItemArguments() itemArguments {
 	}
 }
 
-func newValidItem(argAuthors []string) (media.Item, error) {
+func newValidItem(authors []string) (media.Item, error) {
 	arguments := validItemArguments()
-	arguments.authors = argAuthors
+	arguments.authors = authors
 
 	return arguments.newItem()
 }
@@ -300,8 +300,8 @@ func (arguments itemArguments) newItem() (media.Item, error) {
 	)
 }
 
-func makeAuthors(argCount int) []string {
-	authors := make([]string, argCount)
+func makeAuthors(count int) []string {
+	authors := make([]string, count)
 	for index := range authors {
 		authors[index] = fmt.Sprintf("Author %d", index+1)
 	}

@@ -191,12 +191,12 @@ func TestAttemptLimiterReservesConcurrentAttempts(t *testing.T) {
 	waitGroup.Add(attemptCount)
 
 	for attempt := 0; attempt < attemptCount; attempt++ {
-		go func(argAttempt int) {
+		go func(attempt int) {
 			defer waitGroup.Done()
 
 			if limiter.Allow(
 				"archive_admin",
-				fmt.Sprintf("192.0.2.%d", argAttempt+1),
+				fmt.Sprintf("192.0.2.%d", attempt+1),
 				now,
 			) {
 				allowedCount.Add(1)

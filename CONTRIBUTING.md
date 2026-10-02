@@ -98,6 +98,8 @@ hosted environment will behave identically.
 - Add third-party dependencies only when their benefit and maintenance cost are
   understood.
 - Keep packages focused and use descriptive English names.
+- Give parameters descriptive domain names, use `ctx` for `context.Context`,
+  and avoid technical prefixes such as `arg`.
 - Accept configuration primarily through explicit CLI flags. Environment
   variables may provide defaults, followed by safe built-in defaults.
 - Return and wrap errors with useful context.

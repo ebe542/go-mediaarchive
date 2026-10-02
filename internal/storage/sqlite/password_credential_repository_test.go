@@ -207,7 +207,7 @@ func TestPasswordChangeRollsBackCredentialWhenSessionRevocationFails(
 
 func passwordChangeRepositoryFixture(
 	t *testing.T,
-	argContext context.Context,
+	ctx context.Context,
 ) (
 	*sql.DB,
 	*sqlitestore.PasswordCredentialRepository,
@@ -216,7 +216,7 @@ func passwordChangeRepositoryFixture(
 	t.Helper()
 
 	databasePath := filepath.Join(t.TempDir(), "mediaarchive.db")
-	database, err := sqlitestore.Open(argContext, databasePath)
+	database, err := sqlitestore.Open(ctx, databasePath)
 	if err != nil {
 		t.Fatalf("open SQLite database: %v", err)
 	}
@@ -226,7 +226,7 @@ func passwordChangeRepositoryFixture(
 		}
 	})
 
-	if err := sqlitestore.Migrate(argContext, database); err != nil {
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
 
@@ -251,7 +251,7 @@ func passwordChangeRepositoryFixture(
 	}
 	if err := sqlitestore.NewAdminBootstrapRepository(
 		database,
-	).BootstrapAdmin(argContext, user, storedCredential); err != nil {
+	).BootstrapAdmin(ctx, user, storedCredential); err != nil {
 		t.Fatalf("store password change fixture: %v", err)
 	}
 
@@ -267,7 +267,7 @@ func passwordChangeRepositoryFixture(
 			t.Fatalf("create session fixture: %v", err)
 		}
 		if err := sessionRepository.Create(
-			argContext,
+			ctx,
 			storedSession,
 		); err != nil {
 			t.Fatalf("store session fixture: %v", err)

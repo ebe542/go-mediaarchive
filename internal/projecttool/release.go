@@ -51,37 +51,37 @@ var releaseTargets = []releaseTarget{
 
 var releaseCommands = []string{"server", "admin", "client"}
 
-func (app application) runReleaseCommand(argArguments []string) error {
-	if len(argArguments) == 0 {
+func (app application) runReleaseCommand(arguments []string) error {
+	if len(arguments) == 0 {
 		fmt.Fprint(app.stderr, releaseUsage)
 
 		return errors.New("release command is required")
 	}
-	if argArguments[0] == "--help" || argArguments[0] == "-h" {
+	if arguments[0] == "--help" || arguments[0] == "-h" {
 		fmt.Fprint(app.stdout, releaseUsage)
 
 		return nil
 	}
 
-	switch argArguments[0] {
+	switch arguments[0] {
 	case "validate":
-		return app.validateRelease(argArguments[1:])
+		return app.validateRelease(arguments[1:])
 	case "build":
-		return app.buildRelease(argArguments[1:])
+		return app.buildRelease(arguments[1:])
 	default:
 		fmt.Fprint(app.stderr, releaseUsage)
 
-		return fmt.Errorf("unknown release command %q", argArguments[0])
+		return fmt.Errorf("unknown release command %q", arguments[0])
 	}
 }
 
-func (app application) validateRelease(argArguments []string) error {
-	if hasHelpArgument(argArguments) {
+func (app application) validateRelease(arguments []string) error {
+	if hasHelpArgument(arguments) {
 		fmt.Fprint(app.stdout, validateReleaseUsage)
 
 		return nil
 	}
-	version, err := parseVersionArguments(argArguments, validateReleaseUsage, app.stderr)
+	version, err := parseVersionArguments(arguments, validateReleaseUsage, app.stderr)
 	if err != nil {
 		return err
 	}
@@ -131,13 +131,13 @@ func (app application) validateRelease(argArguments []string) error {
 	return nil
 }
 
-func (app application) buildRelease(argArguments []string) error {
-	if hasHelpArgument(argArguments) {
+func (app application) buildRelease(arguments []string) error {
+	if hasHelpArgument(arguments) {
 		fmt.Fprint(app.stdout, buildReleaseUsage)
 
 		return nil
 	}
-	version, outputDirectory, err := parseBuildArguments(argArguments, app.stderr)
+	version, outputDirectory, err := parseBuildArguments(arguments, app.stderr)
 	if err != nil {
 		return err
 	}
@@ -256,8 +256,8 @@ func (app application) buildRelease(argArguments []string) error {
 	return nil
 }
 
-func hasHelpArgument(argArguments []string) bool {
-	for _, argument := range argArguments {
+func hasHelpArgument(arguments []string) bool {
+	for _, argument := range arguments {
 		if argument == "--help" || argument == "-h" {
 			return true
 		}
@@ -267,25 +267,25 @@ func hasHelpArgument(argArguments []string) bool {
 }
 
 func parseVersionArguments(
-	argArguments []string,
-	argUsage string,
-	argStderr io.Writer,
+	arguments []string,
+	usage string,
+	stderr io.Writer,
 ) (string, error) {
 	version := ""
-	for index := 0; index < len(argArguments); index++ {
-		switch argArguments[index] {
+	for index := 0; index < len(arguments); index++ {
+		switch arguments[index] {
 		case "--version":
-			if index+1 >= len(argArguments) {
-				fmt.Fprint(argStderr, argUsage)
+			if index+1 >= len(arguments) {
+				fmt.Fprint(stderr, usage)
 
 				return "", errors.New("version value is required")
 			}
 			index++
-			version = argArguments[index]
+			version = arguments[index]
 		default:
-			fmt.Fprint(argStderr, argUsage)
+			fmt.Fprint(stderr, usage)
 
-			return "", fmt.Errorf("unknown release argument %q", argArguments[index])
+			return "", fmt.Errorf("unknown release argument %q", arguments[index])
 		}
 	}
 	if !releaseVersionPattern.MatchString(version) {
@@ -295,46 +295,46 @@ func parseVersionArguments(
 	return version, nil
 }
 
-func parseBuildArguments(argArguments []string, argStderr io.Writer) (string, string, error) {
+func parseBuildArguments(arguments []string, stderr io.Writer) (string, string, error) {
 	versionArguments := make([]string, 0, 2)
 	outputDirectory := "dist"
-	for index := 0; index < len(argArguments); index++ {
-		switch argArguments[index] {
+	for index := 0; index < len(arguments); index++ {
+		switch arguments[index] {
 		case "--version":
-			if index+1 >= len(argArguments) {
-				fmt.Fprint(argStderr, buildReleaseUsage)
+			if index+1 >= len(arguments) {
+				fmt.Fprint(stderr, buildReleaseUsage)
 
 				return "", "", errors.New("version value is required")
 			}
-			versionArguments = append(versionArguments, "--version", argArguments[index+1])
+			versionArguments = append(versionArguments, "--version", arguments[index+1])
 			index++
 		case "--output-directory":
-			if index+1 >= len(argArguments) {
-				fmt.Fprint(argStderr, buildReleaseUsage)
+			if index+1 >= len(arguments) {
+				fmt.Fprint(stderr, buildReleaseUsage)
 
 				return "", "", errors.New("output directory value is required")
 			}
-			outputDirectory = argArguments[index+1]
+			outputDirectory = arguments[index+1]
 			index++
 		default:
-			fmt.Fprint(argStderr, buildReleaseUsage)
+			fmt.Fprint(stderr, buildReleaseUsage)
 
-			return "", "", fmt.Errorf("unknown release build argument %q", argArguments[index])
+			return "", "", fmt.Errorf("unknown release build argument %q", arguments[index])
 		}
 	}
-	version, err := parseVersionArguments(versionArguments, buildReleaseUsage, argStderr)
+	version, err := parseVersionArguments(versionArguments, buildReleaseUsage, stderr)
 
 	return version, outputDirectory, err
 }
 
-func copyFile(argSource string, argDestination string, argMode fs.FileMode) error {
-	source, err := os.Open(argSource)
+func copyFile(sourcePath string, destinationPath string, mode fs.FileMode) error {
+	source, err := os.Open(sourcePath)
 	if err != nil {
 		return err
 	}
 	defer source.Close()
 
-	destination, err := os.OpenFile(argDestination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, argMode)
+	destination, err := os.OpenFile(destinationPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
@@ -347,13 +347,13 @@ func copyFile(argSource string, argDestination string, argMode fs.FileMode) erro
 	return destination.Close()
 }
 
-func writeZIPArchive(argPath string, argRoot string, argPackage string) error {
-	archive, err := os.Create(argPath)
+func writeZIPArchive(path string, root string, packageName string) error {
+	archive, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	writer := zip.NewWriter(archive)
-	walkErr := filepath.WalkDir(argPackage, func(path string, entry fs.DirEntry, walkErr error) error {
+	walkErr := filepath.WalkDir(packageName, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -368,7 +368,7 @@ func writeZIPArchive(argPath string, argRoot string, argPackage string) error {
 		if err != nil {
 			return err
 		}
-		relative, err := filepath.Rel(argRoot, path)
+		relative, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
@@ -403,15 +403,15 @@ func writeZIPArchive(argPath string, argRoot string, argPackage string) error {
 	return closeArchiveErr
 }
 
-func writeTarGZIPArchive(argPath string, argRoot string, argPackage string) error {
-	archive, err := os.Create(argPath)
+func writeTarGZIPArchive(path string, root string, packageName string) error {
+	archive, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	gzipWriter := gzip.NewWriter(archive)
 	gzipWriter.Header.ModTime = releaseTimestamp
 	tarWriter := tar.NewWriter(gzipWriter)
-	walkErr := filepath.Walk(argPackage, func(path string, info fs.FileInfo, walkErr error) error {
+	walkErr := filepath.Walk(packageName, func(path string, info fs.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -419,7 +419,7 @@ func writeTarGZIPArchive(argPath string, argRoot string, argPackage string) erro
 		if err != nil {
 			return err
 		}
-		relative, err := filepath.Rel(argRoot, path)
+		relative, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
@@ -457,14 +457,14 @@ func writeTarGZIPArchive(argPath string, argRoot string, argPackage string) erro
 	return nil
 }
 
-func writeChecksums(argDirectory string, argNames []string) error {
-	checksumPath := filepath.Join(argDirectory, "SHA256SUMS")
+func writeChecksums(directory string, names []string) error {
+	checksumPath := filepath.Join(directory, "SHA256SUMS")
 	checksumFile, err := os.Create(checksumPath)
 	if err != nil {
 		return fmt.Errorf("create checksum file: %w", err)
 	}
-	for _, name := range argNames {
-		archive, err := os.Open(filepath.Join(argDirectory, name))
+	for _, name := range names {
+		archive, err := os.Open(filepath.Join(directory, name))
 		if err != nil {
 			checksumFile.Close()
 
@@ -496,10 +496,10 @@ func writeChecksums(argDirectory string, argNames []string) error {
 	return nil
 }
 
-func replaceFile(argSource string, argDestination string) error {
-	if err := os.Remove(argDestination); err != nil && !os.IsNotExist(err) {
+func replaceFile(source string, destination string) error {
+	if err := os.Remove(destination); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
-	return os.Rename(argSource, argDestination)
+	return os.Rename(source, destination)
 }

@@ -233,20 +233,20 @@ func run(args []string, getenv func(string) string) error {
 }
 
 func validateTransportConfiguration(
-	argAddress string,
-	argCertificatePath string,
-	argPrivateKeyPath string,
+	address string,
+	certificatePath string,
+	privateKeyPath string,
 ) error {
-	_, port, err := net.SplitHostPort(argAddress)
+	_, port, err := net.SplitHostPort(address)
 	if err != nil || port == "" {
 		return fmt.Errorf(
 			"invalid server address %q: expected host and port",
-			argAddress,
+			address,
 		)
 	}
 
-	certificateConfigured := argCertificatePath != ""
-	privateKeyConfigured := argPrivateKeyPath != ""
+	certificateConfigured := certificatePath != ""
+	privateKeyConfigured := privateKeyPath != ""
 
 	if certificateConfigured != privateKeyConfigured {
 		return errors.New(
@@ -258,11 +258,11 @@ func validateTransportConfiguration(
 		return nil
 	}
 
-	host, _, err := net.SplitHostPort(argAddress)
+	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return fmt.Errorf(
 			"parse plain HTTP address %q: %w",
-			argAddress,
+			address,
 			err,
 		)
 	}
@@ -279,20 +279,20 @@ func validateTransportConfiguration(
 }
 
 func newHTTPServer(
-	argAddress string,
-	argHandler http.Handler,
-	argTLSEnabled bool,
+	address string,
+	handler http.Handler,
+	tlsEnabled bool,
 ) *http.Server {
 	server := &http.Server{
-		Addr:              argAddress,
-		Handler:           argHandler,
+		Addr:              address,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	if argTLSEnabled {
+	if tlsEnabled {
 		server.TLSConfig = &tls.Config{
 			MinVersion: tls.VersionTLS13,
 		}
@@ -302,12 +302,12 @@ func newHTTPServer(
 }
 
 func newApplicationHandler(
-	argDatabase *sql.DB,
-	argEnrollmentLifetime time.Duration,
+	database *sql.DB,
+	enrollmentLifetime time.Duration,
 ) (http.Handler, error) {
 	return newApplicationHandlerWithContent(
-		argDatabase,
-		argEnrollmentLifetime,
+		database,
+		enrollmentLifetime,
 		nil,
 		0,
 	)
@@ -319,10 +319,10 @@ type managedContentStore interface {
 }
 
 func newApplicationHandlerWithContent(
-	argDatabase *sql.DB,
-	argEnrollmentLifetime time.Duration,
-	argContentStore managedContentStore,
-	argMaximumUploadSize int64,
+	database *sql.DB,
+	enrollmentLifetime time.Duration,
+	contentStore managedContentStore,
+	maximumUploadSize int64,
 ) (http.Handler, error) {
 	passwordHasher := password.NewDefaultHasher()
 
@@ -338,13 +338,13 @@ func newApplicationHandlerWithContent(
 		)
 	}
 
-	userRepository := sqlitestore.NewUserRepository(argDatabase)
+	userRepository := sqlitestore.NewUserRepository(database)
 	userService := appusers.NewService(
 		userRepository,
 		uuid.NewString,
 		time.Now,
 	)
-	credentialRepository := sqlitestore.NewPasswordCredentialRepository(argDatabase)
+	credentialRepository := sqlitestore.NewPasswordCredentialRepository(database)
 
 	authenticator := authentication.NewService(
 		userRepository,
@@ -353,7 +353,7 @@ func newApplicationHandlerWithContent(
 		dummyHash,
 	)
 
-	sessionRepository := sqlitestore.NewSessionRepository(argDatabase)
+	sessionRepository := sqlitestore.NewSessionRepository(database)
 
 	sessionService := appsessions.NewService(
 		authenticator,
@@ -373,11 +373,11 @@ func newApplicationHandlerWithContent(
 
 	passwordEnrollmentService := apppasswords.NewService(
 		userRepository,
-		sqlitestore.NewPasswordEnrollmentRepository(argDatabase),
+		sqlitestore.NewPasswordEnrollmentRepository(database),
 		credential.NewDefaultEnrollmentTokenGenerator(),
 		passwordHasher,
 		time.Now,
-		argEnrollmentLifetime,
+		enrollmentLifetime,
 	)
 	passwordEnrollmentLimiter := apppasswords.NewIPAttemptLimiter(
 		enrollmentIPLimit,
@@ -388,8 +388,8 @@ func newApplicationHandlerWithContent(
 		passwordHasher,
 		time.Now,
 	)
-	mediaRepository := sqlitestore.NewMediaRepository(argDatabase)
-	grantRepository := sqlitestore.NewMediaGrantRepository(argDatabase)
+	mediaRepository := sqlitestore.NewMediaRepository(database)
+	grantRepository := sqlitestore.NewMediaGrantRepository(database)
 	mediaService := appmedia.NewService(
 		mediaRepository,
 		grantRepository,
@@ -435,20 +435,20 @@ func newApplicationHandlerWithContent(
 			grantService,
 		),
 	}
-	if argContentStore != nil {
-		locationRepository := sqlitestore.NewContentLocationRepository(argDatabase)
+	if contentStore != nil {
+		locationRepository := sqlitestore.NewContentLocationRepository(database)
 		mediaMetadataService = appmedia.NewManagedService(
 			mediaService,
 			locationRepository,
 			mediaRepository,
-			argContentStore,
+			contentStore,
 		)
 		uploadService, err := appmedia.NewUploadService(
 			mediaRepository,
-			argContentStore,
+			contentStore,
 			uuid.NewString,
 			time.Now,
-			argMaximumUploadSize,
+			maximumUploadSize,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("initialize media upload service: %w", err)
@@ -458,7 +458,7 @@ func newApplicationHandlerWithContent(
 			api.WithMediaUploadAPI(
 				sessionService,
 				uploadService,
-				argMaximumUploadSize,
+				maximumUploadSize,
 			),
 		)
 	}
@@ -503,16 +503,16 @@ func databasePathFromEnvironment(getenv func(string) string) string {
 	return defaultDatabasePath
 }
 
-func contentDirectoryFromEnvironment(argGetenv func(string) string) string {
-	if directory := argGetenv("MEDIAARCHIVE_CONTENT_DIRECTORY"); directory != "" {
+func contentDirectoryFromEnvironment(getenv func(string) string) string {
+	if directory := getenv("MEDIAARCHIVE_CONTENT_DIRECTORY"); directory != "" {
 		return directory
 	}
 
 	return defaultContentDirectory
 }
 
-func maximumUploadSizeDefault(argGetenv func(string) string) string {
-	value := argGetenv("MEDIAARCHIVE_MAXIMUM_UPLOAD_SIZE")
+func maximumUploadSizeDefault(getenv func(string) string) string {
+	value := getenv("MEDIAARCHIVE_MAXIMUM_UPLOAD_SIZE")
 	if value != "" {
 		return value
 	}
@@ -520,12 +520,12 @@ func maximumUploadSizeDefault(argGetenv func(string) string) string {
 	return strconv.FormatInt(defaultMaximumUploadSize, 10)
 }
 
-func parseMaximumUploadSize(argValue string) (int64, error) {
-	maximumSize, err := strconv.ParseInt(argValue, 10, 64)
+func parseMaximumUploadSize(value string) (int64, error) {
+	maximumSize, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || maximumSize <= 0 {
 		return 0, fmt.Errorf(
 			"invalid maximum upload size %q: expected a positive byte count",
-			argValue,
+			value,
 		)
 	}
 
@@ -533,21 +533,21 @@ func parseMaximumUploadSize(argValue string) (int64, error) {
 }
 
 func tlsCertificatePathFromEnvironment(
-	argGetenv func(string) string,
+	getenv func(string) string,
 ) string {
-	return argGetenv("MEDIAARCHIVE_TLS_CERTIFICATE")
+	return getenv("MEDIAARCHIVE_TLS_CERTIFICATE")
 }
 
 func tlsPrivateKeyPathFromEnvironment(
-	argGetenv func(string) string,
+	getenv func(string) string,
 ) string {
-	return argGetenv("MEDIAARCHIVE_TLS_PRIVATE_KEY")
+	return getenv("MEDIAARCHIVE_TLS_PRIVATE_KEY")
 }
 
 func passwordEnrollmentLifetimeDefault(
-	argGetenv func(string) string,
+	getenv func(string) string,
 ) string {
-	value := argGetenv("MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME")
+	value := getenv("MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME")
 	if value != "" {
 		return value
 	}
@@ -556,9 +556,9 @@ func passwordEnrollmentLifetimeDefault(
 }
 
 func parsePasswordEnrollmentLifetime(
-	argValue string,
+	value string,
 ) (time.Duration, error) {
-	lifetime, err := time.ParseDuration(argValue)
+	lifetime, err := time.ParseDuration(value)
 	if err != nil {
 		return 0, fmt.Errorf(
 			"parse password enrollment lifetime: %w",

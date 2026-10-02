@@ -36,16 +36,16 @@ func TestRunBootstrapCommandConfirmsPassword(t *testing.T) {
 	var receivedPassword []byte
 
 	bootstrapAdmin := func(
-		argContext context.Context,
-		argDatabasePath string,
-		argUsername string,
-		argDisplayName string,
-		argPassword []byte,
+		ctx context.Context,
+		databasePath string,
+		username string,
+		displayName string,
+		password []byte,
 	) (identity.User, error) {
-		receivedDatabasePath = argDatabasePath
-		receivedUsername = argUsername
-		receivedDisplayName = argDisplayName
-		receivedPassword = append([]byte(nil), argPassword...)
+		receivedDatabasePath = databasePath
+		receivedUsername = username
+		receivedDisplayName = displayName
+		receivedPassword = append([]byte(nil), password...)
 
 		return identity.User{
 			ID:          "123e4567-e89b-12d3-a456-426614174000",
@@ -142,11 +142,11 @@ func TestRunBootstrapCommandRejectsPasswordMismatch(t *testing.T) {
 
 	bootstrapCalls := 0
 	bootstrapAdmin := func(
-		argContext context.Context,
-		argDatabasePath string,
-		argUsername string,
-		argDisplayName string,
-		argPassword []byte,
+		ctx context.Context,
+		databasePath string,
+		username string,
+		displayName string,
+		password []byte,
 	) (identity.User, error) {
 		bootstrapCalls++
 

@@ -15,25 +15,25 @@ type recordingRunner struct {
 	onRun       func(Command) error
 }
 
-func (runner *recordingRunner) Run(argCommand Command) error {
-	runner.commands = append(runner.commands, argCommand)
+func (runner *recordingRunner) Run(command Command) error {
+	runner.commands = append(runner.commands, command)
 	if runner.onRun != nil {
-		if err := runner.onRun(argCommand); err != nil {
+		if err := runner.onRun(command); err != nil {
 			return err
 		}
 	}
 
-	return runner.runErrors[commandKey(argCommand)]
+	return runner.runErrors[commandKey(command)]
 }
 
-func (runner *recordingRunner) Output(argCommand Command) (string, error) {
-	runner.commands = append(runner.commands, argCommand)
+func (runner *recordingRunner) Output(command Command) (string, error) {
+	runner.commands = append(runner.commands, command)
 
-	return runner.outputs[commandKey(argCommand)], runner.runErrors[commandKey(argCommand)]
+	return runner.outputs[commandKey(command)], runner.runErrors[commandKey(command)]
 }
 
-func (runner *recordingRunner) LookPath(argName string) error {
-	return runner.lookupError[argName]
+func (runner *recordingRunner) LookPath(name string) error {
+	return runner.lookupError[name]
 }
 
 func TestCheckRunsStandardChecksAndOptionalRaceDetector(t *testing.T) {
@@ -167,25 +167,25 @@ func newRecordingRunner() *recordingRunner {
 }
 
 func newTestApplication(
-	argRunner commandRunner,
-	argStdout *bytes.Buffer,
-	argStderr *bytes.Buffer,
+	runner commandRunner,
+	stdout *bytes.Buffer,
+	stderr *bytes.Buffer,
 ) application {
 	return application{
-		stdout: argStdout,
-		stderr: argStderr,
-		runner: argRunner,
+		stdout: stdout,
+		stderr: stderr,
+		runner: runner,
 		root:   "project-root",
 	}
 }
 
-func commandKey(argCommand Command) string {
-	return strings.TrimSpace(argCommand.Name + " " + strings.Join(argCommand.Args, " "))
+func commandKey(command Command) string {
+	return strings.TrimSpace(command.Name + " " + strings.Join(command.Args, " "))
 }
 
-func recordedCommands(argCommands []Command) string {
-	values := make([]string, 0, len(argCommands))
-	for _, command := range argCommands {
+func recordedCommands(commands []Command) string {
+	values := make([]string, 0, len(commands))
+	for _, command := range commands {
 		values = append(values, commandKey(command))
 	}
 

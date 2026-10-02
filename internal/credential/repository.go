@@ -15,9 +15,9 @@ var ErrAlreadyBootstrapped = errors.New("administrator bootstrap already complet
 // AdminBootstrapper atomically stores the first administrator and credential.
 type AdminBootstrapper interface {
 	BootstrapAdmin(
-		argContext context.Context,
-		argUser identity.User,
-		argCredential PasswordCredential,
+		ctx context.Context,
+		user identity.User,
+		credential PasswordCredential,
 	) error
 }
 
@@ -34,8 +34,8 @@ var ErrPasswordCredentialExists = errors.New(
 // PasswordCredentialRepository loads password credentials for authentication.
 type PasswordCredentialRepository interface {
 	FindByUserID(
-		argContext context.Context,
-		argUserID string,
+		ctx context.Context,
+		userID string,
 	) (PasswordCredential, error)
 }
 
@@ -47,19 +47,19 @@ var ErrPasswordEnrollmentNotFound = errors.New(
 // PasswordEnrollmentRepository stores replaceable password enrollments.
 type PasswordEnrollmentRepository interface {
 	SaveForCredentiallessUser(
-		argContext context.Context,
-		argEnrollment PasswordEnrollment,
+		ctx context.Context,
+		enrollment PasswordEnrollment,
 	) error
 
 	FindByTokenHash(
-		argContext context.Context,
-		argTokenHash [sha256.Size]byte,
+		ctx context.Context,
+		tokenHash [sha256.Size]byte,
 	) (PasswordEnrollment, error)
 
 	CreateCredentialAndConsume(
-		argContext context.Context,
-		argTokenHash [sha256.Size]byte,
-		argCredential PasswordCredential,
-		argNow time.Time,
+		ctx context.Context,
+		tokenHash [sha256.Size]byte,
+		credential PasswordCredential,
+		now time.Time,
 	) error
 }

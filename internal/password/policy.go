@@ -15,15 +15,15 @@ const (
 var ErrInvalidPassword = errors.New("invalid password")
 
 // Validate checks password length and UTF-8 validity without changing its value.
-func Validate(argPassword []byte) error {
-	if !utf8.Valid(argPassword) {
+func Validate(password []byte) error {
+	if !utf8.Valid(password) {
 		return fmt.Errorf(
 			"%w: expected valid UTF-8",
 			ErrInvalidPassword,
 		)
 	}
 
-	passwordLength := utf8.RuneCount(argPassword)
+	passwordLength := utf8.RuneCount(password)
 	if passwordLength < minimumLength ||
 		passwordLength > maximumLength {
 		return fmt.Errorf(

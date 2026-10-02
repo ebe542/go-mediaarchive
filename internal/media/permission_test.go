@@ -181,15 +181,15 @@ func TestNewGrantValidatesIdentifiersAndPermissionSet(t *testing.T) {
 }
 
 func permissionSet(
-	argTest *testing.T,
-	argPermissions ...media.Permission,
+	test *testing.T,
+	requested ...media.Permission,
 ) media.PermissionSet {
-	argTest.Helper()
+	test.Helper()
 
-	permissions, err := media.NewPermissionSet(argPermissions...)
+	permissionSet, err := media.NewPermissionSet(requested...)
 	if err != nil {
-		argTest.Fatalf("create permission set: %v", err)
+		test.Fatalf("create permission set: %v", err)
 	}
 
-	return permissions
+	return permissionSet
 }

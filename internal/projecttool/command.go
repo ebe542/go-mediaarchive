@@ -30,20 +30,20 @@ type execRunner struct {
 	stderr io.Writer
 }
 
-func (runner execRunner) Run(argCommand Command) error {
-	command := exec.Command(argCommand.Name, argCommand.Args...)
-	command.Dir = argCommand.Dir
-	command.Env = append(os.Environ(), argCommand.Env...)
+func (runner execRunner) Run(specification Command) error {
+	command := exec.Command(specification.Name, specification.Args...)
+	command.Dir = specification.Dir
+	command.Env = append(os.Environ(), specification.Env...)
 	command.Stdout = runner.stdout
 	command.Stderr = runner.stderr
 
 	return command.Run()
 }
 
-func (runner execRunner) Output(argCommand Command) (string, error) {
-	command := exec.Command(argCommand.Name, argCommand.Args...)
-	command.Dir = argCommand.Dir
-	command.Env = append(os.Environ(), argCommand.Env...)
+func (runner execRunner) Output(specification Command) (string, error) {
+	command := exec.Command(specification.Name, specification.Args...)
+	command.Dir = specification.Dir
+	command.Env = append(os.Environ(), specification.Env...)
 	var stdout bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = runner.stderr
@@ -51,8 +51,8 @@ func (runner execRunner) Output(argCommand Command) (string, error) {
 	return stdout.String(), command.Run()
 }
 
-func (execRunner) LookPath(argName string) error {
-	_, err := exec.LookPath(argName)
+func (execRunner) LookPath(name string) error {
+	_, err := exec.LookPath(name)
 
 	return err
 }

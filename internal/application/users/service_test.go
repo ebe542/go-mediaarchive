@@ -32,68 +32,68 @@ type recordingUserRepository struct {
 
 func (repository *recordingUserRepository) DeletePreservingLastAdministrator(
 	_ context.Context,
-	argID string,
+	id string,
 ) error {
 	repository.deleteCalls++
-	repository.deletedID = argID
+	repository.deletedID = id
 
 	return repository.deleteError
 }
 
 func (repository *recordingUserRepository) ListUsers(
 	_ context.Context,
-	argCursor *users.Cursor,
-	argLimit int,
+	cursor *users.Cursor,
+	limit int,
 ) ([]identity.User, error) {
-	repository.listedCursor = argCursor
-	repository.listedLimit = argLimit
+	repository.listedCursor = cursor
+	repository.listedLimit = limit
 
 	return repository.listedUsers, repository.listError
 }
 
 func (repository *recordingUserRepository) Create(
-	argContext context.Context,
-	argUser identity.User,
+	ctx context.Context,
+	user identity.User,
 ) error {
 	repository.createCalls++
-	repository.createdUser = argUser
+	repository.createdUser = user
 
 	return repository.createError
 }
 
 func (repository *recordingUserRepository) FindByID(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) (identity.User, error) {
-	repository.requestedID = argID
+	repository.requestedID = id
 
 	return repository.foundUser, repository.findError
 }
 
 func (repository *recordingUserRepository) FindByUsername(
-	argContext context.Context,
-	argUsername string,
+	ctx context.Context,
+	username string,
 ) (identity.User, error) {
-	repository.requestedUsername = argUsername
+	repository.requestedUsername = username
 
 	return repository.foundUser, repository.findError
 }
 
 func (repository *recordingUserRepository) Update(
-	argContext context.Context,
-	argUser identity.User,
+	ctx context.Context,
+	user identity.User,
 ) error {
-	repository.updatedUser = argUser
+	repository.updatedUser = user
 
 	return repository.updateError
 }
 
 func (repository *recordingUserRepository) UpdatePreservingLastAdministrator(
-	argContext context.Context,
-	argUser identity.User,
+	ctx context.Context,
+	user identity.User,
 ) error {
 	repository.protectedUpdates++
-	repository.updatedUser = argUser
+	repository.updatedUser = user
 
 	return repository.updateError
 }

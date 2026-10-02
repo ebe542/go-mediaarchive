@@ -30,14 +30,14 @@ type MediaUploadService interface {
 
 // WithMediaUploadAPI enables authenticated streaming media uploads.
 func WithMediaUploadAPI(
-	argResolver SessionResolver,
-	argService MediaUploadService,
-	argMaximumSize int64,
+	resolver SessionResolver,
+	service MediaUploadService,
+	maximumSize int64,
 ) Option {
-	return func(argConfiguration *handlerConfiguration) {
-		argConfiguration.mediaUploadResolver = argResolver
-		argConfiguration.mediaUploads = argService
-		argConfiguration.maximumUploadSize = argMaximumSize
+	return func(configuration *handlerConfiguration) {
+		configuration.mediaUploadResolver = resolver
+		configuration.mediaUploads = service
+		configuration.maximumUploadSize = maximumSize
 	}
 }
 
@@ -58,8 +58,8 @@ type finalMultipartFile struct {
 	validated bool
 }
 
-func (file *finalMultipartFile) Read(argBuffer []byte) (int, error) {
-	readCount, err := file.part.Read(argBuffer)
+func (file *finalMultipartFile) Read(buffer []byte) (int, error) {
+	readCount, err := file.part.Read(buffer)
 	if !errors.Is(err, io.EOF) || file.validated {
 		return readCount, err
 	}
@@ -77,69 +77,69 @@ func (file *finalMultipartFile) Read(argBuffer []byte) (int, error) {
 }
 
 func (handler *mediaUploadHandler) upload(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := mediaActor(argRequest)
+	actor, exists := mediaActor(request)
 	if !exists {
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 
 		return
 	}
 
-	item, ok := handler.processUpload(argResponse, argRequest, actor)
+	item, ok := handler.processUpload(response, request, actor)
 	if !ok {
 		return
 	}
 
-	argResponse.Header().Set("Location", "/api/v1/media/"+item.ID)
-	writeMediaMetadataResponse(argResponse, item, http.StatusCreated)
+	response.Header().Set("Location", "/api/v1/media/"+item.ID)
+	writeMediaMetadataResponse(response, item, http.StatusCreated)
 }
 
 func (handler *mediaUploadHandler) processUpload(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
-	argActor identity.User,
+	response http.ResponseWriter,
+	request *http.Request,
+	actor identity.User,
 ) (domainmedia.Item, bool) {
 	mediaType, parameters, err := mime.ParseMediaType(
-		argRequest.Header.Get("Content-Type"),
+		request.Header.Get("Content-Type"),
 	)
 	if err != nil || mediaType != "multipart/form-data" || parameters["boundary"] == "" {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return domainmedia.Item{}, false
 	}
 
-	argRequest.Body = http.MaxBytesReader(
-		argResponse,
-		argRequest.Body,
+	request.Body = http.MaxBytesReader(
+		response,
+		request.Body,
 		handler.maximumSize+maximumMultipartOverhead,
 	)
-	reader := multipart.NewReader(argRequest.Body, parameters["boundary"])
+	reader := multipart.NewReader(request.Body, parameters["boundary"])
 	metadataPart, err := reader.NextPart()
 	if err != nil || metadataPart.FormName() != "metadata" || metadataPart.FileName() != "" {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return domainmedia.Item{}, false
 	}
 	metadata, err := decodeUploadMetadata(metadataPart)
 	_ = metadataPart.Close()
 	if err != nil {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return domainmedia.Item{}, false
 	}
 
 	filePart, err := reader.NextPart()
 	if err != nil || filePart.FormName() != "file" {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return domainmedia.Item{}, false
 	}
 	filename, mimeType, err := uploadFileMetadata(filePart)
 	if err != nil {
 		_ = filePart.Close()
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return domainmedia.Item{}, false
 	}
@@ -158,10 +158,10 @@ func (handler *mediaUploadHandler) processUpload(
 
 	// The service consumes the file part synchronously while the multipart
 	// reader and request body remain open.
-	item, err := handler.uploads.UploadItem(argRequest.Context(), argActor, input)
+	item, err := handler.uploads.UploadItem(request.Context(), actor, input)
 	_ = filePart.Close()
 	if err != nil {
-		writeMediaUploadError(argResponse, err)
+		writeMediaUploadError(response, err)
 
 		return domainmedia.Item{}, false
 	}
@@ -169,12 +169,12 @@ func (handler *mediaUploadHandler) processUpload(
 	return item, true
 }
 
-func decodeUploadMetadata(argPart *multipart.Part) (mediaUploadMetadata, error) {
-	mediaType, _, err := mime.ParseMediaType(argPart.Header.Get("Content-Type"))
+func decodeUploadMetadata(part *multipart.Part) (mediaUploadMetadata, error) {
+	mediaType, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		return mediaUploadMetadata{}, errors.New("expected JSON metadata part")
 	}
-	document, err := io.ReadAll(io.LimitReader(argPart, maximumJSONBodySize+1))
+	document, err := io.ReadAll(io.LimitReader(part, maximumJSONBodySize+1))
 	if err != nil {
 		return mediaUploadMetadata{}, fmt.Errorf("read upload metadata: %w", err)
 	}
@@ -189,18 +189,18 @@ func decodeUploadMetadata(argPart *multipart.Part) (mediaUploadMetadata, error) 
 	return metadata, nil
 }
 
-func decodeSingleJSONDocument(argDocument []byte, argDestination any) error {
-	decoder := json.NewDecoder(strings.NewReader(string(argDocument)))
+func decodeSingleJSONDocument(document []byte, destination any) error {
+	decoder := json.NewDecoder(strings.NewReader(string(document)))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(argDestination); err != nil {
+	if err := decoder.Decode(destination); err != nil {
 		return err
 	}
 
 	return ensureJSONEnd(decoder)
 }
 
-func uploadFileMetadata(argPart *multipart.Part) (string, string, error) {
-	_, parameters, err := mime.ParseMediaType(argPart.Header.Get("Content-Disposition"))
+func uploadFileMetadata(part *multipart.Part) (string, string, error) {
+	_, parameters, err := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
 	if err != nil || parameters["filename"] == "" {
 		return "", "", errors.New("missing upload filename")
 	}
@@ -208,7 +208,7 @@ func uploadFileMetadata(argPart *multipart.Part) (string, string, error) {
 	if strings.ContainsAny(filename, `/\:`) {
 		return "", "", errors.New("upload filename contains path syntax")
 	}
-	mediaType, mediaParameters, err := mime.ParseMediaType(argPart.Header.Get("Content-Type"))
+	mediaType, mediaParameters, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
 	if err != nil || len(mediaParameters) != 0 {
 		return "", "", errors.New("invalid upload media type")
 	}
@@ -216,23 +216,23 @@ func uploadFileMetadata(argPart *multipart.Part) (string, string, error) {
 	return filename, mediaType, nil
 }
 
-func writeMediaUploadError(argResponse http.ResponseWriter, argError error) {
-	if errors.Is(argError, appmedia.ErrUploadCompensationFailed) {
-		writeMediaContextError(argResponse)
+func writeMediaUploadError(response http.ResponseWriter, inputError error) {
+	if errors.Is(inputError, appmedia.ErrUploadCompensationFailed) {
+		writeMediaContextError(response)
 
 		return
 	}
-	if errors.Is(argError, content.ErrConflict) ||
-		errors.Is(argError, content.ErrLocationConflict) {
-		writeJSONError(argResponse, http.StatusConflict, "conflict", "Resource conflict.")
+	if errors.Is(inputError, content.ErrConflict) ||
+		errors.Is(inputError, content.ErrLocationConflict) {
+		writeJSONError(response, http.StatusConflict, "conflict", "Resource conflict.")
 
 		return
 	}
 	var maximumBodyError *http.MaxBytesError
-	if errors.Is(argError, content.ErrTooLarge) ||
-		errors.As(argError, &maximumBodyError) {
+	if errors.Is(inputError, content.ErrTooLarge) ||
+		errors.As(inputError, &maximumBodyError) {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusRequestEntityTooLarge,
 			"content_too_large",
 			"Uploaded content is too large.",
@@ -240,11 +240,11 @@ func writeMediaUploadError(argResponse http.ResponseWriter, argError error) {
 
 		return
 	}
-	if errors.Is(argError, content.ErrEmpty) ||
-		errors.Is(argError, content.ErrInvalidSource) {
-		writeInvalidRequest(argResponse)
+	if errors.Is(inputError, content.ErrEmpty) ||
+		errors.Is(inputError, content.ErrInvalidSource) {
+		writeInvalidRequest(response)
 
 		return
 	}
-	writeMediaApplicationError(argResponse, argError)
+	writeMediaApplicationError(response, inputError)
 }

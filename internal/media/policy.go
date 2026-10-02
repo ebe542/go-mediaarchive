@@ -9,42 +9,42 @@ import (
 // Authorize decides whether an active user may perform one media operation.
 // Global roles never imply access to licensed media content.
 func Authorize(
-	argUser identity.User,
-	argItem Item,
-	argPermission Permission,
-	argGrants []Grant,
+	user identity.User,
+	item Item,
+	permission Permission,
+	grants []Grant,
 ) (bool, error) {
-	if !argPermission.Valid() {
+	if !permission.Valid() {
 		return false, fmt.Errorf(
 			"%w: %q",
 			ErrInvalidPermission,
-			argPermission,
+			permission,
 		)
 	}
-	if !argUser.Active {
+	if !user.Active {
 		return false, nil
 	}
-	if err := identity.ValidateUserID(argUser.ID); err != nil {
+	if err := identity.ValidateUserID(user.ID); err != nil {
 		return false, fmt.Errorf("validate authorization user: %w", err)
 	}
-	if err := validateCanonicalUUID(argItem.ID, ErrInvalidMediaID); err != nil {
+	if err := validateCanonicalUUID(item.ID, ErrInvalidMediaID); err != nil {
 		return false, fmt.Errorf("validate authorization media: %w", err)
 	}
-	if err := validateCanonicalUUID(argItem.OwnerID, ErrInvalidOwnerID); err != nil {
+	if err := validateCanonicalUUID(item.OwnerID, ErrInvalidOwnerID); err != nil {
 		return false, fmt.Errorf("validate authorization owner: %w", err)
 	}
 
-	if argUser.ID == argItem.OwnerID {
+	if user.ID == item.OwnerID {
 		return true, nil
 	}
 	allowed := false
-	for _, grant := range argGrants {
+	for _, grant := range grants {
 		if err := grant.Validate(); err != nil {
 			return false, fmt.Errorf("validate authorization grant: %w", err)
 		}
-		if grant.MediaID == argItem.ID &&
-			grant.UserID == argUser.ID &&
-			grant.Permissions.Has(argPermission) {
+		if grant.MediaID == item.ID &&
+			grant.UserID == user.ID &&
+			grant.Permissions.Has(permission) {
 			allowed = true
 		}
 	}

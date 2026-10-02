@@ -21,11 +21,11 @@ type recordingUserReader struct {
 }
 
 func (reader *recordingUserReader) UserByID(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) (identity.User, error) {
 	reader.readCalls++
-	reader.requestedID = argID
+	reader.requestedID = id
 
 	return reader.user, reader.readError
 }

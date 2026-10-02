@@ -29,33 +29,33 @@ type sqliteCodedError interface {
 }
 
 type rowScanner interface {
-	Scan(argDestinations ...any) error
+	Scan(destinations ...any) error
 }
 
 type statementExecutor interface {
 	ExecContext(
-		argContext context.Context,
-		argQuery string,
-		argArguments ...any,
+		ctx context.Context,
+		query string,
+		arguments ...any,
 	) (sql.Result, error)
 }
 
 type userQueryer interface {
 	QueryRowContext(
-		argContext context.Context,
-		argQuery string,
-		argArguments ...any,
+		ctx context.Context,
+		query string,
+		arguments ...any,
 	) *sql.Row
 }
 
-func scanUser(argRow rowScanner) (identity.User, error) {
+func scanUser(row rowScanner) (identity.User, error) {
 	var storedUser identity.User
 	var role string
 	var active bool
 	var createdAt string
 	var updatedAt string
 
-	err := argRow.Scan(
+	err := row.Scan(
 		&storedUser.ID,
 		&storedUser.Username,
 		&storedUser.DisplayName,
@@ -91,19 +91,19 @@ func scanUser(argRow rowScanner) (identity.User, error) {
 }
 
 // NewUserRepository creates a SQLite-backed user repository.
-func NewUserRepository(argDatabase *sql.DB) *UserRepository {
+func NewUserRepository(database *sql.DB) *UserRepository {
 	return &UserRepository{
-		database: argDatabase,
+		database: database,
 	}
 }
 
 // Create persists a new user identity.
 func (repository *UserRepository) Create(
-	argContext context.Context,
-	argUser identity.User,
+	ctx context.Context,
+	user identity.User,
 ) error {
 	_, err := repository.database.ExecContext(
-		argContext,
+		ctx,
 		`
 			INSERT INTO users (
 				id,
@@ -116,13 +116,13 @@ func (repository *UserRepository) Create(
 			)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
 		`,
-		argUser.ID,
-		argUser.Username,
-		argUser.DisplayName,
-		argUser.Role,
-		argUser.Active,
-		argUser.CreatedAt.Format(time.RFC3339Nano),
-		argUser.UpdatedAt.Format(time.RFC3339Nano),
+		user.ID,
+		user.Username,
+		user.DisplayName,
+		user.Role,
+		user.Active,
+		user.CreatedAt.Format(time.RFC3339Nano),
+		user.UpdatedAt.Format(time.RFC3339Nano),
 	)
 	if isUniqueConstraintError(err) {
 		return fmt.Errorf(
@@ -141,28 +141,28 @@ func (repository *UserRepository) Create(
 
 // Update changes a persisted user while preserving its ID and creation time.
 func (repository *UserRepository) Update(
-	argContext context.Context,
-	argUser identity.User,
+	ctx context.Context,
+	user identity.User,
 ) error {
-	return repository.UpdatePreservingLastAdministrator(argContext, argUser)
+	return repository.UpdatePreservingLastAdministrator(ctx, user)
 }
 
 // UpdatePreservingLastAdministrator atomically prevents removal of the last
 // active administrator.
 func (repository *UserRepository) UpdatePreservingLastAdministrator(
-	argContext context.Context,
-	argUser identity.User,
+	ctx context.Context,
+	user identity.User,
 ) error {
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin protected user update: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
 
 	existingUser, err := findUserByID(
-		argContext,
+		ctx,
 		transaction,
-		argUser.ID,
+		user.ID,
 	)
 	if err != nil {
 		return err
@@ -170,12 +170,12 @@ func (repository *UserRepository) UpdatePreservingLastAdministrator(
 
 	removesActiveAdministrator := existingUser.Active &&
 		existingUser.Role == identity.RoleAdmin &&
-		(!argUser.Active || argUser.Role != identity.RoleAdmin)
+		(!user.Active || user.Role != identity.RoleAdmin)
 	if removesActiveAdministrator {
 		var activeAdministratorCount int
 
 		if err := transaction.QueryRowContext(
-			argContext,
+			ctx,
 			`SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1`,
 		).Scan(&activeAdministratorCount); err != nil {
 			return fmt.Errorf("count active administrators: %w", err)
@@ -186,7 +186,7 @@ func (repository *UserRepository) UpdatePreservingLastAdministrator(
 		}
 	}
 
-	if err := updateUser(argContext, transaction, argUser); err != nil {
+	if err := updateUser(ctx, transaction, user); err != nil {
 		return err
 	}
 
@@ -200,23 +200,23 @@ func (repository *UserRepository) UpdatePreservingLastAdministrator(
 // DeletePreservingLastAdministrator atomically deletes authentication records
 // and a user without removing the last active administrator.
 func (repository *UserRepository) DeletePreservingLastAdministrator(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) error {
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin protected user deletion: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
 
-	existingUser, err := findUserByID(argContext, transaction, argID)
+	existingUser, err := findUserByID(ctx, transaction, id)
 	if err != nil {
 		return err
 	}
 	if existingUser.Active && existingUser.Role == identity.RoleAdmin {
 		var activeAdministratorCount int
 		if err := transaction.QueryRowContext(
-			argContext,
+			ctx,
 			`SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1`,
 		).Scan(&activeAdministratorCount); err != nil {
 			return fmt.Errorf("count active administrators: %w", err)
@@ -227,18 +227,18 @@ func (repository *UserRepository) DeletePreservingLastAdministrator(
 	}
 
 	if _, err := transaction.ExecContext(
-		argContext,
+		ctx,
 		`DELETE FROM media_grants WHERE user_id = ?`,
-		argID,
+		id,
 	); err != nil {
 		return fmt.Errorf("delete user records from media_grants: %w", err)
 	}
 
 	var ownsMedia bool
 	if err := transaction.QueryRowContext(
-		argContext,
+		ctx,
 		`SELECT EXISTS(SELECT 1 FROM media_items WHERE owner_id = ?)`,
-		argID,
+		id,
 	).Scan(&ownsMedia); err != nil {
 		return fmt.Errorf("check user media ownership: %w", err)
 	}
@@ -256,9 +256,9 @@ func (repository *UserRepository) DeletePreservingLastAdministrator(
 	}
 	for _, relatedDelete := range relatedDeletes {
 		if _, err := transaction.ExecContext(
-			argContext,
+			ctx,
 			relatedDelete.query,
-			argID,
+			id,
 		); err != nil {
 			return fmt.Errorf(
 				"delete user records from %s: %w",
@@ -269,9 +269,9 @@ func (repository *UserRepository) DeletePreservingLastAdministrator(
 	}
 
 	if _, err := transaction.ExecContext(
-		argContext,
+		ctx,
 		`DELETE FROM users WHERE id = ?`,
-		argID,
+		id,
 	); err != nil {
 		return fmt.Errorf("delete user: %w", err)
 	}
@@ -283,12 +283,12 @@ func (repository *UserRepository) DeletePreservingLastAdministrator(
 }
 
 func updateUser(
-	argContext context.Context,
-	argExecutor statementExecutor,
-	argUser identity.User,
+	ctx context.Context,
+	executor statementExecutor,
+	user identity.User,
 ) error {
-	result, err := argExecutor.ExecContext(
-		argContext,
+	result, err := executor.ExecContext(
+		ctx,
 		`
 			UPDATE users
 			SET
@@ -299,12 +299,12 @@ func updateUser(
 				updated_at = ?
 			WHERE id = ?
 		`,
-		argUser.Username,
-		argUser.DisplayName,
-		argUser.Role,
-		argUser.Active,
-		argUser.UpdatedAt.Format(time.RFC3339Nano),
-		argUser.ID,
+		user.Username,
+		user.DisplayName,
+		user.Role,
+		user.Active,
+		user.UpdatedAt.Format(time.RFC3339Nano),
+		user.ID,
 	)
 	if isUniqueConstraintError(err) {
 		return fmt.Errorf(
@@ -325,7 +325,7 @@ func updateUser(
 		return fmt.Errorf(
 			"%w: ID %q",
 			identity.ErrUserNotFound,
-			argUser.ID,
+			user.ID,
 		)
 	}
 
@@ -334,19 +334,19 @@ func updateUser(
 
 // FindByID retrieves a user identity by its canonical ID.
 func (repository *UserRepository) FindByID(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) (identity.User, error) {
-	return findUserByID(argContext, repository.database, argID)
+	return findUserByID(ctx, repository.database, id)
 }
 
 func findUserByID(
-	argContext context.Context,
-	argQueryer userQueryer,
-	argID string,
+	ctx context.Context,
+	queryer userQueryer,
+	id string,
 ) (identity.User, error) {
-	row := argQueryer.QueryRowContext(
-		argContext,
+	row := queryer.QueryRowContext(
+		ctx,
 		`
 			SELECT
 				id,
@@ -359,7 +359,7 @@ func findUserByID(
 			FROM users
 			WHERE id = ?
 		`,
-		argID,
+		id,
 	)
 
 	storedUser, err := scanUser(row)
@@ -367,7 +367,7 @@ func findUserByID(
 		return identity.User{}, fmt.Errorf(
 			"%w: ID %q",
 			identity.ErrUserNotFound,
-			argID,
+			id,
 		)
 	}
 	if err != nil {
@@ -382,16 +382,16 @@ func findUserByID(
 
 // FindByUsername retrieves a user identity by its normalized username.
 func (repository *UserRepository) FindByUsername(
-	argContext context.Context,
-	argUsername string,
+	ctx context.Context,
+	username string,
 ) (identity.User, error) {
-	normalizedUsername, err := identity.NormalizeUsername(argUsername)
+	normalizedUsername, err := identity.NormalizeUsername(username)
 	if err != nil {
 		return identity.User{}, err
 	}
 
 	row := repository.database.QueryRowContext(
-		argContext,
+		ctx,
 		`
 			SELECT
 				id,
@@ -427,11 +427,11 @@ func (repository *UserRepository) FindByUsername(
 
 // ListUsers retrieves a bounded page in immutable creation-time and ID order.
 func (repository *UserRepository) ListUsers(
-	argContext context.Context,
-	argCursor *appusers.Cursor,
-	argLimit int,
+	ctx context.Context,
+	cursor *appusers.Cursor,
+	limit int,
 ) ([]identity.User, error) {
-	if argLimit < 1 {
+	if limit < 1 {
 		return nil, appusers.ErrInvalidPageLimit
 	}
 
@@ -448,10 +448,10 @@ func (repository *UserRepository) ListUsers(
 	`
 	arguments := make([]any, 0, 4)
 
-	if argCursor != nil {
+	if cursor != nil {
 		cursor, err := appusers.NewCursor(
-			argCursor.CreatedAt,
-			argCursor.ID,
+			cursor.CreatedAt,
+			cursor.ID,
 		)
 		if err != nil {
 			return nil, err
@@ -474,10 +474,10 @@ func (repository *UserRepository) ListUsers(
 		ORDER BY created_at ASC, id ASC
 		LIMIT ?
 	`
-	arguments = append(arguments, argLimit)
+	arguments = append(arguments, limit)
 
 	rows, err := repository.database.QueryContext(
-		argContext,
+		ctx,
 		query,
 		arguments...,
 	)
@@ -486,7 +486,7 @@ func (repository *UserRepository) ListUsers(
 	}
 	defer func() { _ = rows.Close() }()
 
-	listedUsers := make([]identity.User, 0, argLimit)
+	listedUsers := make([]identity.User, 0, limit)
 	for rows.Next() {
 		storedUser, err := scanUser(rows)
 		if err != nil {
@@ -502,10 +502,10 @@ func (repository *UserRepository) ListUsers(
 	return listedUsers, nil
 }
 
-func isUniqueConstraintError(argError error) bool {
+func isUniqueConstraintError(inputError error) bool {
 	var sqliteError sqliteCodedError
 
-	if !errors.As(argError, &sqliteError) {
+	if !errors.As(inputError, &sqliteError) {
 		return false
 	}
 

@@ -22,20 +22,20 @@ var _ credential.PasswordEnrollmentRepository = (*PasswordEnrollmentRepository)(
 
 // NewPasswordEnrollmentRepository creates a SQLite enrollment repository.
 func NewPasswordEnrollmentRepository(
-	argDatabase *sql.DB,
+	database *sql.DB,
 ) *PasswordEnrollmentRepository {
 	return &PasswordEnrollmentRepository{
-		database: argDatabase,
+		database: database,
 	}
 }
 
 // SaveForCredentiallessUser atomically replaces a current enrollment only
 // while the referenced user has no password credential.
 func (repository *PasswordEnrollmentRepository) SaveForCredentiallessUser(
-	argContext context.Context,
-	argEnrollment credential.PasswordEnrollment,
+	ctx context.Context,
+	enrollment credential.PasswordEnrollment,
 ) error {
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin password enrollment save: %w", err)
 	}
@@ -43,9 +43,9 @@ func (repository *PasswordEnrollmentRepository) SaveForCredentiallessUser(
 
 	var userExists bool
 	if err := transaction.QueryRowContext(
-		argContext,
+		ctx,
 		`SELECT EXISTS (SELECT 1 FROM users WHERE id = ?)`,
-		argEnrollment.UserID,
+		enrollment.UserID,
 	).Scan(&userExists); err != nil {
 		return fmt.Errorf("check password enrollment user: %w", err)
 	}
@@ -54,9 +54,9 @@ func (repository *PasswordEnrollmentRepository) SaveForCredentiallessUser(
 	}
 
 	credentialExists, err := passwordCredentialExists(
-		argContext,
+		ctx,
 		transaction,
-		argEnrollment.UserID,
+		enrollment.UserID,
 	)
 	if err != nil {
 		return err
@@ -66,7 +66,7 @@ func (repository *PasswordEnrollmentRepository) SaveForCredentiallessUser(
 	}
 
 	_, err = transaction.ExecContext(
-		argContext,
+		ctx,
 		`
 			INSERT INTO password_enrollments (
 				user_id,
@@ -80,10 +80,10 @@ func (repository *PasswordEnrollmentRepository) SaveForCredentiallessUser(
 				created_at = excluded.created_at,
 				expires_at = excluded.expires_at
 		`,
-		argEnrollment.UserID,
-		argEnrollment.TokenHash[:],
-		argEnrollment.CreatedAt.Format(time.RFC3339Nano),
-		argEnrollment.ExpiresAt.Format(time.RFC3339Nano),
+		enrollment.UserID,
+		enrollment.TokenHash[:],
+		enrollment.CreatedAt.Format(time.RFC3339Nano),
+		enrollment.ExpiresAt.Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return fmt.Errorf("save password enrollment: %w", err)
@@ -98,8 +98,8 @@ func (repository *PasswordEnrollmentRepository) SaveForCredentiallessUser(
 
 // FindByTokenHash retrieves the enrollment matching a storage hash.
 func (repository *PasswordEnrollmentRepository) FindByTokenHash(
-	argContext context.Context,
-	argTokenHash [sha256.Size]byte,
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
 ) (credential.PasswordEnrollment, error) {
 	var enrollment credential.PasswordEnrollment
 	var storedTokenHash []byte
@@ -107,7 +107,7 @@ func (repository *PasswordEnrollmentRepository) FindByTokenHash(
 	var expiresAt string
 
 	err := repository.database.QueryRowContext(
-		argContext,
+		ctx,
 		`
 			SELECT
 				user_id,
@@ -117,7 +117,7 @@ func (repository *PasswordEnrollmentRepository) FindByTokenHash(
 			FROM password_enrollments
 			WHERE token_hash = ?
 		`,
-		argTokenHash[:],
+		tokenHash[:],
 	).Scan(
 		&enrollment.UserID,
 		&storedTokenHash,
@@ -163,12 +163,12 @@ func (repository *PasswordEnrollmentRepository) FindByTokenHash(
 // CreateCredentialAndConsume atomically creates the initial password
 // credential and removes the matching unexpired enrollment.
 func (repository *PasswordEnrollmentRepository) CreateCredentialAndConsume(
-	argContext context.Context,
-	argTokenHash [sha256.Size]byte,
-	argCredential credential.PasswordCredential,
-	argNow time.Time,
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
+	passwordCredential credential.PasswordCredential,
+	now time.Time,
 ) error {
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin password enrollment consumption: %w", err)
 	}
@@ -177,13 +177,13 @@ func (repository *PasswordEnrollmentRepository) CreateCredentialAndConsume(
 	var userID string
 	var expiresAt string
 	err = transaction.QueryRowContext(
-		argContext,
+		ctx,
 		`
 			SELECT user_id, expires_at
 			FROM password_enrollments
 			WHERE token_hash = ?
 		`,
-		argTokenHash[:],
+		tokenHash[:],
 	).Scan(&userID, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return credential.ErrPasswordEnrollmentNotFound
@@ -196,15 +196,15 @@ func (repository *PasswordEnrollmentRepository) CreateCredentialAndConsume(
 	if err != nil {
 		return fmt.Errorf("parse consumed enrollment expiration time: %w", err)
 	}
-	if argNow.IsZero() || !argNow.UTC().Before(expiration) {
+	if now.IsZero() || !now.UTC().Before(expiration) {
 		return credential.ErrPasswordEnrollmentNotFound
 	}
-	if argCredential.UserID != userID {
+	if passwordCredential.UserID != userID {
 		return errors.New("password credential user does not match enrollment")
 	}
 
 	credentialExists, err := passwordCredentialExists(
-		argContext,
+		ctx,
 		transaction,
 		userID,
 	)
@@ -216,7 +216,7 @@ func (repository *PasswordEnrollmentRepository) CreateCredentialAndConsume(
 	}
 
 	_, err = transaction.ExecContext(
-		argContext,
+		ctx,
 		`
 			INSERT INTO password_credentials (
 				user_id,
@@ -226,19 +226,19 @@ func (repository *PasswordEnrollmentRepository) CreateCredentialAndConsume(
 			)
 			VALUES (?, ?, ?, ?)
 		`,
-		argCredential.UserID,
-		argCredential.PasswordHash,
-		argCredential.CreatedAt.Format(time.RFC3339Nano),
-		argCredential.UpdatedAt.Format(time.RFC3339Nano),
+		passwordCredential.UserID,
+		passwordCredential.PasswordHash,
+		passwordCredential.CreatedAt.Format(time.RFC3339Nano),
+		passwordCredential.UpdatedAt.Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return fmt.Errorf("insert enrolled password credential: %w", err)
 	}
 
 	result, err := transaction.ExecContext(
-		argContext,
+		ctx,
 		`DELETE FROM password_enrollments WHERE token_hash = ?`,
-		argTokenHash[:],
+		tokenHash[:],
 	)
 	if err != nil {
 		return fmt.Errorf("consume password enrollment: %w", err)
@@ -260,17 +260,17 @@ func (repository *PasswordEnrollmentRepository) CreateCredentialAndConsume(
 }
 
 func passwordCredentialExists(
-	argContext context.Context,
-	argQuerier interface {
+	ctx context.Context,
+	querier interface {
 		QueryRowContext(context.Context, string, ...any) *sql.Row
 	},
-	argUserID string,
+	userID string,
 ) (bool, error) {
 	var exists bool
-	if err := argQuerier.QueryRowContext(
-		argContext,
+	if err := querier.QueryRowContext(
+		ctx,
 		`SELECT EXISTS (SELECT 1 FROM password_credentials WHERE user_id = ?)`,
-		argUserID,
+		userID,
 	).Scan(&exists); err != nil {
 		return false, fmt.Errorf("check existing password credential: %w", err)
 	}

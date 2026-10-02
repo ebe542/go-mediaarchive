@@ -16,20 +16,20 @@ var ErrGrantNotFound = errors.New("media grant not found")
 
 // Repository defines persistence operations for media identities and authors.
 type Repository interface {
-	Create(argContext context.Context, argItem Item) error
-	FindByID(argContext context.Context, argID string) (Item, error)
-	Update(argContext context.Context, argItem Item) error
-	Delete(argContext context.Context, argID string) error
+	Create(ctx context.Context, item Item) error
+	FindByID(ctx context.Context, id string) (Item, error)
+	Update(ctx context.Context, item Item) error
+	Delete(ctx context.Context, id string) error
 }
 
 // GrantRepository defines persistence operations for explicit media grants.
 type GrantRepository interface {
-	Save(argContext context.Context, argGrant Grant) error
+	Save(ctx context.Context, grant Grant) error
 	Find(
-		argContext context.Context,
-		argMediaID string,
-		argUserID string,
+		ctx context.Context,
+		mediaID string,
+		userID string,
 	) (Grant, error)
-	ListByMedia(argContext context.Context, argMediaID string) ([]Grant, error)
-	Delete(argContext context.Context, argMediaID string, argUserID string) error
+	ListByMedia(ctx context.Context, mediaID string) ([]Grant, error)
+	Delete(ctx context.Context, mediaID string, userID string) error
 }

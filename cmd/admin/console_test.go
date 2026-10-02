@@ -52,9 +52,9 @@ func (api *recordingAdminAPI) Login(
 
 func (api *recordingAdminAPI) Logout(
 	_ context.Context,
-	argAccessToken string,
+	accessToken string,
 ) error {
-	api.logoutTokens = append(api.logoutTokens, argAccessToken)
+	api.logoutTokens = append(api.logoutTokens, accessToken)
 
 	return nil
 }
@@ -71,25 +71,25 @@ func (api *recordingAdminAPI) CurrentUser(
 func (api *recordingAdminAPI) UserByID(
 	_ context.Context,
 	_ string,
-	argID string,
+	id string,
 ) (apiclient.User, error) {
-	api.userLookupIDs = append(api.userLookupIDs, argID)
+	api.userLookupIDs = append(api.userLookupIDs, id)
 
-	return testAdminUser(argID, "target_user", identity.RoleEditor, true), nil
+	return testAdminUser(id, "target_user", identity.RoleEditor, true), nil
 }
 
 func (api *recordingAdminAPI) ListUsers(
 	_ context.Context,
 	_ string,
-	argLimit int,
-	argCursor string,
+	limit int,
+	cursor string,
 ) (apiclient.UserPage, error) {
 	api.listCalls = append(api.listCalls, userListCall{
-		limit:  argLimit,
-		cursor: argCursor,
+		limit:  limit,
+		cursor: cursor,
 	})
 	nextCursor := "next-cursor"
-	if argCursor != "" {
+	if cursor != "" {
 		nextCursor = ""
 	}
 
@@ -104,43 +104,43 @@ func (api *recordingAdminAPI) ListUsers(
 func (api *recordingAdminAPI) CreateUser(
 	_ context.Context,
 	_ string,
-	argInput apiclient.UserInput,
+	input apiclient.UserInput,
 ) (apiclient.User, error) {
-	api.createdInput = argInput
+	api.createdInput = input
 
-	return testAdminUser("created-id", argInput.Username, argInput.Role, true), nil
+	return testAdminUser("created-id", input.Username, input.Role, true), nil
 }
 
 func (api *recordingAdminAPI) UpdateUser(
 	_ context.Context,
 	_ string,
-	argID string,
-	argInput apiclient.UserInput,
+	id string,
+	input apiclient.UserInput,
 ) (apiclient.User, error) {
-	api.updatedID = argID
-	api.updatedInput = argInput
+	api.updatedID = id
+	api.updatedInput = input
 
-	return testAdminUser(argID, argInput.Username, argInput.Role, true), nil
+	return testAdminUser(id, input.Username, input.Role, true), nil
 }
 
 func (api *recordingAdminAPI) SetUserActive(
 	_ context.Context,
 	_ string,
-	argID string,
-	argActive bool,
+	id string,
+	active bool,
 ) (apiclient.User, error) {
-	api.activationIDs = append(api.activationIDs, argID)
-	api.activationValues = append(api.activationValues, argActive)
+	api.activationIDs = append(api.activationIDs, id)
+	api.activationValues = append(api.activationValues, active)
 
-	return testAdminUser(argID, "target_user", identity.RoleEditor, argActive), nil
+	return testAdminUser(id, "target_user", identity.RoleEditor, active), nil
 }
 
 func (api *recordingAdminAPI) DeleteUser(
 	_ context.Context,
 	_ string,
-	argID string,
+	id string,
 ) error {
-	api.deletedIDs = append(api.deletedIDs, argID)
+	api.deletedIDs = append(api.deletedIDs, id)
 
 	return nil
 }
@@ -148,9 +148,9 @@ func (api *recordingAdminAPI) DeleteUser(
 func (api *recordingAdminAPI) IssuePasswordEnrollment(
 	_ context.Context,
 	_ string,
-	argUserID string,
+	userID string,
 ) (apiclient.PasswordEnrollment, error) {
-	api.enrollmentUserID = argUserID
+	api.enrollmentUserID = userID
 
 	return apiclient.PasswordEnrollment{
 		Token:     "one-time-token",
@@ -161,12 +161,12 @@ func (api *recordingAdminAPI) IssuePasswordEnrollment(
 func (api *recordingAdminAPI) ChangePassword(
 	_ context.Context,
 	_ string,
-	argCurrentPassword []byte,
-	argNewPassword []byte,
+	currentPassword []byte,
+	newPassword []byte,
 ) error {
 	api.passwordChange = true
-	api.currentPassword = string(argCurrentPassword)
-	api.newPassword = string(argNewPassword)
+	api.currentPassword = string(currentPassword)
+	api.newPassword = string(newPassword)
 
 	return nil
 }
@@ -489,17 +489,17 @@ func TestAdminConsoleLogsOutActiveSessionOnExit(t *testing.T) {
 }
 
 func testAdminUser(
-	argID string,
-	argUsername string,
-	argRole identity.Role,
-	argActive bool,
+	id string,
+	username string,
+	role identity.Role,
+	active bool,
 ) apiclient.User {
 	return apiclient.User{
-		ID:          argID,
-		Username:    argUsername,
-		DisplayName: strings.ReplaceAll(argUsername, "_", " "),
-		Role:        argRole,
-		Active:      argActive,
+		ID:          id,
+		Username:    username,
+		DisplayName: strings.ReplaceAll(username, "_", " "),
+		Role:        role,
+		Active:      active,
 		CreatedAt:   time.Date(2026, time.September, 8, 10, 0, 0, 0, time.UTC),
 		UpdatedAt:   time.Date(2026, time.September, 8, 11, 0, 0, 0, time.UTC),
 	}

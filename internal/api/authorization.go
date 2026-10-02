@@ -13,8 +13,8 @@ import (
 // SessionResolver resolves an authenticated user from an opaque access token.
 type SessionResolver interface {
 	Resolve(
-		argContext context.Context,
-		argAccessToken string,
+		ctx context.Context,
+		accessToken string,
 	) (identity.User, error)
 }
 
@@ -22,9 +22,9 @@ type authenticatedUserContextKey struct{}
 
 // AuthenticatedUser returns the authenticated user stored in a request context.
 func AuthenticatedUser(
-	argContext context.Context,
+	ctx context.Context,
 ) (identity.User, bool) {
-	user, exists := argContext.Value(
+	user, exists := ctx.Value(
 		authenticatedUserContextKey{},
 	).(identity.User)
 
@@ -33,34 +33,34 @@ func AuthenticatedUser(
 
 // RequireAuthentication resolves a bearer token before calling a protected handler.
 func RequireAuthentication(
-	argResolver SessionResolver,
-	argNext http.Handler,
+	resolver SessionResolver,
+	next http.Handler,
 ) http.Handler {
 	return http.HandlerFunc(func(
-		argResponse http.ResponseWriter,
-		argRequest *http.Request,
+		response http.ResponseWriter,
+		request *http.Request,
 	) {
 		accessToken, err := bearerToken(
-			argRequest.Header.Values("Authorization"),
+			request.Header.Values("Authorization"),
 		)
 		if err != nil {
-			writeAuthenticationRequired(argResponse)
+			writeAuthenticationRequired(response)
 
 			return
 		}
 
-		user, err := argResolver.Resolve(
-			argRequest.Context(),
+		user, err := resolver.Resolve(
+			request.Context(),
 			accessToken,
 		)
 		if errors.Is(err, appsessions.ErrUnauthenticated) {
-			writeAuthenticationRequired(argResponse)
+			writeAuthenticationRequired(response)
 
 			return
 		}
 		if err != nil {
 			writeJSONError(
-				argResponse,
+				response,
 				http.StatusInternalServerError,
 				"internal_error",
 				"Internal server error.",
@@ -69,27 +69,27 @@ func RequireAuthentication(
 			return
 		}
 		requestContext := context.WithValue(
-			argRequest.Context(),
+			request.Context(),
 			authenticatedUserContextKey{},
 			user,
 		)
 
-		argNext.ServeHTTP(
-			argResponse,
-			argRequest.WithContext(requestContext),
+		next.ServeHTTP(
+			response,
+			request.WithContext(requestContext),
 		)
 	})
 }
 
 func writeAuthenticationRequired(
-	argResponse http.ResponseWriter,
+	response http.ResponseWriter,
 ) {
-	argResponse.Header().Set(
+	response.Header().Set(
 		"WWW-Authenticate",
 		"Bearer",
 	)
 	writeJSONError(
-		argResponse,
+		response,
 		http.StatusUnauthorized,
 		"authentication_required",
 		"Authentication required.",
@@ -98,28 +98,28 @@ func writeAuthenticationRequired(
 
 // RequireRoles permits a request when its authenticated user has an allowed role.
 func RequireRoles(
-	argNext http.Handler,
-	argAllowedRoles ...identity.Role,
+	next http.Handler,
+	allowedRoles ...identity.Role,
 ) http.Handler {
 	return http.HandlerFunc(func(
-		argResponse http.ResponseWriter,
-		argRequest *http.Request,
+		response http.ResponseWriter,
+		request *http.Request,
 	) {
-		user, exists := AuthenticatedUser(argRequest.Context())
+		user, exists := AuthenticatedUser(request.Context())
 		if !exists {
-			writeAuthenticationRequired(argResponse)
+			writeAuthenticationRequired(response)
 
 			return
 		}
 
-		if slices.Contains(argAllowedRoles, user.Role) {
-			argNext.ServeHTTP(argResponse, argRequest)
+		if slices.Contains(allowedRoles, user.Role) {
+			next.ServeHTTP(response, request)
 
 			return
 		}
 
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusForbidden,
 			"forbidden",
 			"Access forbidden.",

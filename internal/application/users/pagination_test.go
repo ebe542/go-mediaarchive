@@ -180,17 +180,17 @@ func TestListUsersRejectsInvalidLimitsAndCursors(t *testing.T) {
 
 func paginationUser(
 	t *testing.T,
-	argID string,
-	argCreatedAt time.Time,
+	id string,
+	createdAt time.Time,
 ) identity.User {
 	t.Helper()
 
 	user, err := identity.NewUser(
-		argID,
-		"user_"+argID[:4],
+		id,
+		"user_"+id[:4],
 		"Pagination User",
 		identity.RoleViewer,
-		argCreatedAt,
+		createdAt,
 	)
 	if err != nil {
 		t.Fatalf("create pagination user: %v", err)

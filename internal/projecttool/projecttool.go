@@ -24,46 +24,46 @@ type application struct {
 }
 
 // Run executes one project command and returns a process exit code.
-func Run(argArguments []string, argStdout io.Writer, argStderr io.Writer) int {
+func Run(arguments []string, stdout io.Writer, stderr io.Writer) int {
 	root, err := findProjectRoot()
 	if err != nil {
-		fmt.Fprintf(argStderr, "Error: %v\n", err)
+		fmt.Fprintf(stderr, "Error: %v\n", err)
 
 		return 1
 	}
 
 	app := application{
-		stdout: argStdout,
-		stderr: argStderr,
-		runner: execRunner{stdout: argStdout, stderr: argStderr},
+		stdout: stdout,
+		stderr: stderr,
+		runner: execRunner{stdout: stdout, stderr: stderr},
 		root:   root,
 	}
 
-	return app.run(argArguments)
+	return app.run(arguments)
 }
 
-func (app application) run(argArguments []string) int {
-	if len(argArguments) == 0 {
+func (app application) run(arguments []string) int {
+	if len(arguments) == 0 {
 		fmt.Fprint(app.stderr, usage)
 
 		return 2
 	}
-	if argArguments[0] == "--help" || argArguments[0] == "-h" {
+	if arguments[0] == "--help" || arguments[0] == "-h" {
 		fmt.Fprint(app.stdout, usage)
 
 		return 0
 	}
 
 	var err error
-	switch argArguments[0] {
+	switch arguments[0] {
 	case "check":
-		err = app.runCheckCommand(argArguments[1:])
+		err = app.runCheckCommand(arguments[1:])
 	case "quality-gate":
-		err = app.runQualityGateCommand(argArguments[1:])
+		err = app.runQualityGateCommand(arguments[1:])
 	case "release":
-		err = app.runReleaseCommand(argArguments[1:])
+		err = app.runReleaseCommand(arguments[1:])
 	default:
-		fmt.Fprintf(app.stderr, "Error: unknown command: %s\n\n%s", argArguments[0], usage)
+		fmt.Fprintf(app.stderr, "Error: unknown command: %s\n\n%s", arguments[0], usage)
 
 		return 2
 	}
@@ -77,21 +77,21 @@ func (app application) run(argArguments []string) int {
 }
 
 func (app application) runStep(
-	argDescription string,
-	argName string,
-	argArguments ...string,
+	description string,
+	name string,
+	arguments ...string,
 ) error {
-	fmt.Fprintf(app.stdout, "\n==> %s\n", argDescription)
-	if err := app.runner.Run(Command{Name: argName, Args: argArguments, Dir: app.root}); err != nil {
-		return fmt.Errorf("%s: %w", strings.ToLower(argDescription), err)
+	fmt.Fprintf(app.stdout, "\n==> %s\n", description)
+	if err := app.runner.Run(Command{Name: name, Args: arguments, Dir: app.root}); err != nil {
+		return fmt.Errorf("%s: %w", strings.ToLower(description), err)
 	}
 
 	return nil
 }
 
-func (app application) requireCommand(argName string, argHint string) error {
-	if err := app.runner.LookPath(argName); err != nil {
-		return fmt.Errorf("required command %q was not found; install it with: %s", argName, argHint)
+func (app application) requireCommand(name string, hint string) error {
+	if err := app.runner.LookPath(name); err != nil {
+		return fmt.Errorf("required command %q was not found; install it with: %s", name, hint)
 	}
 
 	return nil

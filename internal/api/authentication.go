@@ -18,39 +18,39 @@ import (
 // SessionService creates and revokes authenticated sessions.
 type SessionService interface {
 	Create(
-		argContext context.Context,
-		argUsername string,
-		argPassword []byte,
+		ctx context.Context,
+		username string,
+		password []byte,
 	) (appsessions.Created, error)
 
 	Revoke(
-		argContext context.Context,
-		argAccessToken string,
+		ctx context.Context,
+		accessToken string,
 	) error
 }
 
 // AttemptLimiter limits failed login attempts.
 type AttemptLimiter interface {
 	Allow(
-		argUsername string,
-		argSourceIP string,
-		argNow time.Time,
+		username string,
+		sourceIP string,
+		now time.Time,
 	) bool
 
 	RecordFailure(
-		argUsername string,
-		argSourceIP string,
-		argNow time.Time,
+		username string,
+		sourceIP string,
+		now time.Time,
 	)
 
 	RecordSuccess(
-		argUsername string,
-		argSourceIP string,
+		username string,
+		sourceIP string,
 	)
 
 	Cancel(
-		argUsername string,
-		argSourceIP string,
+		username string,
+		sourceIP string,
 	)
 }
 
@@ -82,18 +82,18 @@ type handlerConfiguration struct {
 }
 
 // Option configures optional API capabilities.
-type Option func(argConfiguration *handlerConfiguration)
+type Option func(configuration *handlerConfiguration)
 
 // WithAuthentication enables the authentication session endpoints.
 func WithAuthentication(
-	argSessions SessionService,
-	argLimiter AttemptLimiter,
-	argClock Clock,
+	sessions SessionService,
+	limiter AttemptLimiter,
+	clock Clock,
 ) Option {
-	return func(argConfiguration *handlerConfiguration) {
-		argConfiguration.sessions = argSessions
-		argConfiguration.limiter = argLimiter
-		argConfiguration.clock = argClock
+	return func(configuration *handlerConfiguration) {
+		configuration.sessions = sessions
+		configuration.limiter = limiter
+		configuration.clock = clock
 	}
 }
 
@@ -111,8 +111,8 @@ type errorResponse struct {
 }
 
 func (handler *authenticationHandler) createSession(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
 	var requestBody struct {
 		Username string `json:"username"`
@@ -120,12 +120,12 @@ func (handler *authenticationHandler) createSession(
 	}
 
 	if err := decodeJSONRequest(
-		argResponse,
-		argRequest,
+		response,
+		request,
 		&requestBody,
 	); err != nil {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusBadRequest,
 			"invalid_request",
 			"Invalid request.",
@@ -137,7 +137,7 @@ func (handler *authenticationHandler) createSession(
 	if requestBody.Username == "" ||
 		requestBody.Password == "" {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusBadRequest,
 			"invalid_request",
 			"Invalid request.",
@@ -146,10 +146,10 @@ func (handler *authenticationHandler) createSession(
 		return
 	}
 
-	sourceIP, err := sourceIPAddress(argRequest.RemoteAddr)
+	sourceIP, err := sourceIPAddress(request.RemoteAddr)
 	if err != nil {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusBadRequest,
 			"invalid_request",
 			"Invalid request.",
@@ -166,7 +166,7 @@ func (handler *authenticationHandler) createSession(
 		currentTime,
 	) {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusTooManyRequests,
 			"too_many_requests",
 			"Too many authentication attempts.",
@@ -179,7 +179,7 @@ func (handler *authenticationHandler) createSession(
 	defer clearBytes(passwordBytes)
 
 	createdSession, err := handler.sessions.Create(
-		argRequest.Context(),
+		request.Context(),
 		requestBody.Username,
 		passwordBytes,
 	)
@@ -191,7 +191,7 @@ func (handler *authenticationHandler) createSession(
 		)
 
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusUnauthorized,
 			"invalid_credentials",
 			"Invalid username or password.",
@@ -206,7 +206,7 @@ func (handler *authenticationHandler) createSession(
 		)
 
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -217,14 +217,14 @@ func (handler *authenticationHandler) createSession(
 
 	handler.limiter.RecordSuccess(requestBody.Username, sourceIP)
 
-	argResponse.Header().Set(
+	response.Header().Set(
 		"Content-Type",
 		"application/json; charset=utf-8",
 	)
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusCreated)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusCreated)
 
-	_ = json.NewEncoder(argResponse).Encode(struct {
+	_ = json.NewEncoder(response).Encode(struct {
 		AccessToken string    `json:"accessToken"`
 		TokenType   string    `json:"tokenType"`
 		ExpiresAt   time.Time `json:"expiresAt"`
@@ -235,8 +235,8 @@ func (handler *authenticationHandler) createSession(
 	})
 }
 
-func sourceIPAddress(argRemoteAddress string) (string, error) {
-	host, _, err := net.SplitHostPort(argRemoteAddress)
+func sourceIPAddress(remoteAddress string) (string, error) {
+	host, _, err := net.SplitHostPort(remoteAddress)
 	if err != nil {
 		return "", fmt.Errorf("parse remote address: %w", err)
 	}
@@ -244,45 +244,45 @@ func sourceIPAddress(argRemoteAddress string) (string, error) {
 	return host, nil
 }
 
-func clearBytes(argValue []byte) {
-	for index := range argValue {
-		argValue[index] = 0
+func clearBytes(value []byte) {
+	for index := range value {
+		value[index] = 0
 	}
 
 	// Keep the slice alive until clearing has completed.
-	runtime.KeepAlive(argValue)
+	runtime.KeepAlive(value)
 }
 
 func writeJSONError(
-	argResponse http.ResponseWriter,
-	argStatus int,
-	argCode string,
-	argMessage string,
+	response http.ResponseWriter,
+	status int,
+	code string,
+	message string,
 ) {
 	responseBody := errorResponse{}
-	responseBody.Error.Code = argCode
-	responseBody.Error.Message = argMessage
+	responseBody.Error.Code = code
+	responseBody.Error.Message = message
 
-	argResponse.Header().Set(
+	response.Header().Set(
 		"Content-Type",
 		"application/json; charset=utf-8",
 	)
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(argStatus)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(status)
 
-	_ = json.NewEncoder(argResponse).Encode(responseBody)
+	_ = json.NewEncoder(response).Encode(responseBody)
 }
 
 func (handler *authenticationHandler) revokeCurrentSession(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
 	accessToken, err := bearerToken(
-		argRequest.Header.Values("Authorization"),
+		request.Header.Values("Authorization"),
 	)
 	if err != nil {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusUnauthorized,
 			"authentication_required",
 			"Authentication required.",
@@ -292,11 +292,11 @@ func (handler *authenticationHandler) revokeCurrentSession(
 	}
 
 	if err := handler.sessions.Revoke(
-		argRequest.Context(),
+		request.Context(),
 		accessToken,
 	); err != nil {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -305,18 +305,18 @@ func (handler *authenticationHandler) revokeCurrentSession(
 		return
 	}
 
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusNoContent)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusNoContent)
 }
 
-func bearerToken(argAuthorizationHeaders []string) (string, error) {
-	if len(argAuthorizationHeaders) != 1 {
+func bearerToken(authorizationHeaders []string) (string, error) {
+	if len(authorizationHeaders) != 1 {
 		return "", errors.New(
 			"expected exactly one Authorization header",
 		)
 	}
 
-	parts := strings.Fields(argAuthorizationHeaders[0])
+	parts := strings.Fields(authorizationHeaders[0])
 	if len(parts) != 2 ||
 		!strings.EqualFold(parts[0], "Bearer") ||
 		parts[1] == "" {

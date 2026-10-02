@@ -76,8 +76,8 @@ func TestReadConfirmedSecretRetriesAndClearsRejectedValues(t *testing.T) {
 
 			return value, nil
 		},
-		func(argError error) {
-			reported = append(reported, argError)
+		func(inputError error) {
+			reported = append(reported, inputError)
 		},
 	)
 	if err != nil {

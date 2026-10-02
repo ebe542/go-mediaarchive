@@ -38,12 +38,12 @@ type UserPage struct {
 
 // CurrentUser returns the identity represented by an access token.
 func (client *Client) CurrentUser(
-	argContext context.Context,
-	argAccessToken string,
+	ctx context.Context,
+	accessToken string,
 ) (User, error) {
 	return client.userByPath(
-		argContext,
-		argAccessToken,
+		ctx,
+		accessToken,
 		"/api/v1/users/me",
 		"current user",
 	)
@@ -51,40 +51,40 @@ func (client *Client) CurrentUser(
 
 // UserByID returns a user identity by stable ID.
 func (client *Client) UserByID(
-	argContext context.Context,
-	argAccessToken string,
-	argID string,
+	ctx context.Context,
+	accessToken string,
+	id string,
 ) (User, error) {
 	return client.userByPath(
-		argContext,
-		argAccessToken,
-		"/api/v1/users/"+url.PathEscape(argID),
+		ctx,
+		accessToken,
+		"/api/v1/users/"+url.PathEscape(id),
 		"user by ID",
 	)
 }
 
 func (client *Client) userByPath(
-	argContext context.Context,
-	argAccessToken string,
-	argPath string,
-	argOperation string,
+	ctx context.Context,
+	accessToken string,
+	path string,
+	operation string,
 ) (User, error) {
 	var user User
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodGet,
-		argPath,
-		argAccessToken,
+		path,
+		accessToken,
 		nil,
 		http.StatusOK,
 		&user,
-		argOperation,
+		operation,
 	); err != nil {
 		return User{}, err
 	}
 
 	if user.ID == "" || user.Username == "" {
-		return User{}, fmt.Errorf("validate %s response: user is incomplete", argOperation)
+		return User{}, fmt.Errorf("validate %s response: user is incomplete", operation)
 	}
 
 	return user, nil
@@ -92,17 +92,17 @@ func (client *Client) userByPath(
 
 // ListUsers returns one administrator-only user-directory page.
 func (client *Client) ListUsers(
-	argContext context.Context,
-	argAccessToken string,
-	argLimit int,
-	argCursor string,
+	ctx context.Context,
+	accessToken string,
+	limit int,
+	cursor string,
 ) (UserPage, error) {
 	query := url.Values{}
-	if argLimit != 0 {
-		query.Set("limit", strconv.Itoa(argLimit))
+	if limit != 0 {
+		query.Set("limit", strconv.Itoa(limit))
 	}
-	if argCursor != "" {
-		query.Set("cursor", argCursor)
+	if cursor != "" {
+		query.Set("cursor", cursor)
 	}
 
 	path := "/api/v1/users"
@@ -112,10 +112,10 @@ func (client *Client) ListUsers(
 
 	var page UserPage
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodGet,
 		path,
-		argAccessToken,
+		accessToken,
 		nil,
 		http.StatusOK,
 		&page,
@@ -134,16 +134,16 @@ func (client *Client) ListUsers(
 
 // CreateUser creates a credential-less user identity.
 func (client *Client) CreateUser(
-	argContext context.Context,
-	argAccessToken string,
-	argInput UserInput,
+	ctx context.Context,
+	accessToken string,
+	input UserInput,
 ) (User, error) {
 	return client.mutateUser(
-		argContext,
+		ctx,
 		http.MethodPost,
 		"/api/v1/users",
-		argAccessToken,
-		argInput,
+		accessToken,
+		input,
 		http.StatusCreated,
 		"create user",
 	)
@@ -151,47 +151,47 @@ func (client *Client) CreateUser(
 
 // UpdateUser replaces mutable public details for an existing user.
 func (client *Client) UpdateUser(
-	argContext context.Context,
-	argAccessToken string,
-	argID string,
-	argInput UserInput,
+	ctx context.Context,
+	accessToken string,
+	id string,
+	input UserInput,
 ) (User, error) {
 	return client.mutateUser(
-		argContext,
+		ctx,
 		http.MethodPut,
-		"/api/v1/users/"+url.PathEscape(argID),
-		argAccessToken,
-		argInput,
+		"/api/v1/users/"+url.PathEscape(id),
+		accessToken,
+		input,
 		http.StatusOK,
 		"update user",
 	)
 }
 
 func (client *Client) mutateUser(
-	argContext context.Context,
-	argMethod string,
-	argPath string,
-	argAccessToken string,
-	argInput UserInput,
-	argExpectedStatus int,
-	argOperation string,
+	ctx context.Context,
+	method string,
+	path string,
+	accessToken string,
+	input UserInput,
+	expectedStatus int,
+	operation string,
 ) (User, error) {
 	var user User
 	if err := client.doJSON(
-		argContext,
-		argMethod,
-		argPath,
-		argAccessToken,
-		argInput,
-		argExpectedStatus,
+		ctx,
+		method,
+		path,
+		accessToken,
+		input,
+		expectedStatus,
 		&user,
-		argOperation,
+		operation,
 	); err != nil {
 		return User{}, err
 	}
 
 	if user.ID == "" || user.Username == "" {
-		return User{}, fmt.Errorf("validate %s response: user is incomplete", argOperation)
+		return User{}, fmt.Errorf("validate %s response: user is incomplete", operation)
 	}
 
 	return user, nil
@@ -199,20 +199,20 @@ func (client *Client) mutateUser(
 
 // SetUserActive activates or deactivates an existing user.
 func (client *Client) SetUserActive(
-	argContext context.Context,
-	argAccessToken string,
-	argID string,
-	argActive bool,
+	ctx context.Context,
+	accessToken string,
+	id string,
+	active bool,
 ) (User, error) {
 	var user User
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodPut,
-		"/api/v1/users/"+url.PathEscape(argID)+"/active",
-		argAccessToken,
+		"/api/v1/users/"+url.PathEscape(id)+"/active",
+		accessToken,
 		struct {
 			Active bool `json:"active"`
-		}{Active: argActive},
+		}{Active: active},
 		http.StatusOK,
 		&user,
 		"set user activation",
@@ -230,15 +230,15 @@ func (client *Client) SetUserActive(
 
 // DeleteUser permanently removes a user identity and its authentication data.
 func (client *Client) DeleteUser(
-	argContext context.Context,
-	argAccessToken string,
-	argID string,
+	ctx context.Context,
+	accessToken string,
+	id string,
 ) error {
 	return client.doJSON(
-		argContext,
+		ctx,
 		http.MethodDelete,
-		"/api/v1/users/"+url.PathEscape(argID),
-		argAccessToken,
+		"/api/v1/users/"+url.PathEscape(id),
+		accessToken,
 		nil,
 		http.StatusNoContent,
 		nil,

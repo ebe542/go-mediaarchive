@@ -94,38 +94,38 @@ func TestClientReturnsStructuredAPIError(t *testing.T) {
 }
 
 func newJSONServer(
-	argTest *testing.T,
-	argHandler http.HandlerFunc,
+	test *testing.T,
+	handler http.HandlerFunc,
 ) *httptest.Server {
-	argTest.Helper()
+	test.Helper()
 
-	return httptest.NewServer(argHandler)
+	return httptest.NewServer(handler)
 }
 
 func assertRequest(
-	argTest *testing.T,
-	argRequest *http.Request,
-	argMethod string,
-	argPath string,
-	argAccessToken string,
+	test *testing.T,
+	request *http.Request,
+	method string,
+	path string,
+	accessToken string,
 ) {
-	argTest.Helper()
+	test.Helper()
 
-	if argRequest.Method != argMethod {
-		argTest.Errorf("expected method %q, got %q", argMethod, argRequest.Method)
+	if request.Method != method {
+		test.Errorf("expected method %q, got %q", method, request.Method)
 	}
-	if argRequest.URL.Path != argPath {
-		argTest.Errorf("expected path %q, got %q", argPath, argRequest.URL.Path)
+	if request.URL.Path != path {
+		test.Errorf("expected path %q, got %q", path, request.URL.Path)
 	}
-	if accept := argRequest.Header.Get("Accept"); accept != "application/json" {
-		argTest.Errorf("expected JSON Accept header, got %q", accept)
+	if accept := request.Header.Get("Accept"); accept != "application/json" {
+		test.Errorf("expected JSON Accept header, got %q", accept)
 	}
 	expectedAuthorization := ""
-	if argAccessToken != "" {
-		expectedAuthorization = "Bearer " + argAccessToken
+	if accessToken != "" {
+		expectedAuthorization = "Bearer " + accessToken
 	}
-	if authorization := argRequest.Header.Get("Authorization"); authorization != expectedAuthorization {
-		argTest.Errorf(
+	if authorization := request.Header.Get("Authorization"); authorization != expectedAuthorization {
+		test.Errorf(
 			"expected Authorization header %q, got %q",
 			expectedAuthorization,
 			authorization,
@@ -133,28 +133,28 @@ func assertRequest(
 	}
 }
 
-func decodeRequest(argTest *testing.T, argRequest *http.Request, argBody any) {
-	argTest.Helper()
+func decodeRequest(test *testing.T, request *http.Request, body any) {
+	test.Helper()
 
-	if contentType := argRequest.Header.Get("Content-Type"); contentType != "application/json" {
-		argTest.Errorf("expected JSON Content-Type, got %q", contentType)
+	if contentType := request.Header.Get("Content-Type"); contentType != "application/json" {
+		test.Errorf("expected JSON Content-Type, got %q", contentType)
 	}
-	if err := json.NewDecoder(argRequest.Body).Decode(argBody); err != nil {
-		argTest.Fatalf("decode request: %v", err)
+	if err := json.NewDecoder(request.Body).Decode(body); err != nil {
+		test.Fatalf("decode request: %v", err)
 	}
 }
 
 func writeJSON(
-	argTest *testing.T,
-	argResponse http.ResponseWriter,
-	argStatus int,
-	argBody any,
+	test *testing.T,
+	response http.ResponseWriter,
+	status int,
+	body any,
 ) {
-	argTest.Helper()
+	test.Helper()
 
-	argResponse.Header().Set("Content-Type", "application/json; charset=utf-8")
-	argResponse.WriteHeader(argStatus)
-	if err := json.NewEncoder(argResponse).Encode(argBody); err != nil {
-		argTest.Fatalf("encode response: %v", err)
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.WriteHeader(status)
+	if err := json.NewEncoder(response).Encode(body); err != nil {
+		test.Fatalf("encode response: %v", err)
 	}
 }

@@ -31,11 +31,11 @@ const (
 type passwordReader func() ([]byte, error)
 
 type bootstrapAdminFunc func(
-	argContext context.Context,
-	argDatabasePath string,
-	argUsername string,
-	argDisplayName string,
-	argPassword []byte,
+	ctx context.Context,
+	databasePath string,
+	username string,
+	displayName string,
+	passwordValue []byte,
 ) (identity.User, error)
 
 func main() {
@@ -69,17 +69,17 @@ func readTerminalPassword() ([]byte, error) {
 }
 
 func bootstrapAdministrator(
-	argContext context.Context,
-	argDatabasePath string,
-	argUsername string,
-	argDisplayName string,
-	argPassword []byte,
+	ctx context.Context,
+	databasePath string,
+	username string,
+	displayName string,
+	passwordValue []byte,
 ) (identity.User, error) {
-	if err := createDatabaseDirectory(argDatabasePath); err != nil {
+	if err := createDatabaseDirectory(databasePath); err != nil {
 		return identity.User{}, err
 	}
 
-	database, err := sqlitestore.Open(argContext, argDatabasePath)
+	database, err := sqlitestore.Open(ctx, databasePath)
 	if err != nil {
 		return identity.User{}, fmt.Errorf(
 			"open bootstrap database: %w",
@@ -87,7 +87,7 @@ func bootstrapAdministrator(
 		)
 	}
 
-	if err := sqlitestore.Migrate(argContext, database); err != nil {
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
 		_ = database.Close()
 
 		return identity.User{}, fmt.Errorf(
@@ -104,11 +104,11 @@ func bootstrapAdministrator(
 	)
 
 	adminUser, bootstrapErr := service.BootstrapAdmin(
-		argContext,
+		ctx,
 		adminbootstrap.Input{
-			Username:    argUsername,
-			DisplayName: argDisplayName,
-			Password:    argPassword,
+			Username:    username,
+			DisplayName: displayName,
+			Password:    passwordValue,
 		},
 	)
 
@@ -127,8 +127,8 @@ func bootstrapAdministrator(
 	return adminUser, nil
 }
 
-func createDatabaseDirectory(argDatabasePath string) error {
-	directory := filepath.Dir(argDatabasePath)
+func createDatabaseDirectory(databasePath string) error {
+	directory := filepath.Dir(databasePath)
 
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return fmt.Errorf(
@@ -142,26 +142,26 @@ func createDatabaseDirectory(argDatabasePath string) error {
 }
 
 func run(
-	argContext context.Context,
-	argArguments []string,
-	argStdout io.Writer,
-	argStderr io.Writer,
-	argReadPassword passwordReader,
-	argBootstrapAdmin bootstrapAdminFunc,
+	ctx context.Context,
+	arguments []string,
+	stdout io.Writer,
+	stderr io.Writer,
+	readPassword passwordReader,
+	bootstrapAdmin bootstrapAdminFunc,
 ) error {
-	if len(argArguments) > 0 && argArguments[0] == "bootstrap" {
+	if len(arguments) > 0 && arguments[0] == "bootstrap" {
 		return runBootstrap(
-			argContext,
-			argArguments[1:],
-			argStdout,
-			argStderr,
-			argReadPassword,
-			argBootstrapAdmin,
+			ctx,
+			arguments[1:],
+			stdout,
+			stderr,
+			readPassword,
+			bootstrapAdmin,
 		)
 	}
 
 	flags := flag.NewFlagSet("mediaarchive-admin", flag.ContinueOnError)
-	flags.SetOutput(argStderr)
+	flags.SetOutput(stderr)
 	serverURL := flags.String(
 		"server",
 		serverURLFromEnvironment(os.Getenv),
@@ -173,10 +173,10 @@ func run(
 		"path to an additional trusted CA certificate",
 	)
 	flags.Usage = func() {
-		printUsage(argStderr)
+		printUsage(stderr)
 		flags.PrintDefaults()
 	}
-	if err := flags.Parse(argArguments); err != nil {
+	if err := flags.Parse(arguments); err != nil {
 		return fmt.Errorf("parse arguments: %w", err)
 	}
 	if flags.NArg() != 0 {
@@ -193,35 +193,35 @@ func run(
 	console := newAdminConsole(
 		apiclient.New(*serverURL, httpClient),
 		os.Stdin,
-		argStdout,
-		argStderr,
-		func(argPrompt string) ([]byte, error) {
-			fmt.Fprint(argStdout, argPrompt)
-			secret, err := argReadPassword()
-			fmt.Fprintln(argStdout)
+		stdout,
+		stderr,
+		func(prompt string) ([]byte, error) {
+			fmt.Fprint(stdout, prompt)
+			secret, err := readPassword()
+			fmt.Fprintln(stdout)
 
 			return secret, err
 		},
 		5*time.Second,
 	)
 
-	return console.run(argContext)
+	return console.run(ctx)
 }
 
 func runBootstrap(
-	argContext context.Context,
-	argArguments []string,
-	argStdout io.Writer,
-	argStderr io.Writer,
-	argReadPassword passwordReader,
-	argBootstrapAdmin bootstrapAdminFunc,
+	ctx context.Context,
+	arguments []string,
+	stdout io.Writer,
+	stderr io.Writer,
+	readPassword passwordReader,
+	bootstrapAdmin bootstrapAdminFunc,
 ) error {
 
 	flags := flag.NewFlagSet(
 		"mediaarchive-admin bootstrap",
 		flag.ContinueOnError,
 	)
-	flags.SetOutput(argStderr)
+	flags.SetOutput(stderr)
 
 	databasePath := flags.String(
 		"database",
@@ -240,11 +240,11 @@ func runBootstrap(
 	)
 
 	flags.Usage = func() {
-		printUsage(argStderr)
+		printUsage(stderr)
 		flags.PrintDefaults()
 	}
 
-	if err := flags.Parse(argArguments); err != nil {
+	if err := flags.Parse(arguments); err != nil {
 		return fmt.Errorf("parse bootstrap arguments: %w", err)
 	}
 	if flags.NArg() != 0 {
@@ -262,17 +262,17 @@ func runBootstrap(
 		return errors.New("display name is required")
 	}
 
-	fmt.Fprint(argStderr, "Password: ")
-	plainPassword, err := argReadPassword()
-	fmt.Fprintln(argStderr)
+	fmt.Fprint(stderr, "Password: ")
+	plainPassword, err := readPassword()
+	fmt.Fprintln(stderr)
 	if err != nil {
 		return fmt.Errorf("read password: %w", err)
 	}
 	defer sharedcli.ClearSecret(plainPassword)
 
-	fmt.Fprint(argStderr, "Confirm password: ")
-	confirmedPassword, err := argReadPassword()
-	fmt.Fprintln(argStderr)
+	fmt.Fprint(stderr, "Confirm password: ")
+	confirmedPassword, err := readPassword()
+	fmt.Fprintln(stderr)
 	if err != nil {
 		return fmt.Errorf("read password confirmation: %w", err)
 	}
@@ -285,8 +285,8 @@ func runBootstrap(
 		return errors.New("password confirmation does not match")
 	}
 
-	adminUser, err := argBootstrapAdmin(
-		argContext,
+	adminUser, err := bootstrapAdmin(
+		ctx,
 		*databasePath,
 		*username,
 		*displayName,
@@ -297,7 +297,7 @@ func runBootstrap(
 	}
 
 	fmt.Fprintf(
-		argStdout,
+		stdout,
 		"Administrator %q created.\n",
 		adminUser.Username,
 	)
@@ -305,14 +305,14 @@ func runBootstrap(
 	return nil
 }
 
-func printUsage(argOutput io.Writer) {
-	fmt.Fprintln(argOutput, "Usage:")
-	fmt.Fprintln(argOutput, "  mediaarchive-admin [options]")
-	fmt.Fprintln(argOutput, "  mediaarchive-admin bootstrap [options]")
+func printUsage(output io.Writer) {
+	fmt.Fprintln(output, "Usage:")
+	fmt.Fprintln(output, "  mediaarchive-admin [options]")
+	fmt.Fprintln(output, "  mediaarchive-admin bootstrap [options]")
 }
 
-func serverURLFromEnvironment(argGetenv func(string) string) string {
-	if serverURL := argGetenv("MEDIAARCHIVE_SERVER"); serverURL != "" {
+func serverURLFromEnvironment(getenv func(string) string) string {
+	if serverURL := getenv("MEDIAARCHIVE_SERVER"); serverURL != "" {
 		return serverURL
 	}
 

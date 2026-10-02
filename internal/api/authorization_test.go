@@ -22,11 +22,11 @@ type recordingSessionResolver struct {
 }
 
 func (resolver *recordingSessionResolver) Resolve(
-	argContext context.Context,
-	argAccessToken string,
+	ctx context.Context,
+	accessToken string,
 ) (identity.User, error) {
 	resolver.resolveCalls++
-	resolver.accessToken = argAccessToken
+	resolver.accessToken = accessToken
 
 	return resolver.user, resolver.resolveError
 }
@@ -47,13 +47,13 @@ func TestRequireAuthenticationProvidesCurrentUser(t *testing.T) {
 
 	nextCalled := false
 	next := http.HandlerFunc(func(
-		argResponse http.ResponseWriter,
-		argRequest *http.Request,
+		response http.ResponseWriter,
+		request *http.Request,
 	) {
 		nextCalled = true
 
 		authenticatedUser, exists := api.AuthenticatedUser(
-			argRequest.Context(),
+			request.Context(),
 		)
 		if !exists {
 			t.Fatal("expected authenticated user in request context")
@@ -66,7 +66,7 @@ func TestRequireAuthenticationProvidesCurrentUser(t *testing.T) {
 			)
 		}
 
-		argResponse.WriteHeader(http.StatusNoContent)
+		response.WriteHeader(http.StatusNoContent)
 	})
 
 	handler := api.RequireAuthentication(resolver, next)
@@ -115,11 +115,11 @@ func TestRequireAuthenticationRejectsUnusableSession(t *testing.T) {
 
 	nextCalled := false
 	next := http.HandlerFunc(func(
-		argResponse http.ResponseWriter,
-		argRequest *http.Request,
+		response http.ResponseWriter,
+		request *http.Request,
 	) {
 		nextCalled = true
-		argResponse.WriteHeader(http.StatusNoContent)
+		response.WriteHeader(http.StatusNoContent)
 	})
 
 	handler := api.RequireAuthentication(resolver, next)
@@ -187,11 +187,11 @@ func TestRequireAuthenticationRejectsMalformedAuthorization(
 
 			nextCalled := false
 			next := http.HandlerFunc(func(
-				argResponse http.ResponseWriter,
-				argRequest *http.Request,
+				response http.ResponseWriter,
+				request *http.Request,
 			) {
 				nextCalled = true
-				argResponse.WriteHeader(http.StatusNoContent)
+				response.WriteHeader(http.StatusNoContent)
 			})
 
 			handler := api.RequireAuthentication(resolver, next)
@@ -248,11 +248,11 @@ func TestRequireAuthenticationPreservesInternalFailure(
 
 	nextCalled := false
 	next := http.HandlerFunc(func(
-		argResponse http.ResponseWriter,
-		argRequest *http.Request,
+		response http.ResponseWriter,
+		request *http.Request,
 	) {
 		nextCalled = true
-		argResponse.WriteHeader(http.StatusNoContent)
+		response.WriteHeader(http.StatusNoContent)
 	})
 
 	handler := api.RequireAuthentication(resolver, next)
@@ -315,11 +315,11 @@ func TestRequireRolesAllowsPermittedRole(t *testing.T) {
 		resolver,
 		api.RequireRoles(
 			http.HandlerFunc(func(
-				argResponse http.ResponseWriter,
-				argRequest *http.Request,
+				response http.ResponseWriter,
+				request *http.Request,
 			) {
 				nextCalled = true
-				argResponse.WriteHeader(http.StatusNoContent)
+				response.WriteHeader(http.StatusNoContent)
 			}),
 			identity.RoleAdmin,
 		),
@@ -365,11 +365,11 @@ func TestRequireRolesRejectsInsufficientRole(t *testing.T) {
 		resolver,
 		api.RequireRoles(
 			http.HandlerFunc(func(
-				argResponse http.ResponseWriter,
-				argRequest *http.Request,
+				response http.ResponseWriter,
+				request *http.Request,
 			) {
 				nextCalled = true
-				argResponse.WriteHeader(http.StatusNoContent)
+				response.WriteHeader(http.StatusNoContent)
 			}),
 			identity.RoleAdmin,
 		),
@@ -432,10 +432,10 @@ func TestRequireRolesAllowsAnyListedRole(t *testing.T) {
 		resolver,
 		api.RequireRoles(
 			http.HandlerFunc(func(
-				argResponse http.ResponseWriter,
-				argRequest *http.Request,
+				response http.ResponseWriter,
+				request *http.Request,
 			) {
-				argResponse.WriteHeader(http.StatusNoContent)
+				response.WriteHeader(http.StatusNoContent)
 			}),
 			identity.RoleViewer,
 			identity.RoleEditor,

@@ -29,24 +29,24 @@ type recordingContentStore struct {
 func (store *recordingContentStore) Put(
 	_ context.Context,
 	_ string,
-	argSource io.Reader,
-	argMaximumSize int64,
+	source io.Reader,
+	maximumSize int64,
 ) (content.Stored, error) {
 	store.putCalls++
-	store.source = argSource
-	store.maximumSize = argMaximumSize
+	store.source = source
+	store.maximumSize = maximumSize
 
 	return store.stored, store.putError
 }
 
 func (store *recordingContentStore) Delete(
-	argContext context.Context,
-	argStorageKey string,
+	ctx context.Context,
+	storageKey string,
 ) error {
-	if err := argContext.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	store.deletedKey = argStorageKey
+	store.deletedKey = storageKey
 
 	return store.deleteError
 }
@@ -60,12 +60,12 @@ type recordingManagedCreator struct {
 
 func (creator *recordingManagedCreator) CreateManaged(
 	_ context.Context,
-	argItem domainmedia.Item,
-	argLocation content.Location,
+	item domainmedia.Item,
+	location content.Location,
 ) error {
 	creator.calls++
-	creator.item = argItem
-	creator.location = argLocation
+	creator.item = item
+	creator.location = location
 
 	return creator.err
 }
@@ -278,34 +278,34 @@ func successfulRecordingContentStore() *recordingContentStore {
 }
 
 func newUploadService(
-	argTest *testing.T,
-	argRepository appmedia.ManagedCreator,
-	argStore content.Store,
-	argNow time.Time,
-	argMaximumSize int64,
+	test *testing.T,
+	repository appmedia.ManagedCreator,
+	store content.Store,
+	now time.Time,
+	maximumSize int64,
 ) *appmedia.UploadService {
-	argTest.Helper()
+	test.Helper()
 	service, err := appmedia.NewUploadService(
-		argRepository,
-		argStore,
+		repository,
+		store,
 		func() string { return serviceMediaID },
-		func() time.Time { return argNow },
-		argMaximumSize,
+		func() time.Time { return now },
+		maximumSize,
 	)
 	if err != nil {
-		argTest.Fatalf("create upload service: %v", err)
+		test.Fatalf("create upload service: %v", err)
 	}
 
 	return service
 }
 
-func uploadInput(argSource io.Reader) appmedia.UploadInput {
+func uploadInput(source io.Reader) appmedia.UploadInput {
 	return appmedia.UploadInput{
 		Title:            "Uploaded Security Book",
 		Authors:          []string{"Example Author"},
 		OriginalFilename: "security-book.pdf",
 		Type:             domainmedia.TypeBook,
 		MIMEType:         "application/pdf",
-		Source:           argSource,
+		Source:           source,
 	}
 }

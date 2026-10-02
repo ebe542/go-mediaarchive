@@ -40,12 +40,12 @@ type stagedDeletion struct {
 }
 
 // NewContentStore prepares a private root for managed content.
-func NewContentStore(argRoot string) (*ContentStore, error) {
-	if strings.TrimSpace(argRoot) == "" {
+func NewContentStore(root string) (*ContentStore, error) {
+	if strings.TrimSpace(root) == "" {
 		return nil, errors.New("content root must not be empty")
 	}
 
-	root, err := filepath.Abs(argRoot)
+	root, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve content root: %w", err)
 	}
@@ -65,35 +65,35 @@ func NewContentStore(argRoot string) (*ContentStore, error) {
 // Put streams content into a temporary file before publishing it under a key
 // derived exclusively from the media ID.
 func (store *ContentStore) Put(
-	argContext context.Context,
-	argMediaID string,
-	argSource io.Reader,
-	argMaximumSize int64,
+	ctx context.Context,
+	mediaID string,
+	source io.Reader,
+	maximumSize int64,
 ) (content.Stored, error) {
-	if err := validateMediaID(argMediaID); err != nil {
+	if err := validateMediaID(mediaID); err != nil {
 		return content.Stored{}, err
 	}
-	if argSource == nil {
+	if source == nil {
 		return content.Stored{}, content.ErrInvalidSource
 	}
-	if argMaximumSize <= 0 {
+	if maximumSize <= 0 {
 		return content.Stored{}, content.ErrInvalidSizeLimit
 	}
-	if err := argContext.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return content.Stored{}, err
 	}
 	if err := requirePrivateDirectory(store.root); err != nil {
 		return content.Stored{}, fmt.Errorf("validate content root: %w", err)
 	}
 
-	storageKey := storageKeyForMedia(argMediaID)
+	storageKey := storageKeyForMedia(mediaID)
 	release := store.locks.acquireWrite(storageKey)
 	defer release()
-	if err := argContext.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return content.Stored{}, err
 	}
 
-	shardPath := filepath.Join(store.root, argMediaID[:2])
+	shardPath := filepath.Join(store.root, mediaID[:2])
 	if err := prepareShardDirectory(shardPath); err != nil {
 		return content.Stored{}, err
 	}
@@ -117,10 +117,10 @@ func (store *ContentStore) Put(
 
 	hasher := sha256.New()
 	written, err := copyBounded(
-		argContext,
+		ctx,
 		io.MultiWriter(temporary, hasher),
-		argSource,
-		argMaximumSize,
+		source,
+		maximumSize,
 	)
 	if err != nil {
 		return content.Stored{}, err
@@ -242,19 +242,19 @@ func (store *ContentStore) Open(
 // Delete removes one regular managed file. Missing content is reported so
 // application compensation can distinguish an already absent object.
 func (store *ContentStore) Delete(
-	argContext context.Context,
-	argStorageKey string,
+	ctx context.Context,
+	storageKey string,
 ) error {
-	mediaID, err := mediaIDFromStorageKey(argStorageKey)
+	mediaID, err := mediaIDFromStorageKey(storageKey)
 	if err != nil {
 		return err
 	}
-	if err := argContext.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	release := store.locks.acquireWrite(argStorageKey)
+	release := store.locks.acquireWrite(storageKey)
 	defer release()
-	if err := argContext.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
@@ -271,7 +271,7 @@ func (store *ContentStore) Delete(
 		return fmt.Errorf("validate content directory: %w", err)
 	}
 
-	contentPath := filepath.Join(store.root, filepath.FromSlash(argStorageKey))
+	contentPath := filepath.Join(store.root, filepath.FromSlash(storageKey))
 	info, err := os.Lstat(contentPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return content.ErrNotFound
@@ -295,24 +295,24 @@ func (store *ContentStore) Delete(
 
 // StageDelete atomically hides managed content under an internal deletion name.
 func (store *ContentStore) StageDelete(
-	argContext context.Context,
-	argStorageKey string,
+	ctx context.Context,
+	storageKey string,
 ) (content.StagedDeletion, error) {
-	mediaID, err := mediaIDFromStorageKey(argStorageKey)
+	mediaID, err := mediaIDFromStorageKey(storageKey)
 	if err != nil {
 		return nil, err
 	}
-	if err := argContext.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	release := store.locks.acquireWrite(argStorageKey)
+	release := store.locks.acquireWrite(storageKey)
 	succeeded := false
 	defer func() {
 		if !succeeded {
 			release()
 		}
 	}()
-	if err := argContext.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -329,7 +329,7 @@ func (store *ContentStore) StageDelete(
 		return nil, fmt.Errorf("validate content directory: %w", err)
 	}
 
-	originalPath := filepath.Join(store.root, filepath.FromSlash(argStorageKey))
+	originalPath := filepath.Join(store.root, filepath.FromSlash(storageKey))
 	info, err := os.Lstat(originalPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, content.ErrNotFound
@@ -360,13 +360,13 @@ func (store *ContentStore) StageDelete(
 	}, nil
 }
 
-func (deletion *stagedDeletion) Commit(argContext context.Context) error {
+func (deletion *stagedDeletion) Commit(ctx context.Context) error {
 	deletion.mutex.Lock()
 	defer deletion.mutex.Unlock()
 	if deletion.finished {
 		return errors.New("staged deletion is already finalized")
 	}
-	if err := argContext.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := os.Remove(deletion.stagedPath); err != nil {
@@ -378,13 +378,13 @@ func (deletion *stagedDeletion) Commit(argContext context.Context) error {
 	return nil
 }
 
-func (deletion *stagedDeletion) Rollback(argContext context.Context) error {
+func (deletion *stagedDeletion) Rollback(ctx context.Context) error {
 	deletion.mutex.Lock()
 	defer deletion.mutex.Unlock()
 	if deletion.finished {
 		return errors.New("staged deletion is already finalized")
 	}
-	if err := argContext.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(deletion.originalPath); err == nil {
@@ -443,27 +443,27 @@ func (file *lockedFile) Close() error {
 }
 
 func copyBounded(
-	argContext context.Context,
-	argDestination io.Writer,
-	argSource io.Reader,
-	argMaximumSize int64,
+	ctx context.Context,
+	destination io.Writer,
+	source io.Reader,
+	maximumSize int64,
 ) (int64, error) {
-	limited := io.LimitReader(argSource, argMaximumSize+1)
+	limited := io.LimitReader(source, maximumSize+1)
 	buffer := make([]byte, copyBufferSize)
 	var written int64
 
 	for {
-		if err := argContext.Err(); err != nil {
+		if err := ctx.Err(); err != nil {
 			return 0, err
 		}
 
 		readCount, readErr := limited.Read(buffer)
 		if readCount > 0 {
-			remaining := argMaximumSize + 1 - written
+			remaining := maximumSize + 1 - written
 			if int64(readCount) > remaining {
 				readCount = int(remaining)
 			}
-			writeCount, writeErr := argDestination.Write(buffer[:readCount])
+			writeCount, writeErr := destination.Write(buffer[:readCount])
 			written += int64(writeCount)
 			if writeErr != nil {
 				return 0, fmt.Errorf("write temporary content: %w", writeErr)
@@ -471,7 +471,7 @@ func copyBounded(
 			if writeCount != readCount {
 				return 0, io.ErrShortWrite
 			}
-			if written > argMaximumSize {
+			if written > maximumSize {
 				return 0, content.ErrTooLarge
 			}
 		}
@@ -484,19 +484,19 @@ func copyBounded(
 	}
 }
 
-func prepareShardDirectory(argPath string) error {
-	if err := os.Mkdir(argPath, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+func prepareShardDirectory(path string) error {
+	if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 		return fmt.Errorf("create content directory: %w", err)
 	}
-	if err := requirePrivateDirectory(argPath); err != nil {
+	if err := requirePrivateDirectory(path); err != nil {
 		return fmt.Errorf("validate content directory: %w", err)
 	}
 
 	return nil
 }
 
-func requirePrivateDirectory(argPath string) error {
-	info, err := os.Lstat(argPath)
+func requirePrivateDirectory(path string) error {
+	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}
@@ -506,38 +506,38 @@ func requirePrivateDirectory(argPath string) error {
 	if !info.IsDir() {
 		return errors.New("expected a directory")
 	}
-	if err := os.Chmod(argPath, 0o700); err != nil {
+	if err := os.Chmod(path, 0o700); err != nil {
 		return fmt.Errorf("set private directory permissions: %w", err)
 	}
 
 	return nil
 }
 
-func storageKeyForMedia(argMediaID string) string {
-	return path.Join(argMediaID[:2], argMediaID)
+func storageKeyForMedia(mediaID string) string {
+	return path.Join(mediaID[:2], mediaID)
 }
 
-func mediaIDFromStorageKey(argStorageKey string) (string, error) {
-	if path.IsAbs(argStorageKey) || strings.Contains(argStorageKey, `\`) {
+func mediaIDFromStorageKey(storageKey string) (string, error) {
+	if path.IsAbs(storageKey) || strings.Contains(storageKey, `\`) {
 		return "", content.ErrInvalidStorageKey
 	}
-	parts := strings.Split(argStorageKey, "/")
+	parts := strings.Split(storageKey, "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return "", content.ErrInvalidStorageKey
 	}
 	if err := validateMediaID(parts[1]); err != nil || parts[0] != parts[1][:2] {
 		return "", content.ErrInvalidStorageKey
 	}
-	if storageKeyForMedia(parts[1]) != argStorageKey {
+	if storageKeyForMedia(parts[1]) != storageKey {
 		return "", content.ErrInvalidStorageKey
 	}
 
 	return parts[1], nil
 }
 
-func validateMediaID(argMediaID string) error {
-	parsed, err := uuid.Parse(argMediaID)
-	if err != nil || parsed == uuid.Nil || parsed.String() != argMediaID {
+func validateMediaID(mediaID string) error {
+	parsed, err := uuid.Parse(mediaID)
+	if err != nil || parsed == uuid.Nil || parsed.String() != mediaID {
 		return content.ErrInvalidMediaID
 	}
 

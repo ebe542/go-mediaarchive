@@ -123,8 +123,8 @@ func run(
 			os.Stdin,
 			stdout,
 			stderr,
-			func(argPrompt string) ([]byte, error) {
-				fmt.Fprint(stdout, argPrompt)
+			func(prompt string) ([]byte, error) {
+				fmt.Fprint(stdout, prompt)
 				secret, err := term.ReadPassword(int(os.Stdin.Fd()))
 				fmt.Fprintln(stdout)
 

@@ -248,65 +248,65 @@ const validMediaInsertSQL = `
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
-func openMediaSchemaDatabase(argTest *testing.T) (context.Context, *sql.DB) {
-	argTest.Helper()
+func openMediaSchemaDatabase(test *testing.T) (context.Context, *sql.DB) {
+	test.Helper()
 
 	ctx := context.Background()
 	database, err := sqlitestore.Open(
 		ctx,
-		filepath.Join(argTest.TempDir(), "mediaarchive.db"),
+		filepath.Join(test.TempDir(), "mediaarchive.db"),
 	)
 	if err != nil {
-		argTest.Fatalf("open SQLite database: %v", err)
+		test.Fatalf("open SQLite database: %v", err)
 	}
-	argTest.Cleanup(func() {
+	test.Cleanup(func() {
 		if closeErr := database.Close(); closeErr != nil {
-			argTest.Errorf("close SQLite database: %v", closeErr)
+			test.Errorf("close SQLite database: %v", closeErr)
 		}
 	})
 	if err := sqlitestore.Migrate(ctx, database); err != nil {
-		argTest.Fatalf("apply migrations: %v", err)
+		test.Fatalf("apply migrations: %v", err)
 	}
 
 	return ctx, database
 }
 
 func insertMediaSchemaUser(
-	argTest *testing.T,
-	argContext context.Context,
-	argDatabase *sql.DB,
-	argID string,
-	argUsername string,
+	test *testing.T,
+	ctx context.Context,
+	database *sql.DB,
+	id string,
+	username string,
 ) {
-	argTest.Helper()
+	test.Helper()
 
-	if _, err := argDatabase.ExecContext(
-		argContext,
+	if _, err := database.ExecContext(
+		ctx,
 		`
 			INSERT INTO users (
 				id, username, display_name, role, active, created_at, updated_at
 			)
 			VALUES (?, ?, ?, 'viewer', 1, ?, ?)
 		`,
-		argID,
-		argUsername,
-		argUsername,
+		id,
+		username,
+		username,
 		schemaTimestamp,
 		schemaTimestamp,
 	); err != nil {
-		argTest.Fatalf("insert media schema user: %v", err)
+		test.Fatalf("insert media schema user: %v", err)
 	}
 }
 
 func insertValidSchemaMedia(
-	argTest *testing.T,
-	argContext context.Context,
-	argDatabase *sql.DB,
+	test *testing.T,
+	ctx context.Context,
+	database *sql.DB,
 ) {
-	argTest.Helper()
+	test.Helper()
 
-	if _, err := argDatabase.ExecContext(
-		argContext,
+	if _, err := database.ExecContext(
+		ctx,
 		validMediaInsertSQL,
 		schemaMediaID,
 		"Security Book",
@@ -319,6 +319,6 @@ func insertValidSchemaMedia(
 		schemaTimestamp,
 		schemaTimestamp,
 	); err != nil {
-		argTest.Fatalf("insert valid media: %v", err)
+		test.Fatalf("insert valid media: %v", err)
 	}
 }

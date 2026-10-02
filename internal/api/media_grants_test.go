@@ -30,60 +30,60 @@ type recordingMediaGrantService struct {
 
 func (service *recordingMediaGrantService) ReplaceGrant(
 	_ context.Context,
-	argActor identity.User,
-	argMediaID string,
-	argUserID string,
-	argPermissions domainmedia.PermissionSet,
+	actor identity.User,
+	mediaID string,
+	userID string,
+	permissions domainmedia.PermissionSet,
 ) (domainmedia.Grant, error) {
-	service.record("replace", argActor, argMediaID, argUserID)
-	service.permissions = argPermissions
+	service.record("replace", actor, mediaID, userID)
+	service.permissions = permissions
 
 	return service.grant, service.err
 }
 
 func (service *recordingMediaGrantService) GrantByUser(
 	_ context.Context,
-	argActor identity.User,
-	argMediaID string,
-	argUserID string,
+	actor identity.User,
+	mediaID string,
+	userID string,
 ) (domainmedia.Grant, error) {
-	service.record("read", argActor, argMediaID, argUserID)
+	service.record("read", actor, mediaID, userID)
 
 	return service.grant, service.err
 }
 
 func (service *recordingMediaGrantService) GrantsByMedia(
 	_ context.Context,
-	argActor identity.User,
-	argMediaID string,
+	actor identity.User,
+	mediaID string,
 ) ([]domainmedia.Grant, error) {
-	service.record("list", argActor, argMediaID, "")
+	service.record("list", actor, mediaID, "")
 
 	return service.grants, service.err
 }
 
 func (service *recordingMediaGrantService) RevokeGrant(
 	_ context.Context,
-	argActor identity.User,
-	argMediaID string,
-	argUserID string,
+	actor identity.User,
+	mediaID string,
+	userID string,
 ) error {
-	service.record("revoke", argActor, argMediaID, argUserID)
+	service.record("revoke", actor, mediaID, userID)
 
 	return service.err
 }
 
 func (service *recordingMediaGrantService) record(
-	argOperation string,
-	argActor identity.User,
-	argMediaID string,
-	argUserID string,
+	operation string,
+	actor identity.User,
+	mediaID string,
+	userID string,
 ) {
 	service.calls++
-	service.operation = argOperation
-	service.actor = argActor
-	service.mediaID = argMediaID
-	service.userID = argUserID
+	service.operation = operation
+	service.actor = actor
+	service.mediaID = mediaID
+	service.userID = userID
 }
 
 func TestMediaGrantEndpointsRequireAuthentication(t *testing.T) {
@@ -278,10 +278,10 @@ func TestMediaGrantMapsApplicationErrors(t *testing.T) {
 	}
 }
 
-func authenticatedGrantRequest(argMethod string, argPath string, argBody string) *http.Request {
-	request := httptest.NewRequest(argMethod, argPath, strings.NewReader(argBody))
+func authenticatedGrantRequest(method string, path string, body string) *http.Request {
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer media-session")
-	if argBody != "" {
+	if body != "" {
 		request.Header.Set("Content-Type", "application/json")
 	}
 
@@ -293,29 +293,29 @@ func grantPath() string {
 }
 
 func grantFixture(
-	argTest *testing.T,
-	argPermissions domainmedia.PermissionSet,
+	test *testing.T,
+	permissions domainmedia.PermissionSet,
 ) domainmedia.Grant {
-	argTest.Helper()
+	test.Helper()
 
-	grant, err := domainmedia.NewGrant(apiMediaID, apiGranteeID, argPermissions)
+	grant, err := domainmedia.NewGrant(apiMediaID, apiGranteeID, permissions)
 	if err != nil {
-		argTest.Fatalf("create grant fixture: %v", err)
+		test.Fatalf("create grant fixture: %v", err)
 	}
 
 	return grant
 }
 
 func grantPermissionSet(
-	argTest *testing.T,
-	argPermissions ...domainmedia.Permission,
+	test *testing.T,
+	requested ...domainmedia.Permission,
 ) domainmedia.PermissionSet {
-	argTest.Helper()
+	test.Helper()
 
-	permissions, err := domainmedia.NewPermissionSet(argPermissions...)
+	permissionSet, err := domainmedia.NewPermissionSet(requested...)
 	if err != nil {
-		argTest.Fatalf("create permission set: %v", err)
+		test.Fatalf("create permission set: %v", err)
 	}
 
-	return permissions
+	return permissionSet
 }

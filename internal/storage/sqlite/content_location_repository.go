@@ -19,25 +19,25 @@ type ContentLocationRepository struct {
 var _ content.LocationRepository = (*ContentLocationRepository)(nil)
 
 // NewContentLocationRepository creates a SQLite-backed location repository.
-func NewContentLocationRepository(argDatabase *sql.DB) *ContentLocationRepository {
-	return &ContentLocationRepository{database: argDatabase}
+func NewContentLocationRepository(database *sql.DB) *ContentLocationRepository {
+	return &ContentLocationRepository{database: database}
 }
 
 // Create persists one media-to-content association.
 func (repository *ContentLocationRepository) Create(
-	argContext context.Context,
-	argLocation content.Location,
+	ctx context.Context,
+	location content.Location,
 ) error {
 	location, err := content.NewLocation(
-		argLocation.MediaID,
-		argLocation.StorageKey,
-		argLocation.StoredAt,
+		location.MediaID,
+		location.StorageKey,
+		location.StoredAt,
 	)
 	if err != nil {
 		return fmt.Errorf("validate content location for creation: %w", err)
 	}
 
-	err = insertContentLocation(argContext, repository.database, location)
+	err = insertContentLocation(ctx, repository.database, location)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			return fmt.Errorf("%w: %w", content.ErrLocationConflict, err)
@@ -50,19 +50,19 @@ func (repository *ContentLocationRepository) Create(
 }
 
 func insertContentLocation(
-	argContext context.Context,
-	argExecutor statementExecutor,
-	argLocation content.Location,
+	ctx context.Context,
+	executor statementExecutor,
+	location content.Location,
 ) error {
-	_, err := argExecutor.ExecContext(
-		argContext,
+	_, err := executor.ExecContext(
+		ctx,
 		`
 			INSERT INTO media_contents (media_id, storage_key, stored_at)
 			VALUES (?, ?, ?)
 		`,
-		argLocation.MediaID,
-		argLocation.StorageKey,
-		argLocation.StoredAt.Format(time.RFC3339Nano),
+		location.MediaID,
+		location.StorageKey,
+		location.StoredAt.Format(time.RFC3339Nano),
 	)
 
 	return err
@@ -70,25 +70,25 @@ func insertContentLocation(
 
 // FindByMediaID retrieves the managed-content association for one medium.
 func (repository *ContentLocationRepository) FindByMediaID(
-	argContext context.Context,
-	argMediaID string,
+	ctx context.Context,
+	mediaID string,
 ) (content.Location, error) {
 	var storageKey string
 	var storedAt string
 	err := repository.database.QueryRowContext(
-		argContext,
+		ctx,
 		`
 			SELECT storage_key, stored_at
 			FROM media_contents
 			WHERE media_id = ?
 		`,
-		argMediaID,
+		mediaID,
 	).Scan(&storageKey, &storedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return content.Location{}, fmt.Errorf(
 			"%w: media ID %q",
 			content.ErrLocationNotFound,
-			argMediaID,
+			mediaID,
 		)
 	}
 	if err != nil {
@@ -99,7 +99,7 @@ func (repository *ContentLocationRepository) FindByMediaID(
 	if err != nil {
 		return content.Location{}, fmt.Errorf("parse content storage time: %w", err)
 	}
-	location, err := content.NewLocation(argMediaID, storageKey, storageTime)
+	location, err := content.NewLocation(mediaID, storageKey, storageTime)
 	if err != nil {
 		return content.Location{}, fmt.Errorf("validate stored content location: %w", err)
 	}
@@ -109,13 +109,13 @@ func (repository *ContentLocationRepository) FindByMediaID(
 
 // Delete removes the managed-content association for one medium.
 func (repository *ContentLocationRepository) Delete(
-	argContext context.Context,
-	argMediaID string,
+	ctx context.Context,
+	mediaID string,
 ) error {
 	result, err := repository.database.ExecContext(
-		argContext,
+		ctx,
 		`DELETE FROM media_contents WHERE media_id = ?`,
-		argMediaID,
+		mediaID,
 	)
 	if err != nil {
 		return fmt.Errorf("delete content location: %w", err)
@@ -131,8 +131,8 @@ func (repository *ContentLocationRepository) Delete(
 	return nil
 }
 
-func requireOneContentLocationRow(argResult sql.Result) error {
-	affectedRows, err := argResult.RowsAffected()
+func requireOneContentLocationRow(result sql.Result) error {
+	affectedRows, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("read affected content location row count: %w", err)
 	}

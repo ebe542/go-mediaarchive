@@ -30,8 +30,8 @@ type recordingMediaRepository struct {
 	deletedID   string
 }
 
-func (repository *recordingMediaRepository) Create(_ context.Context, argItem domainmedia.Item) error {
-	repository.created = argItem
+func (repository *recordingMediaRepository) Create(_ context.Context, item domainmedia.Item) error {
+	repository.created = item
 
 	return repository.createError
 }
@@ -40,14 +40,14 @@ func (repository *recordingMediaRepository) FindByID(_ context.Context, _ string
 	return repository.item, repository.findError
 }
 
-func (repository *recordingMediaRepository) Update(_ context.Context, argItem domainmedia.Item) error {
-	repository.updated = argItem
+func (repository *recordingMediaRepository) Update(_ context.Context, item domainmedia.Item) error {
+	repository.updated = item
 
 	return repository.updateError
 }
 
-func (repository *recordingMediaRepository) Delete(_ context.Context, argID string) error {
-	repository.deletedID = argID
+func (repository *recordingMediaRepository) Delete(_ context.Context, id string) error {
+	repository.deletedID = id
 
 	return repository.deleteError
 }
@@ -62,12 +62,12 @@ type recordingGrantFinder struct {
 
 func (finder *recordingGrantFinder) Find(
 	_ context.Context,
-	argMediaID string,
-	argUserID string,
+	mediaID string,
+	userID string,
 ) (domainmedia.Grant, error) {
 	finder.calls++
-	finder.mediaID = argMediaID
-	finder.userID = argUserID
+	finder.mediaID = mediaID
+	finder.userID = userID
 
 	return finder.grant, finder.err
 }
@@ -256,12 +256,12 @@ func TestUnauthorizedUpdateAndDeleteDoNotReachRepository(t *testing.T) {
 }
 
 func newMetadataService(
-	argRepository *recordingMediaRepository,
-	argGrants *recordingGrantFinder,
+	repository *recordingMediaRepository,
+	grants *recordingGrantFinder,
 ) *appmedia.Service {
 	return appmedia.NewService(
-		argRepository,
-		argGrants,
+		repository,
+		grants,
 		func() string { return serviceMediaID },
 		func() time.Time { return serviceTime().Add(time.Hour) },
 	)
@@ -287,8 +287,8 @@ func updatedServiceInput() appmedia.UpdateItemInput {
 	return input
 }
 
-func serviceItem(argTest *testing.T) domainmedia.Item {
-	argTest.Helper()
+func serviceItem(test *testing.T) domainmedia.Item {
+	test.Helper()
 
 	item, err := domainmedia.NewItem(
 		serviceMediaID,
@@ -304,28 +304,28 @@ func serviceItem(argTest *testing.T) domainmedia.Item {
 		serviceTime(),
 	)
 	if err != nil {
-		argTest.Fatalf("create media fixture: %v", err)
+		test.Fatalf("create media fixture: %v", err)
 	}
 
 	return item
 }
 
-func serviceUser(argID string, argRole identity.Role, argActive bool) identity.User {
-	return identity.User{ID: argID, Username: "service_user", Role: argRole, Active: argActive}
+func serviceUser(id string, role identity.Role, active bool) identity.User {
+	return identity.User{ID: id, Username: "service_user", Role: role, Active: active}
 }
 
 func servicePermissionSet(
-	argTest *testing.T,
-	argPermissions ...domainmedia.Permission,
+	test *testing.T,
+	requested ...domainmedia.Permission,
 ) domainmedia.PermissionSet {
-	argTest.Helper()
+	test.Helper()
 
-	permissions, err := domainmedia.NewPermissionSet(argPermissions...)
+	permissionSet, err := domainmedia.NewPermissionSet(requested...)
 	if err != nil {
-		argTest.Fatalf("create permission set: %v", err)
+		test.Fatalf("create permission set: %v", err)
 	}
 
-	return permissions
+	return permissionSet
 }
 
 func serviceTime() time.Time {

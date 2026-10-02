@@ -29,22 +29,22 @@ type mediaGrantResponse struct {
 
 // ReplaceMediaGrant replaces one user's complete permission set for a medium.
 func (client *Client) ReplaceMediaGrant(
-	argContext context.Context,
-	argAccessToken string,
-	argMediaID string,
-	argUserID string,
-	argPermissions domainmedia.PermissionSet,
+	ctx context.Context,
+	accessToken string,
+	mediaID string,
+	userID string,
+	permissions domainmedia.PermissionSet,
 ) (MediaGrant, error) {
-	request, err := newMediaGrantRequest(argPermissions)
+	request, err := newMediaGrantRequest(permissions)
 	if err != nil {
 		return MediaGrant{}, err
 	}
 	var response mediaGrantResponse
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodPut,
-		mediaGrantPath(argMediaID, argUserID),
-		argAccessToken,
+		mediaGrantPath(mediaID, userID),
+		accessToken,
 		request,
 		http.StatusOK,
 		&response,
@@ -58,17 +58,17 @@ func (client *Client) ReplaceMediaGrant(
 
 // MediaGrantByUser returns one authorized per-user media grant.
 func (client *Client) MediaGrantByUser(
-	argContext context.Context,
-	argAccessToken string,
-	argMediaID string,
-	argUserID string,
+	ctx context.Context,
+	accessToken string,
+	mediaID string,
+	userID string,
 ) (MediaGrant, error) {
 	var response mediaGrantResponse
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodGet,
-		mediaGrantPath(argMediaID, argUserID),
-		argAccessToken,
+		mediaGrantPath(mediaID, userID),
+		accessToken,
 		nil,
 		http.StatusOK,
 		&response,
@@ -82,18 +82,18 @@ func (client *Client) MediaGrantByUser(
 
 // ListMediaGrants returns every explicit grant for one authorized medium.
 func (client *Client) ListMediaGrants(
-	argContext context.Context,
-	argAccessToken string,
-	argMediaID string,
+	ctx context.Context,
+	accessToken string,
+	mediaID string,
 ) ([]MediaGrant, error) {
 	var response struct {
 		Grants []mediaGrantResponse `json:"grants"`
 	}
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodGet,
-		"/api/v1/media/"+url.PathEscape(argMediaID)+"/grants",
-		argAccessToken,
+		"/api/v1/media/"+url.PathEscape(mediaID)+"/grants",
+		accessToken,
 		nil,
 		http.StatusOK,
 		&response,
@@ -119,16 +119,16 @@ func (client *Client) ListMediaGrants(
 
 // RevokeMediaGrant permanently removes one explicit media grant.
 func (client *Client) RevokeMediaGrant(
-	argContext context.Context,
-	argAccessToken string,
-	argMediaID string,
-	argUserID string,
+	ctx context.Context,
+	accessToken string,
+	mediaID string,
+	userID string,
 ) error {
 	return client.doJSON(
-		argContext,
+		ctx,
 		http.MethodDelete,
-		mediaGrantPath(argMediaID, argUserID),
-		argAccessToken,
+		mediaGrantPath(mediaID, userID),
+		accessToken,
 		nil,
 		http.StatusNoContent,
 		nil,
@@ -137,35 +137,35 @@ func (client *Client) RevokeMediaGrant(
 }
 
 func newMediaGrantRequest(
-	argPermissions domainmedia.PermissionSet,
+	permissions domainmedia.PermissionSet,
 ) (mediaGrantRequest, error) {
-	if !argPermissions.Valid() {
+	if !permissions.Valid() {
 		return mediaGrantRequest{}, fmt.Errorf(
 			"validate media grant request: %w",
 			domainmedia.ErrInvalidPermissionSet,
 		)
 	}
 
-	return mediaGrantRequest{Permissions: permissionNames(argPermissions)}, nil
+	return mediaGrantRequest{Permissions: permissionNames(permissions)}, nil
 }
 
 func decodeMediaGrantResponse(
-	argResponse mediaGrantResponse,
-	argOperation string,
+	response mediaGrantResponse,
+	operation string,
 ) (MediaGrant, error) {
-	if argResponse.Permissions == nil {
+	if response.Permissions == nil {
 		return MediaGrant{}, fmt.Errorf(
 			"validate %s response: permissions are required",
-			argOperation,
+			operation,
 		)
 	}
-	permissions := make([]domainmedia.Permission, 0, len(argResponse.Permissions))
-	for _, name := range argResponse.Permissions {
+	permissions := make([]domainmedia.Permission, 0, len(response.Permissions))
+	for _, name := range response.Permissions {
 		permission, err := domainmedia.ParsePermission(name)
 		if err != nil {
 			return MediaGrant{}, fmt.Errorf(
 				"validate %s response permission: %w",
-				argOperation,
+				operation,
 				err,
 			)
 		}
@@ -173,11 +173,11 @@ func decodeMediaGrantResponse(
 	}
 	permissionSet, err := domainmedia.NewPermissionSet(permissions...)
 	if err != nil {
-		return MediaGrant{}, fmt.Errorf("validate %s response: %w", argOperation, err)
+		return MediaGrant{}, fmt.Errorf("validate %s response: %w", operation, err)
 	}
-	grant, err := domainmedia.NewGrant(argResponse.MediaID, argResponse.UserID, permissionSet)
+	grant, err := domainmedia.NewGrant(response.MediaID, response.UserID, permissionSet)
 	if err != nil {
-		return MediaGrant{}, fmt.Errorf("validate %s response: %w", argOperation, err)
+		return MediaGrant{}, fmt.Errorf("validate %s response: %w", operation, err)
 	}
 
 	return MediaGrant{
@@ -187,13 +187,13 @@ func decodeMediaGrantResponse(
 	}, nil
 }
 
-func mediaGrantPath(argMediaID string, argUserID string) string {
-	return "/api/v1/media/" + url.PathEscape(argMediaID) +
-		"/grants/" + url.PathEscape(argUserID)
+func mediaGrantPath(mediaID string, userID string) string {
+	return "/api/v1/media/" + url.PathEscape(mediaID) +
+		"/grants/" + url.PathEscape(userID)
 }
 
-func permissionNames(argPermissions domainmedia.PermissionSet) []string {
-	values := argPermissions.Values()
+func permissionNames(permissions domainmedia.PermissionSet) []string {
+	values := permissions.Values()
 	names := make([]string, 0, len(values))
 	for _, permission := range values {
 		names = append(names, permission.String())

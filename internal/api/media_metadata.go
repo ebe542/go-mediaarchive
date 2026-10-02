@@ -34,12 +34,12 @@ type MediaMetadataService interface {
 
 // WithMediaMetadataAPI enables authenticated media metadata endpoints.
 func WithMediaMetadataAPI(
-	argResolver SessionResolver,
-	argService MediaMetadataService,
+	resolver SessionResolver,
+	service MediaMetadataService,
 ) Option {
-	return func(argConfiguration *handlerConfiguration) {
-		argConfiguration.mediaResolver = argResolver
-		argConfiguration.mediaMetadata = argService
+	return func(configuration *handlerConfiguration) {
+		configuration.mediaResolver = resolver
+		configuration.mediaMetadata = service
 	}
 }
 
@@ -72,130 +72,130 @@ type mediaMetadataResponse struct {
 }
 
 func (handler *mediaMetadataHandler) create(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := mediaActor(argRequest)
+	actor, exists := mediaActor(request)
 	if !exists {
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 
 		return
 	}
 
-	input, ok := decodeMediaMetadataInput(argResponse, argRequest)
+	input, ok := decodeMediaMetadataInput(response, request)
 	if !ok {
 		return
 	}
-	item, err := handler.media.CreateItem(argRequest.Context(), actor, input)
+	item, err := handler.media.CreateItem(request.Context(), actor, input)
 	if err != nil {
-		writeMediaApplicationError(argResponse, err)
+		writeMediaApplicationError(response, err)
 
 		return
 	}
 
-	argResponse.Header().Set("Location", "/api/v1/media/"+item.ID)
-	writeMediaMetadataResponse(argResponse, item, http.StatusCreated)
+	response.Header().Set("Location", "/api/v1/media/"+item.ID)
+	writeMediaMetadataResponse(response, item, http.StatusCreated)
 }
 
 func (handler *mediaMetadataHandler) read(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := mediaActor(argRequest)
+	actor, exists := mediaActor(request)
 	if !exists {
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 
 		return
 	}
 
 	item, err := handler.media.ItemByID(
-		argRequest.Context(),
+		request.Context(),
 		actor,
-		argRequest.PathValue("id"),
+		request.PathValue("id"),
 	)
 	if err != nil {
-		writeMediaApplicationError(argResponse, err)
+		writeMediaApplicationError(response, err)
 
 		return
 	}
 
-	writeMediaMetadataResponse(argResponse, item, http.StatusOK)
+	writeMediaMetadataResponse(response, item, http.StatusOK)
 }
 
 func (handler *mediaMetadataHandler) update(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := mediaActor(argRequest)
+	actor, exists := mediaActor(request)
 	if !exists {
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 
 		return
 	}
 
-	input, ok := decodeMediaMetadataInput(argResponse, argRequest)
+	input, ok := decodeMediaMetadataInput(response, request)
 	if !ok {
 		return
 	}
 	item, err := handler.media.UpdateItem(
-		argRequest.Context(),
+		request.Context(),
 		actor,
-		argRequest.PathValue("id"),
+		request.PathValue("id"),
 		input,
 	)
 	if err != nil {
-		writeMediaApplicationError(argResponse, err)
+		writeMediaApplicationError(response, err)
 
 		return
 	}
 
-	writeMediaMetadataResponse(argResponse, item, http.StatusOK)
+	writeMediaMetadataResponse(response, item, http.StatusOK)
 }
 
 func (handler *mediaMetadataHandler) delete(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := mediaActor(argRequest)
+	actor, exists := mediaActor(request)
 	if !exists {
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 
 		return
 	}
 
 	if err := handler.media.DeleteItem(
-		argRequest.Context(),
+		request.Context(),
 		actor,
-		argRequest.PathValue("id"),
+		request.PathValue("id"),
 	); err != nil {
-		writeMediaApplicationError(argResponse, err)
+		writeMediaApplicationError(response, err)
 
 		return
 	}
 
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusNoContent)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusNoContent)
 }
 
 func decodeMediaMetadataInput(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) (appmedia.CreateItemInput, bool) {
 	var requestBody mediaMetadataRequest
-	if err := decodeJSONRequest(argResponse, argRequest, &requestBody); err != nil {
-		writeInvalidRequest(argResponse)
+	if err := decodeJSONRequest(response, request, &requestBody); err != nil {
+		writeInvalidRequest(response)
 
 		return appmedia.CreateItemInput{}, false
 	}
 	if len(requestBody.SHA256) != sha256.Size*2 ||
 		requestBody.SHA256 != strings.ToLower(requestBody.SHA256) {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return appmedia.CreateItemInput{}, false
 	}
 	checksum, err := hex.DecodeString(requestBody.SHA256)
 	if err != nil {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return appmedia.CreateItemInput{}, false
 	}
@@ -211,65 +211,65 @@ func decodeMediaMetadataInput(
 	}, true
 }
 
-func mediaActor(argRequest *http.Request) (identity.User, bool) {
-	return AuthenticatedUser(argRequest.Context())
+func mediaActor(request *http.Request) (identity.User, bool) {
+	return AuthenticatedUser(request.Context())
 }
 
 func writeMediaMetadataResponse(
-	argResponse http.ResponseWriter,
-	argItem domainmedia.Item,
-	argStatus int,
+	response http.ResponseWriter,
+	item domainmedia.Item,
+	status int,
 ) {
-	authors := append([]string{}, argItem.Authors...)
-	argResponse.Header().Set("Content-Type", "application/json; charset=utf-8")
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(argStatus)
+	authors := append([]string{}, item.Authors...)
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(status)
 
-	_ = json.NewEncoder(argResponse).Encode(mediaMetadataResponse{
-		ID:               argItem.ID,
-		Title:            argItem.Title,
+	_ = json.NewEncoder(response).Encode(mediaMetadataResponse{
+		ID:               item.ID,
+		Title:            item.Title,
 		Authors:          authors,
-		OriginalFilename: argItem.OriginalFilename,
-		Type:             argItem.Type,
-		MIMEType:         argItem.MIMEType,
-		Size:             argItem.Size,
-		SHA256:           hex.EncodeToString(argItem.Checksum[:]),
-		OwnerID:          argItem.OwnerID,
-		CreatedAt:        argItem.CreatedAt.UTC(),
-		UpdatedAt:        argItem.UpdatedAt.UTC(),
+		OriginalFilename: item.OriginalFilename,
+		Type:             item.Type,
+		MIMEType:         item.MIMEType,
+		Size:             item.Size,
+		SHA256:           hex.EncodeToString(item.Checksum[:]),
+		OwnerID:          item.OwnerID,
+		CreatedAt:        item.CreatedAt.UTC(),
+		UpdatedAt:        item.UpdatedAt.UTC(),
 	})
 }
 
-func writeMediaContextError(argResponse http.ResponseWriter) {
+func writeMediaContextError(response http.ResponseWriter) {
 	writeJSONError(
-		argResponse,
+		response,
 		http.StatusInternalServerError,
 		"internal_error",
 		"Internal server error.",
 	)
 }
 
-func writeMediaApplicationError(argResponse http.ResponseWriter, argError error) {
+func writeMediaApplicationError(response http.ResponseWriter, inputError error) {
 	switch {
-	case isInvalidMediaInput(argError):
-		writeInvalidRequest(argResponse)
-	case errors.Is(argError, appmedia.ErrCreationForbidden):
-		writeJSONError(argResponse, http.StatusForbidden, "forbidden", "Access forbidden.")
-	case errors.Is(argError, appmedia.ErrMediaNotFound):
-		writeJSONError(argResponse, http.StatusNotFound, "not_found", "Resource not found.")
-	case errors.Is(argError, domainmedia.ErrItemConflict):
-		writeJSONError(argResponse, http.StatusConflict, "conflict", "Resource conflict.")
+	case isInvalidMediaInput(inputError):
+		writeInvalidRequest(response)
+	case errors.Is(inputError, appmedia.ErrCreationForbidden):
+		writeJSONError(response, http.StatusForbidden, "forbidden", "Access forbidden.")
+	case errors.Is(inputError, appmedia.ErrMediaNotFound):
+		writeJSONError(response, http.StatusNotFound, "not_found", "Resource not found.")
+	case errors.Is(inputError, domainmedia.ErrItemConflict):
+		writeJSONError(response, http.StatusConflict, "conflict", "Resource conflict.")
 	default:
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 	}
 }
 
-func isInvalidMediaInput(argError error) bool {
-	return errors.Is(argError, domainmedia.ErrInvalidTitle) ||
-		errors.Is(argError, domainmedia.ErrInvalidAuthors) ||
-		errors.Is(argError, domainmedia.ErrInvalidOriginalFilename) ||
-		errors.Is(argError, domainmedia.ErrInvalidMediaType) ||
-		errors.Is(argError, domainmedia.ErrInvalidMIMEType) ||
-		errors.Is(argError, domainmedia.ErrInvalidSize) ||
-		errors.Is(argError, domainmedia.ErrInvalidChecksum)
+func isInvalidMediaInput(inputError error) bool {
+	return errors.Is(inputError, domainmedia.ErrInvalidTitle) ||
+		errors.Is(inputError, domainmedia.ErrInvalidAuthors) ||
+		errors.Is(inputError, domainmedia.ErrInvalidOriginalFilename) ||
+		errors.Is(inputError, domainmedia.ErrInvalidMediaType) ||
+		errors.Is(inputError, domainmedia.ErrInvalidMIMEType) ||
+		errors.Is(inputError, domainmedia.ErrInvalidSize) ||
+		errors.Is(inputError, domainmedia.ErrInvalidChecksum)
 }

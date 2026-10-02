@@ -27,23 +27,23 @@ type recordingSessionService struct {
 }
 
 func (service *recordingSessionService) Create(
-	argContext context.Context,
-	argUsername string,
-	argPassword []byte,
+	ctx context.Context,
+	username string,
+	password []byte,
 ) (appsessions.Created, error) {
 	service.createCalls++
-	service.username = argUsername
-	service.password = append([]byte(nil), argPassword...)
+	service.username = username
+	service.password = append([]byte(nil), password...)
 
 	return service.createdSession, service.createError
 }
 
 func (service *recordingSessionService) Revoke(
-	argContext context.Context,
-	argAccessToken string,
+	ctx context.Context,
+	accessToken string,
 ) error {
 	service.revokeCalls++
-	service.revokedToken = argAccessToken
+	service.revokedToken = accessToken
 
 	return service.revokeError
 }
@@ -61,39 +61,39 @@ type recordingAttemptLimiter struct {
 }
 
 func (limiter *recordingAttemptLimiter) Allow(
-	argUsername string,
-	argSourceIP string,
-	argNow time.Time,
+	username string,
+	sourceIP string,
+	now time.Time,
 ) bool {
-	limiter.sourceIP = argSourceIP
+	limiter.sourceIP = sourceIP
 
 	return limiter.allowed
 }
 
 func (limiter *recordingAttemptLimiter) RecordFailure(
-	argUsername string,
-	argSourceIP string,
-	argNow time.Time,
+	username string,
+	sourceIP string,
+	now time.Time,
 ) {
 	limiter.failureCalls++
-	limiter.failedUsername = argUsername
-	limiter.failedSourceIP = argSourceIP
+	limiter.failedUsername = username
+	limiter.failedSourceIP = sourceIP
 }
 
 func (limiter *recordingAttemptLimiter) RecordSuccess(
-	argUsername string,
-	argSourceIP string,
+	username string,
+	sourceIP string,
 ) {
-	limiter.successfulUsername = argUsername
+	limiter.successfulUsername = username
 }
 
 func (limiter *recordingAttemptLimiter) Cancel(
-	argUsername string,
-	argSourceIP string,
+	username string,
+	sourceIP string,
 ) {
 	limiter.cancelCalls++
-	limiter.canceledUsername = argUsername
-	limiter.canceledSourceIP = argSourceIP
+	limiter.canceledUsername = username
+	limiter.canceledSourceIP = sourceIP
 }
 
 func TestCreateSessionEndpointReturnsOpaqueToken(t *testing.T) {

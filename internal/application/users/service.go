@@ -47,34 +47,34 @@ type Service struct {
 
 // NewService creates a user application service.
 func NewService(
-	argRepository Repository,
-	argIDGenerator IDGenerator,
-	argClock Clock,
+	repository Repository,
+	idGenerator IDGenerator,
+	clock Clock,
 ) *Service {
 	return &Service{
-		repository:  argRepository,
-		generateID:  argIDGenerator,
-		currentTime: argClock,
+		repository:  repository,
+		generateID:  idGenerator,
+		currentTime: clock,
 	}
 }
 
 // CreateUser validates and persists a new user identity.
 func (service *Service) CreateUser(
-	argContext context.Context,
-	argInput CreateUserInput,
+	ctx context.Context,
+	input CreateUserInput,
 ) (identity.User, error) {
 	user, err := identity.NewUser(
 		service.generateID(),
-		argInput.Username,
-		argInput.DisplayName,
-		argInput.Role,
+		input.Username,
+		input.DisplayName,
+		input.Role,
 		service.currentTime(),
 	)
 	if err != nil {
 		return identity.User{}, fmt.Errorf("create user identity: %w", err)
 	}
 
-	if err := service.repository.Create(argContext, user); err != nil {
+	if err := service.repository.Create(ctx, user); err != nil {
 		return identity.User{}, fmt.Errorf("persist user identity: %w", err)
 	}
 
@@ -83,10 +83,10 @@ func (service *Service) CreateUser(
 
 // UserByID retrieves a user identity by its stable ID.
 func (service *Service) UserByID(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) (identity.User, error) {
-	user, err := service.repository.FindByID(argContext, argID)
+	user, err := service.repository.FindByID(ctx, id)
 	if err != nil {
 		return identity.User{}, fmt.Errorf(
 			"retrieve user by ID: %w",
@@ -99,10 +99,10 @@ func (service *Service) UserByID(
 
 // UserByUsername retrieves a user by its normalized username.
 func (service *Service) UserByUsername(
-	argContext context.Context,
-	argUsername string,
+	ctx context.Context,
+	username string,
 ) (identity.User, error) {
-	normalizedUsername, err := identity.NormalizeUsername(argUsername)
+	normalizedUsername, err := identity.NormalizeUsername(username)
 	if err != nil {
 		return identity.User{}, fmt.Errorf(
 			"normalize username: %w",
@@ -111,7 +111,7 @@ func (service *Service) UserByUsername(
 	}
 
 	user, err := service.repository.FindByUsername(
-		argContext,
+		ctx,
 		normalizedUsername,
 	)
 	if err != nil {
@@ -126,16 +126,16 @@ func (service *Service) UserByUsername(
 
 // UpdateUser validates and persists mutable user details.
 func (service *Service) UpdateUser(
-	argContext context.Context,
-	argActorID string,
-	argID string,
-	argInput UpdateUserInput,
+	ctx context.Context,
+	actorID string,
+	id string,
+	input UpdateUserInput,
 ) (identity.User, error) {
-	if err := identity.ValidateUserID(argID); err != nil {
+	if err := identity.ValidateUserID(id); err != nil {
 		return identity.User{}, err
 	}
 
-	existingUser, err := service.repository.FindByID(argContext, argID)
+	existingUser, err := service.repository.FindByID(ctx, id)
 	if err != nil {
 		return identity.User{}, fmt.Errorf(
 			"retrieve user for update: %w",
@@ -144,9 +144,9 @@ func (service *Service) UpdateUser(
 	}
 
 	updatedUser, err := existingUser.UpdateDetails(
-		argInput.Username,
-		argInput.DisplayName,
-		argInput.Role,
+		input.Username,
+		input.DisplayName,
+		input.Role,
 		service.currentTime(),
 	)
 	if err != nil {
@@ -156,14 +156,14 @@ func (service *Service) UpdateUser(
 		)
 	}
 
-	if argActorID == existingUser.ID &&
+	if actorID == existingUser.ID &&
 		existingUser.Role == identity.RoleAdmin &&
 		updatedUser.Role != identity.RoleAdmin {
 		return identity.User{}, ErrSelfLockout
 	}
 
 	if err := service.repository.UpdatePreservingLastAdministrator(
-		argContext,
+		ctx,
 		updatedUser,
 	); err != nil {
 		return identity.User{}, fmt.Errorf(
@@ -177,16 +177,16 @@ func (service *Service) UpdateUser(
 
 // SetUserActive changes and persists a user's activation state.
 func (service *Service) SetUserActive(
-	argContext context.Context,
-	argActorID string,
-	argID string,
-	argActive bool,
+	ctx context.Context,
+	actorID string,
+	id string,
+	active bool,
 ) (identity.User, error) {
-	if err := identity.ValidateUserID(argID); err != nil {
+	if err := identity.ValidateUserID(id); err != nil {
 		return identity.User{}, err
 	}
 
-	existingUser, err := service.repository.FindByID(argContext, argID)
+	existingUser, err := service.repository.FindByID(ctx, id)
 	if err != nil {
 		return identity.User{}, fmt.Errorf(
 			"retrieve user for activation update: %w",
@@ -194,18 +194,18 @@ func (service *Service) SetUserActive(
 		)
 	}
 
-	if argActorID == existingUser.ID &&
+	if actorID == existingUser.ID &&
 		existingUser.Role == identity.RoleAdmin &&
-		!argActive {
+		!active {
 		return identity.User{}, ErrSelfLockout
 	}
 
-	if existingUser.Active == argActive {
+	if existingUser.Active == active {
 		return existingUser, nil
 	}
 
 	updatedUser, err := existingUser.SetActive(
-		argActive,
+		active,
 		service.currentTime(),
 	)
 	if err != nil {
@@ -216,7 +216,7 @@ func (service *Service) SetUserActive(
 	}
 
 	if err := service.repository.UpdatePreservingLastAdministrator(
-		argContext,
+		ctx,
 		updatedUser,
 	); err != nil {
 		return identity.User{}, fmt.Errorf(
@@ -230,20 +230,20 @@ func (service *Service) SetUserActive(
 
 // DeleteUser permanently removes another user and their authentication data.
 func (service *Service) DeleteUser(
-	argContext context.Context,
-	argActorID string,
-	argID string,
+	ctx context.Context,
+	actorID string,
+	id string,
 ) error {
-	if err := identity.ValidateUserID(argID); err != nil {
+	if err := identity.ValidateUserID(id); err != nil {
 		return err
 	}
-	if argActorID == argID {
+	if actorID == id {
 		return ErrSelfDeletion
 	}
 
 	if err := service.repository.DeletePreservingLastAdministrator(
-		argContext,
-		argID,
+		ctx,
+		id,
 	); err != nil {
 		return fmt.Errorf("delete user identity: %w", err)
 	}

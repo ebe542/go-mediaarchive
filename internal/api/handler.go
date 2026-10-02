@@ -7,10 +7,10 @@ import (
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
 
-func NewHandler(argOptions ...Option) http.Handler {
+func NewHandler(options ...Option) http.Handler {
 	configuration := handlerConfiguration{}
 
-	for _, option := range argOptions {
+	for _, option := range options {
 		option(&configuration)
 	}
 
@@ -77,10 +77,10 @@ func NewHandler(argOptions ...Option) http.Handler {
 			users: configuration.userWriter,
 		}
 
-		administratorOnly := func(argHandler http.Handler) http.Handler {
+		administratorOnly := func(handler http.Handler) http.Handler {
 			return RequireAuthentication(
 				configuration.sessionResolver,
-				RequireRoles(argHandler, identity.RoleAdmin),
+				RequireRoles(handler, identity.RoleAdmin),
 			)
 		}
 
@@ -174,8 +174,8 @@ func NewHandler(argOptions ...Option) http.Handler {
 	if configuration.mediaResolver != nil &&
 		configuration.mediaMetadata != nil {
 		mediaHandler := &mediaMetadataHandler{media: configuration.mediaMetadata}
-		authenticated := func(argHandler http.Handler) http.Handler {
-			return RequireAuthentication(configuration.mediaResolver, argHandler)
+		authenticated := func(handler http.Handler) http.Handler {
+			return RequireAuthentication(configuration.mediaResolver, handler)
 		}
 
 		mux.Handle(
@@ -215,8 +215,8 @@ func NewHandler(argOptions ...Option) http.Handler {
 	if configuration.mediaGrantResolver != nil &&
 		configuration.mediaGrants != nil {
 		grantHandler := &mediaGrantHandler{grants: configuration.mediaGrants}
-		authenticated := func(argHandler http.Handler) http.Handler {
-			return RequireAuthentication(configuration.mediaGrantResolver, argHandler)
+		authenticated := func(handler http.Handler) http.Handler {
+			return RequireAuthentication(configuration.mediaGrantResolver, handler)
 		}
 
 		mux.Handle(

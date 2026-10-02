@@ -39,39 +39,39 @@ type Location struct {
 
 // NewLocation validates and creates a managed-content location.
 func NewLocation(
-	argMediaID string,
-	argStorageKey string,
-	argStoredAt time.Time,
+	mediaID string,
+	rawStorageKey string,
+	storedAt time.Time,
 ) (Location, error) {
-	parsedID, err := uuid.Parse(argMediaID)
-	if err != nil || parsedID == uuid.Nil || parsedID.String() != argMediaID {
+	parsedID, err := uuid.Parse(mediaID)
+	if err != nil || parsedID == uuid.Nil || parsedID.String() != mediaID {
 		return Location{}, contentMediaIDError()
 	}
 
-	storageKey, err := normalizeStorageKey(argStorageKey)
+	storageKey, err := normalizeStorageKey(rawStorageKey)
 	if err != nil {
 		return Location{}, err
 	}
-	if argStoredAt.IsZero() {
+	if storedAt.IsZero() {
 		return Location{}, ErrInvalidStoredAt
 	}
 
 	return Location{
-		MediaID:    argMediaID,
+		MediaID:    mediaID,
 		StorageKey: storageKey,
-		StoredAt:   argStoredAt.UTC(),
+		StoredAt:   storedAt.UTC(),
 	}, nil
 }
 
 // LocationRepository persists media-to-content associations.
 type LocationRepository interface {
-	Create(argContext context.Context, argLocation Location) error
-	FindByMediaID(argContext context.Context, argMediaID string) (Location, error)
-	Delete(argContext context.Context, argMediaID string) error
+	Create(ctx context.Context, location Location) error
+	FindByMediaID(ctx context.Context, mediaID string) (Location, error)
+	Delete(ctx context.Context, mediaID string) error
 }
 
-func normalizeStorageKey(argStorageKey string) (string, error) {
-	length := utf8.RuneCountInString(argStorageKey)
+func normalizeStorageKey(storageKey string) (string, error) {
+	length := utf8.RuneCountInString(storageKey)
 	if length < 1 || length > maximumStorageKeyLength {
 		return "", fmt.Errorf(
 			"%w: length must be between 1 and %d characters",
@@ -79,18 +79,18 @@ func normalizeStorageKey(argStorageKey string) (string, error) {
 			maximumStorageKeyLength,
 		)
 	}
-	if argStorageKey != strings.TrimSpace(argStorageKey) ||
-		path.IsAbs(argStorageKey) ||
-		argStorageKey == "." ||
-		argStorageKey == ".." ||
-		path.Clean(argStorageKey) != argStorageKey ||
-		strings.ContainsAny(argStorageKey, `\:`) {
+	if storageKey != strings.TrimSpace(storageKey) ||
+		path.IsAbs(storageKey) ||
+		storageKey == "." ||
+		storageKey == ".." ||
+		path.Clean(storageKey) != storageKey ||
+		strings.ContainsAny(storageKey, `\:`) {
 		return "", fmt.Errorf(
 			"%w: expected a normalized relative key",
 			ErrInvalidStorageKey,
 		)
 	}
-	for _, character := range argStorageKey {
+	for _, character := range storageKey {
 		if unicode.IsControl(character) {
 			return "", fmt.Errorf(
 				"%w: control characters are not allowed",
@@ -99,7 +99,7 @@ func normalizeStorageKey(argStorageKey string) (string, error) {
 		}
 	}
 
-	return argStorageKey, nil
+	return storageKey, nil
 }
 
 func contentMediaIDError() error {

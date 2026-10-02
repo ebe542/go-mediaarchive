@@ -34,51 +34,51 @@ type recordingUserWriter struct {
 }
 
 func (writer *recordingUserWriter) CreateUser(
-	argContext context.Context,
-	argInput appusers.CreateUserInput,
+	ctx context.Context,
+	input appusers.CreateUserInput,
 ) (identity.User, error) {
 	writer.createCalls++
-	writer.createInput = argInput
+	writer.createInput = input
 
 	return writer.createdUser, writer.createError
 }
 
 func (writer *recordingUserWriter) UpdateUser(
-	argContext context.Context,
-	argActorID string,
-	argID string,
-	argInput appusers.UpdateUserInput,
+	ctx context.Context,
+	actorID string,
+	id string,
+	input appusers.UpdateUserInput,
 ) (identity.User, error) {
 	writer.updateCalls++
-	writer.actorID = argActorID
-	writer.targetID = argID
-	writer.updateInput = argInput
+	writer.actorID = actorID
+	writer.targetID = id
+	writer.updateInput = input
 
 	return writer.updatedUser, writer.updateError
 }
 
 func (writer *recordingUserWriter) SetUserActive(
-	argContext context.Context,
-	argActorID string,
-	argID string,
-	argActive bool,
+	ctx context.Context,
+	actorID string,
+	id string,
+	active bool,
 ) (identity.User, error) {
 	writer.activeCalls++
-	writer.actorID = argActorID
-	writer.targetID = argID
-	writer.active = argActive
+	writer.actorID = actorID
+	writer.targetID = id
+	writer.active = active
 
 	return writer.activeUser, writer.activeError
 }
 
 func (writer *recordingUserWriter) DeleteUser(
-	argContext context.Context,
-	argActorID string,
-	argID string,
+	ctx context.Context,
+	actorID string,
+	id string,
 ) error {
 	writer.deleteCalls++
-	writer.actorID = argActorID
-	writer.targetID = argID
+	writer.actorID = actorID
+	writer.targetID = id
 
 	return writer.deleteError
 }
@@ -95,14 +95,14 @@ func administratorResolver() *recordingSessionResolver {
 }
 
 func authenticatedJSONRequest(
-	argMethod string,
-	argPath string,
-	argBody string,
+	method string,
+	path string,
+	body string,
 ) *http.Request {
 	request := httptest.NewRequest(
-		argMethod,
-		argPath,
-		strings.NewReader(argBody),
+		method,
+		path,
+		strings.NewReader(body),
 	)
 	request.Header.Set("Authorization", "Bearer admin-session-token")
 	request.Header.Set("Content-Type", "application/json; charset=utf-8")

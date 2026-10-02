@@ -16,31 +16,31 @@ type authenticationUserRepository struct {
 }
 
 func (repository *authenticationUserRepository) Create(
-	argContext context.Context,
-	argUser identity.User,
+	ctx context.Context,
+	user identity.User,
 ) error {
 	return nil
 }
 
 func (repository *authenticationUserRepository) FindByID(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) (identity.User, error) {
 	return identity.User{}, nil
 }
 
 func (repository *authenticationUserRepository) FindByUsername(
-	argContext context.Context,
-	argUsername string,
+	ctx context.Context,
+	username string,
 ) (identity.User, error) {
-	repository.requestedUsername = argUsername
+	repository.requestedUsername = username
 
 	return repository.user, repository.err
 }
 
 func (repository *authenticationUserRepository) Update(
-	argContext context.Context,
-	argUser identity.User,
+	ctx context.Context,
+	user identity.User,
 ) error {
 	return nil
 }
@@ -52,8 +52,8 @@ type authenticationCredentialRepository struct {
 }
 
 func (repository *authenticationCredentialRepository) FindByUserID(
-	argContext context.Context,
-	argUserID string,
+	ctx context.Context,
+	userID string,
 ) (credential.PasswordCredential, error) {
 	repository.calls++
 
@@ -68,11 +68,11 @@ type recordingPasswordVerifier struct {
 }
 
 func (verifier *recordingPasswordVerifier) Verify(
-	argPassword []byte,
-	argEncodedHash string,
+	password []byte,
+	encodedHash string,
 ) (bool, error) {
 	verifier.calls++
-	verifier.encodedHash = argEncodedHash
+	verifier.encodedHash = encodedHash
 
 	return verifier.matches, verifier.err
 }

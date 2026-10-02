@@ -30,14 +30,14 @@ type recordingMediaUploadService struct {
 
 func (service *recordingMediaUploadService) UploadItem(
 	_ context.Context,
-	argActor identity.User,
-	argInput appmedia.UploadInput,
+	actor identity.User,
+	input appmedia.UploadInput,
 ) (domainmedia.Item, error) {
 	service.calls++
-	service.actor = argActor
-	service.input = argInput
+	service.actor = actor
+	service.input = input
 	var readErr error
-	service.content, readErr = io.ReadAll(argInput.Source)
+	service.content, readErr = io.ReadAll(input.Source)
 	if readErr != nil {
 		return domainmedia.Item{}, fmt.Errorf("%w: %v", content.ErrInvalidSource, readErr)
 	}
@@ -166,10 +166,10 @@ func TestMediaUploadHidesOperationalErrors(t *testing.T) {
 }
 
 func validMultipartUpload(
-	argTest *testing.T,
-	argAdditionalPart bool,
+	test *testing.T,
+	additionalPart bool,
 ) (*bytes.Buffer, string) {
-	argTest.Helper()
+	test.Helper()
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	metadataHeader := make(textproto.MIMEHeader)
@@ -177,35 +177,35 @@ func validMultipartUpload(
 	metadataHeader.Set("Content-Type", "application/json")
 	metadata, err := writer.CreatePart(metadataHeader)
 	if err != nil {
-		argTest.Fatalf("create metadata part: %v", err)
+		test.Fatalf("create metadata part: %v", err)
 	}
 	if _, err := io.WriteString(
 		metadata,
 		`{"title":"Security Engineering","authors":["Example Author"],"type":"book"}`,
 	); err != nil {
-		argTest.Fatalf("write metadata: %v", err)
+		test.Fatalf("write metadata: %v", err)
 	}
 	fileHeader := make(textproto.MIMEHeader)
 	fileHeader.Set("Content-Disposition", `form-data; name="file"; filename="security.pdf"`)
 	fileHeader.Set("Content-Type", "application/pdf")
 	file, err := writer.CreatePart(fileHeader)
 	if err != nil {
-		argTest.Fatalf("create file part: %v", err)
+		test.Fatalf("create file part: %v", err)
 	}
 	if _, err := io.WriteString(file, "PDF content"); err != nil {
-		argTest.Fatalf("write file: %v", err)
+		test.Fatalf("write file: %v", err)
 	}
-	if argAdditionalPart {
+	if additionalPart {
 		extra, err := writer.CreateFormField("extra")
 		if err != nil {
-			argTest.Fatalf("create additional part: %v", err)
+			test.Fatalf("create additional part: %v", err)
 		}
 		if _, err := io.WriteString(extra, "unexpected"); err != nil {
-			argTest.Fatalf("write additional part: %v", err)
+			test.Fatalf("write additional part: %v", err)
 		}
 	}
 	if err := writer.Close(); err != nil {
-		argTest.Fatalf("close multipart writer: %v", err)
+		test.Fatalf("close multipart writer: %v", err)
 	}
 
 	return body, writer.FormDataContentType()

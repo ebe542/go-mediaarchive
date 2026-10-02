@@ -26,9 +26,9 @@ func (repository *recordingPasswordChangeRepository) FindByUserID(
 
 func (repository *recordingPasswordChangeRepository) ChangePasswordAndRevokeSessions(
 	_ context.Context,
-	argCredential credential.PasswordCredential,
+	credential credential.PasswordCredential,
 ) error {
-	repository.changed = argCredential
+	repository.changed = credential
 
 	return repository.changeError
 }
@@ -43,18 +43,18 @@ type recordingPasswordVerifierHasher struct {
 }
 
 func (hasher *recordingPasswordVerifierHasher) Verify(
-	argPassword []byte,
+	password []byte,
 	_ string,
 ) (bool, error) {
-	hasher.verifiedValue = append([]byte(nil), argPassword...)
+	hasher.verifiedValue = append([]byte(nil), password...)
 
 	return hasher.matches, hasher.verifyError
 }
 
 func (hasher *recordingPasswordVerifierHasher) Hash(
-	argPassword []byte,
+	password []byte,
 ) (string, error) {
-	hasher.hashedValue = append([]byte(nil), argPassword...)
+	hasher.hashedValue = append([]byte(nil), password...)
 
 	return hasher.hash, hasher.hashError
 }
@@ -170,14 +170,14 @@ func TestChangeServiceRejectsInvalidOrUnchangedNewPassword(t *testing.T) {
 
 func passwordChangeCredential(
 	t *testing.T,
-	argCreatedAt time.Time,
+	createdAt time.Time,
 ) credential.PasswordCredential {
 	t.Helper()
 
 	storedCredential, err := credential.NewPasswordCredential(
 		"123e4567-e89b-12d3-a456-426614174000",
 		"$argon2id$stored-hash",
-		argCreatedAt,
+		createdAt,
 	)
 	if err != nil {
 		t.Fatalf("create password credential fixture: %v", err)

@@ -13,19 +13,19 @@ import (
 // UserReader retrieves user identities for read-only API operations.
 type UserReader interface {
 	UserByID(
-		argContext context.Context,
-		argID string,
+		ctx context.Context,
+		id string,
 	) (identity.User, error)
 }
 
 // WithUserReadAPI enables authenticated read-only user endpoints.
 func WithUserReadAPI(
-	argResolver SessionResolver,
-	argUserReader UserReader,
+	resolver SessionResolver,
+	userReader UserReader,
 ) Option {
-	return func(argConfiguration *handlerConfiguration) {
-		argConfiguration.sessionResolver = argResolver
-		argConfiguration.userReader = argUserReader
+	return func(configuration *handlerConfiguration) {
+		configuration.sessionResolver = resolver
+		configuration.userReader = userReader
 	}
 }
 
@@ -44,13 +44,13 @@ type userResponse struct {
 }
 
 func (handler *userReadHandler) currentUser(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	user, exists := AuthenticatedUser(argRequest.Context())
+	user, exists := AuthenticatedUser(request.Context())
 	if !exists {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -59,20 +59,20 @@ func (handler *userReadHandler) currentUser(
 		return
 	}
 
-	writeUserResponse(argResponse, user)
+	writeUserResponse(response, user)
 }
 
 func (handler *userReadHandler) userByID(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
 	user, err := handler.users.UserByID(
-		argRequest.Context(),
-		argRequest.PathValue("id"),
+		request.Context(),
+		request.PathValue("id"),
 	)
 	if errors.Is(err, identity.ErrUserNotFound) {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusNotFound,
 			"not_found",
 			"Resource not found.",
@@ -82,7 +82,7 @@ func (handler *userReadHandler) userByID(
 	}
 	if err != nil {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -91,43 +91,43 @@ func (handler *userReadHandler) userByID(
 		return
 	}
 
-	writeUserResponse(argResponse, user)
+	writeUserResponse(response, user)
 }
 
 func writeUserResponse(
-	argResponse http.ResponseWriter,
-	argUser identity.User,
+	response http.ResponseWriter,
+	user identity.User,
 ) {
 	writeUserResponseWithStatus(
-		argResponse,
-		argUser,
+		response,
+		user,
 		http.StatusOK,
 	)
 }
 
 func writeUserResponseWithStatus(
-	argResponse http.ResponseWriter,
-	argUser identity.User,
-	argStatus int,
+	response http.ResponseWriter,
+	user identity.User,
+	status int,
 ) {
-	argResponse.Header().Set(
+	response.Header().Set(
 		"Content-Type",
 		"application/json; charset=utf-8",
 	)
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(argStatus)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(status)
 
-	_ = json.NewEncoder(argResponse).Encode(newUserResponse(argUser))
+	_ = json.NewEncoder(response).Encode(newUserResponse(user))
 }
 
-func newUserResponse(argUser identity.User) userResponse {
+func newUserResponse(user identity.User) userResponse {
 	return userResponse{
-		ID:          argUser.ID,
-		Username:    argUser.Username,
-		DisplayName: argUser.DisplayName,
-		Role:        argUser.Role,
-		Active:      argUser.Active,
-		CreatedAt:   argUser.CreatedAt,
-		UpdatedAt:   argUser.UpdatedAt,
+		ID:          user.ID,
+		Username:    user.Username,
+		DisplayName: user.DisplayName,
+		Role:        user.Role,
+		Active:      user.Active,
+		CreatedAt:   user.CreatedAt,
+		UpdatedAt:   user.UpdatedAt,
 	}
 }

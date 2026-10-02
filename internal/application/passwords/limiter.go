@@ -24,34 +24,34 @@ type IPAttemptLimiter struct {
 
 // NewIPAttemptLimiter creates an in-memory source-IP attempt limiter.
 func NewIPAttemptLimiter(
-	argLimit int,
-	argWindow time.Duration,
+	limit int,
+	window time.Duration,
 ) *IPAttemptLimiter {
 	return &IPAttemptLimiter{
-		limit:   argLimit,
-		window:  argWindow,
+		limit:   limit,
+		window:  window,
 		buckets: make(map[string]ipAttemptBucket),
 	}
 }
 
 // Allow reserves capacity for an enrollment attempt when its IP is permitted.
 func (limiter *IPAttemptLimiter) Allow(
-	argSourceIP string,
-	argNow time.Time,
+	sourceIP string,
+	now time.Time,
 ) bool {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
-	limiter.cleanupExpired(argNow)
+	limiter.cleanupExpired(now)
 
-	bucket := limiter.buckets[argSourceIP]
-	if !ipBucketAllows(bucket, limiter.limit, argNow, limiter.window) {
+	bucket := limiter.buckets[sourceIP]
+	if !ipBucketAllows(bucket, limiter.limit, now, limiter.window) {
 		return false
 	}
 
-	limiter.buckets[argSourceIP] = reserveIPBucket(
+	limiter.buckets[sourceIP] = reserveIPBucket(
 		bucket,
-		argNow,
+		now,
 		limiter.window,
 	)
 
@@ -60,34 +60,34 @@ func (limiter *IPAttemptLimiter) Allow(
 
 // RecordFailure converts a reserved attempt into a failed attempt.
 func (limiter *IPAttemptLimiter) RecordFailure(
-	argSourceIP string,
-	argNow time.Time,
+	sourceIP string,
+	now time.Time,
 ) {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
-	limiter.cleanupExpired(argNow)
-	limiter.buckets[argSourceIP] = completeFailedIPAttempt(
-		limiter.buckets[argSourceIP],
-		argNow,
+	limiter.cleanupExpired(now)
+	limiter.buckets[sourceIP] = completeFailedIPAttempt(
+		limiter.buckets[sourceIP],
+		now,
 		limiter.window,
 	)
 }
 
 // RecordSuccess clears previous failures for the source IP.
-func (limiter *IPAttemptLimiter) RecordSuccess(argSourceIP string) {
+func (limiter *IPAttemptLimiter) RecordSuccess(sourceIP string) {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
-	delete(limiter.buckets, argSourceIP)
+	delete(limiter.buckets, sourceIP)
 }
 
 // Cancel releases capacity after an attempt that must not affect the limit.
-func (limiter *IPAttemptLimiter) Cancel(argSourceIP string) {
+func (limiter *IPAttemptLimiter) Cancel(sourceIP string) {
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
 
-	bucket, exists := limiter.buckets[argSourceIP]
+	bucket, exists := limiter.buckets[sourceIP]
 	if !exists {
 		return
 	}
@@ -97,77 +97,77 @@ func (limiter *IPAttemptLimiter) Cancel(argSourceIP string) {
 	}
 
 	if bucket.failures == 0 && bucket.pending == 0 {
-		delete(limiter.buckets, argSourceIP)
+		delete(limiter.buckets, sourceIP)
 
 		return
 	}
 
-	limiter.buckets[argSourceIP] = bucket
+	limiter.buckets[sourceIP] = bucket
 }
 
 func ipBucketAllows(
-	argBucket ipAttemptBucket,
-	argLimit int,
-	argNow time.Time,
-	argWindow time.Duration,
+	bucket ipAttemptBucket,
+	limit int,
+	now time.Time,
+	window time.Duration,
 ) bool {
-	if argBucket.startedAt.IsZero() ||
-		!argNow.Before(argBucket.startedAt.Add(argWindow)) {
+	if bucket.startedAt.IsZero() ||
+		!now.Before(bucket.startedAt.Add(window)) {
 		return true
 	}
 
-	return argBucket.failures+argBucket.pending < argLimit
+	return bucket.failures+bucket.pending < limit
 }
 
 func reserveIPBucket(
-	argBucket ipAttemptBucket,
-	argNow time.Time,
-	argWindow time.Duration,
+	bucket ipAttemptBucket,
+	now time.Time,
+	window time.Duration,
 ) ipAttemptBucket {
-	if argBucket.startedAt.IsZero() ||
-		!argNow.Before(argBucket.startedAt.Add(argWindow)) {
+	if bucket.startedAt.IsZero() ||
+		!now.Before(bucket.startedAt.Add(window)) {
 		return ipAttemptBucket{
 			pending:   1,
-			startedAt: argNow,
+			startedAt: now,
 		}
 	}
 
-	argBucket.pending++
+	bucket.pending++
 
-	return argBucket
+	return bucket
 }
 
 func completeFailedIPAttempt(
-	argBucket ipAttemptBucket,
-	argNow time.Time,
-	argWindow time.Duration,
+	bucket ipAttemptBucket,
+	now time.Time,
+	window time.Duration,
 ) ipAttemptBucket {
-	if argBucket.startedAt.IsZero() ||
-		!argNow.Before(argBucket.startedAt.Add(argWindow)) {
+	if bucket.startedAt.IsZero() ||
+		!now.Before(bucket.startedAt.Add(window)) {
 		return ipAttemptBucket{
 			failures:  1,
-			startedAt: argNow,
+			startedAt: now,
 		}
 	}
 
-	if argBucket.pending > 0 {
-		argBucket.pending--
+	if bucket.pending > 0 {
+		bucket.pending--
 	}
-	argBucket.failures++
+	bucket.failures++
 
-	return argBucket
+	return bucket
 }
 
-func (limiter *IPAttemptLimiter) cleanupExpired(argNow time.Time) {
-	if !limiter.nextCleanup.IsZero() && argNow.Before(limiter.nextCleanup) {
+func (limiter *IPAttemptLimiter) cleanupExpired(now time.Time) {
+	if !limiter.nextCleanup.IsZero() && now.Before(limiter.nextCleanup) {
 		return
 	}
 
 	for key, bucket := range limiter.buckets {
-		if !argNow.Before(bucket.startedAt.Add(limiter.window)) {
+		if !now.Before(bucket.startedAt.Add(limiter.window)) {
 			delete(limiter.buckets, key)
 		}
 	}
 
-	limiter.nextCleanup = argNow.Add(limiter.window)
+	limiter.nextCleanup = now.Add(limiter.window)
 }

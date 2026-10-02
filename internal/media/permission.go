@@ -79,8 +79,8 @@ func (permission Permission) String() string {
 }
 
 // ParsePermission returns the permission represented by one stable external name.
-func ParsePermission(argName string) (Permission, error) {
-	switch argName {
+func ParsePermission(name string) (Permission, error) {
+	switch name {
 	case "discover":
 		return PermissionDiscover, nil
 	case "read":
@@ -94,7 +94,7 @@ func ParsePermission(argName string) (Permission, error) {
 	case "share":
 		return PermissionShare, nil
 	default:
-		return 0, fmt.Errorf("%w: %q", ErrInvalidPermission, argName)
+		return 0, fmt.Errorf("%w: %q", ErrInvalidPermission, name)
 	}
 }
 
@@ -102,9 +102,9 @@ func ParsePermission(argName string) (Permission, error) {
 type PermissionSet uint8
 
 // NewPermissionSet combines distinct permissions into one validated set.
-func NewPermissionSet(argPermissions ...Permission) (PermissionSet, error) {
+func NewPermissionSet(requested ...Permission) (PermissionSet, error) {
 	var permissions PermissionSet
-	for _, permission := range argPermissions {
+	for _, permission := range requested {
 		if !permission.Valid() {
 			return 0, fmt.Errorf(
 				"%w: %w: %s",
@@ -140,10 +140,10 @@ func (permissions PermissionSet) Valid() bool {
 }
 
 // Has reports whether the set contains one requested permission.
-func (permissions PermissionSet) Has(argPermission Permission) bool {
+func (permissions PermissionSet) Has(permission Permission) bool {
 	return permissions.Valid() &&
-		argPermission.Valid() &&
-		permissions&PermissionSet(argPermission) != 0
+		permission.Valid() &&
+		permissions&PermissionSet(permission) != 0
 }
 
 // Values returns permissions in stable external presentation order.
@@ -182,14 +182,14 @@ type Grant struct {
 
 // NewGrant validates and creates an explicit media permission grant.
 func NewGrant(
-	argMediaID string,
-	argUserID string,
-	argPermissions PermissionSet,
+	mediaID string,
+	userID string,
+	permissions PermissionSet,
 ) (Grant, error) {
 	grant := Grant{
-		MediaID:     argMediaID,
-		UserID:      argUserID,
-		Permissions: argPermissions,
+		MediaID:     mediaID,
+		UserID:      userID,
+		Permissions: permissions,
 	}
 	if err := grant.Validate(); err != nil {
 		return Grant{}, err

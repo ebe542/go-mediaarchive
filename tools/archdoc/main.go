@@ -56,7 +56,7 @@ func main() {
 	}
 }
 
-func run(argContext context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
 	flags := flag.NewFlagSet("archdoc", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 
@@ -72,7 +72,7 @@ func run(argContext context.Context, args []string, stdout io.Writer, stderr io.
 		return errors.New("archdoc does not accept positional arguments")
 	}
 
-	packages, err := loadPackages(argContext)
+	packages, err := loadPackages(ctx)
 	if err != nil {
 		return err
 	}
@@ -90,8 +90,8 @@ func run(argContext context.Context, args []string, stdout io.Writer, stderr io.
 	return nil
 }
 
-func loadPackages(argContext context.Context) ([]listedPackage, error) {
-	command := exec.CommandContext(argContext, "go", "list", "-json", "./...")
+func loadPackages(ctx context.Context) ([]listedPackage, error) {
+	command := exec.CommandContext(ctx, "go", "list", "-json", "./...")
 	output, err := command.Output()
 	if err != nil {
 		var exitError *exec.ExitError

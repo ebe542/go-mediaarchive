@@ -79,8 +79,8 @@ func TestContentDirectoryFromEnvironment(t *testing.T) {
 		"default":     {"", defaultContentDirectory},
 	} {
 		t.Run(name, func(t *testing.T) {
-			actual := contentDirectoryFromEnvironment(func(argName string) string {
-				if argName == "MEDIAARCHIVE_CONTENT_DIRECTORY" {
+			actual := contentDirectoryFromEnvironment(func(name string) string {
+				if name == "MEDIAARCHIVE_CONTENT_DIRECTORY" {
 					return testCase.environment
 				}
 
@@ -341,8 +341,8 @@ func TestPasswordEnrollmentLifetimeConfiguration(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			configurationValue := passwordEnrollmentLifetimeDefault(
-				func(argName string) string {
-					if argName == "MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME" {
+				func(name string) string {
+					if name == "MEDIAARCHIVE_PASSWORD_ENROLLMENT_LIFETIME" {
 						return testCase.environment
 					}
 
@@ -485,8 +485,8 @@ func TestTLSPathsFromEnvironment(t *testing.T) {
 		"MEDIAARCHIVE_TLS_PRIVATE_KEY": "certificates/server.key",
 	}
 
-	getenv := func(argName string) string {
-		return environment[argName]
+	getenv := func(name string) string {
+		return environment[name]
 	}
 
 	if certificatePath := tlsCertificatePathFromEnvironment(

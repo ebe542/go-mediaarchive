@@ -12,21 +12,21 @@ import (
 // PasswordChangeService verifies and replaces an authenticated user's password.
 type PasswordChangeService interface {
 	ChangePassword(
-		argContext context.Context,
-		argUserID string,
-		argCurrentPassword []byte,
-		argNewPassword []byte,
+		ctx context.Context,
+		userID string,
+		currentPassword []byte,
+		newPassword []byte,
 	) error
 }
 
 // WithPasswordChangeAPI enables authenticated self-service password changes.
 func WithPasswordChangeAPI(
-	argResolver SessionResolver,
-	argService PasswordChangeService,
+	resolver SessionResolver,
+	service PasswordChangeService,
 ) Option {
-	return func(argConfiguration *handlerConfiguration) {
-		argConfiguration.passwordChangeResolver = argResolver
-		argConfiguration.passwordChanges = argService
+	return func(configuration *handlerConfiguration) {
+		configuration.passwordChangeResolver = resolver
+		configuration.passwordChanges = service
 	}
 }
 
@@ -35,13 +35,13 @@ type passwordChangeHandler struct {
 }
 
 func (handler *passwordChangeHandler) changeCurrentUserPassword(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	user, exists := AuthenticatedUser(argRequest.Context())
+	user, exists := AuthenticatedUser(request.Context())
 	if !exists {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -55,13 +55,13 @@ func (handler *passwordChangeHandler) changeCurrentUserPassword(
 		NewPassword     string `json:"newPassword"`
 	}
 	if err := decodeJSONRequest(
-		argResponse,
-		argRequest,
+		response,
+		request,
 		&requestBody,
 	); err != nil ||
 		requestBody.CurrentPassword == "" ||
 		requestBody.NewPassword == "" {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
@@ -72,14 +72,14 @@ func (handler *passwordChangeHandler) changeCurrentUserPassword(
 	defer clearBytes(newPassword)
 
 	err := handler.service.ChangePassword(
-		argRequest.Context(),
+		request.Context(),
 		user.ID,
 		currentPassword,
 		newPassword,
 	)
 	if errors.Is(err, apppasswords.ErrInvalidCurrentPassword) {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusUnauthorized,
 			"invalid_credentials",
 			"Invalid current password.",
@@ -89,13 +89,13 @@ func (handler *passwordChangeHandler) changeCurrentUserPassword(
 	}
 	if errors.Is(err, password.ErrInvalidPassword) ||
 		errors.Is(err, apppasswords.ErrPasswordUnchanged) {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
 	if err != nil {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -104,6 +104,6 @@ func (handler *passwordChangeHandler) changeCurrentUserPassword(
 		return
 	}
 
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusNoContent)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusNoContent)
 }

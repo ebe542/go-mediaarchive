@@ -22,20 +22,20 @@ func TestUploadMediaStreamsMultipartRequest(t *testing.T) {
 	data := []byte("streamed media content")
 	checksum := sha256.Sum256(data)
 	server := httptest.NewServer(http.HandlerFunc(func(
-		argResponse http.ResponseWriter,
-		argRequest *http.Request,
+		response http.ResponseWriter,
+		request *http.Request,
 	) {
-		if argRequest.Method != http.MethodPost || argRequest.URL.Path != "/api/v1/media/uploads" {
-			t.Errorf("unexpected request %s %s", argRequest.Method, argRequest.URL.Path)
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/media/uploads" {
+			t.Errorf("unexpected request %s %s", request.Method, request.URL.Path)
 		}
-		if argRequest.Header.Get("Authorization") != "Bearer upload-token" {
-			t.Errorf("unexpected authorization header %q", argRequest.Header.Get("Authorization"))
+		if request.Header.Get("Authorization") != "Bearer upload-token" {
+			t.Errorf("unexpected authorization header %q", request.Header.Get("Authorization"))
 		}
-		mediaType, parameters, err := mime.ParseMediaType(argRequest.Header.Get("Content-Type"))
+		mediaType, parameters, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 		if err != nil || mediaType != "multipart/form-data" {
 			t.Fatalf("parse multipart Content-Type: %v", err)
 		}
-		reader := multipart.NewReader(argRequest.Body, parameters["boundary"])
+		reader := multipart.NewReader(request.Body, parameters["boundary"])
 		metadataPart, err := reader.NextPart()
 		if err != nil {
 			t.Fatalf("read metadata part: %v", err)
@@ -63,10 +63,10 @@ func TestUploadMediaStreamsMultipartRequest(t *testing.T) {
 			t.Fatalf("unexpected multipart upload: %+v %q %q", metadata, filePart.FileName(), written)
 		}
 
-		argResponse.Header().Set("Content-Type", "application/json")
-		argResponse.WriteHeader(http.StatusCreated)
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusCreated)
 		_, _ = fmt.Fprintf(
-			argResponse,
+			response,
 			`{"id":"123e4567-e89b-12d3-a456-426614174000",`+
 				`"title":"Security Engineering","authors":["Example Author"],`+
 				`"originalFilename":"security.pdf","type":"book",`+

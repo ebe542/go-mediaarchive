@@ -19,8 +19,8 @@ var ErrInvalidEnrollment = errors.New("invalid password enrollment")
 // UserFinder retrieves the identity receiving an initial credential.
 type UserFinder interface {
 	FindByID(
-		argContext context.Context,
-		argID string,
+		ctx context.Context,
+		id string,
 	) (identity.User, error)
 }
 
@@ -31,7 +31,7 @@ type EnrollmentTokenGenerator interface {
 
 // PasswordHasher creates an encoded password hash.
 type PasswordHasher interface {
-	Hash(argPassword []byte) (string, error)
+	Hash(password []byte) (string, error)
 }
 
 // Clock returns the current application time.
@@ -55,29 +55,29 @@ type Service struct {
 
 // NewService creates a password enrollment service with explicit dependencies.
 func NewService(
-	argUsers UserFinder,
-	argEnrollments credential.PasswordEnrollmentRepository,
-	argTokens EnrollmentTokenGenerator,
-	argHasher PasswordHasher,
-	argClock Clock,
-	argLifetime time.Duration,
+	users UserFinder,
+	enrollments credential.PasswordEnrollmentRepository,
+	tokens EnrollmentTokenGenerator,
+	hasher PasswordHasher,
+	clock Clock,
+	lifetime time.Duration,
 ) *Service {
 	return &Service{
-		users:       argUsers,
-		enrollments: argEnrollments,
-		tokens:      argTokens,
-		hasher:      argHasher,
-		currentTime: argClock,
-		lifetime:    argLifetime,
+		users:       users,
+		enrollments: enrollments,
+		tokens:      tokens,
+		hasher:      hasher,
+		currentTime: clock,
+		lifetime:    lifetime,
 	}
 }
 
 // IssueEnrollment creates or replaces a user's one-time enrollment token.
 func (service *Service) IssueEnrollment(
-	argContext context.Context,
-	argUserID string,
+	ctx context.Context,
+	userID string,
 ) (IssuedEnrollment, error) {
-	user, err := service.users.FindByID(argContext, argUserID)
+	user, err := service.users.FindByID(ctx, userID)
 	if err != nil {
 		return IssuedEnrollment{}, fmt.Errorf(
 			"retrieve password enrollment user: %w",
@@ -107,7 +107,7 @@ func (service *Service) IssueEnrollment(
 	}
 
 	if err := service.enrollments.SaveForCredentiallessUser(
-		argContext,
+		ctx,
 		enrollment,
 	); err != nil {
 		return IssuedEnrollment{}, fmt.Errorf(
@@ -124,13 +124,13 @@ func (service *Service) IssueEnrollment(
 
 // CompleteEnrollment creates an initial credential from a valid one-time token.
 func (service *Service) CompleteEnrollment(
-	argContext context.Context,
-	argToken string,
-	argPassword []byte,
+	ctx context.Context,
+	token string,
+	passwordValue []byte,
 ) error {
-	tokenHash := credential.HashEnrollmentToken(argToken)
+	tokenHash := credential.HashEnrollmentToken(token)
 	enrollment, err := service.enrollments.FindByTokenHash(
-		argContext,
+		ctx,
 		tokenHash,
 	)
 	if errors.Is(err, credential.ErrPasswordEnrollmentNotFound) {
@@ -145,11 +145,11 @@ func (service *Service) CompleteEnrollment(
 		return ErrInvalidEnrollment
 	}
 
-	if err := password.Validate(argPassword); err != nil {
+	if err := password.Validate(passwordValue); err != nil {
 		return fmt.Errorf("validate enrolled password: %w", err)
 	}
 
-	encodedHash, err := service.hasher.Hash(argPassword)
+	encodedHash, err := service.hasher.Hash(passwordValue)
 	if err != nil {
 		return fmt.Errorf("hash enrolled password: %w", err)
 	}
@@ -164,7 +164,7 @@ func (service *Service) CompleteEnrollment(
 	}
 
 	if err := service.enrollments.CreateCredentialAndConsume(
-		argContext,
+		ctx,
 		tokenHash,
 		passwordCredential,
 		currentTime,

@@ -12,14 +12,14 @@ import (
 
 // NewHTTPClient creates a TLS 1.3 client with an optional additional CA.
 func NewHTTPClient(
-	argServerURL string,
-	argCACertificatePath string,
+	serverURL string,
+	caCertificatePath string,
 ) (*http.Client, error) {
-	if argCACertificatePath == "" {
+	if caCertificatePath == "" {
 		return http.DefaultClient, nil
 	}
 
-	parsedURL, err := url.Parse(argServerURL)
+	parsedURL, err := url.Parse(serverURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse server URL: %w", err)
 	}
@@ -29,7 +29,7 @@ func NewHTTPClient(
 		)
 	}
 
-	certificatePEM, err := os.ReadFile(argCACertificatePath)
+	certificatePEM, err := os.ReadFile(caCertificatePath)
 	if err != nil {
 		return nil, fmt.Errorf("read CA certificate: %w", err)
 	}

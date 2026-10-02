@@ -145,48 +145,48 @@ func TestMediaGrantRepositoryEnforcesForeignKeys(t *testing.T) {
 }
 
 func mediaGrantRepositoryFixture(
-	argTest *testing.T,
+	test *testing.T,
 ) (context.Context, *sqlitestore.MediaGrantRepository) {
-	argTest.Helper()
+	test.Helper()
 
-	ctx, database := openMediaSchemaDatabase(argTest)
-	insertMediaSchemaUser(argTest, ctx, database, schemaOwnerID, "media_owner")
-	insertMediaSchemaUser(argTest, ctx, database, schemaGranteeID, "media_grantee")
-	insertMediaSchemaUser(argTest, ctx, database, secondSchemaGranteeID, "second_grantee")
-	insertValidSchemaMedia(argTest, ctx, database)
+	ctx, database := openMediaSchemaDatabase(test)
+	insertMediaSchemaUser(test, ctx, database, schemaOwnerID, "media_owner")
+	insertMediaSchemaUser(test, ctx, database, schemaGranteeID, "media_grantee")
+	insertMediaSchemaUser(test, ctx, database, secondSchemaGranteeID, "second_grantee")
+	insertValidSchemaMedia(test, ctx, database)
 
 	return ctx, sqlitestore.NewMediaGrantRepository(database)
 }
 
 func mediaGrantFixture(
-	argTest *testing.T,
-	argUserID string,
-	argPermissions ...media.Permission,
+	test *testing.T,
+	userID string,
+	permissions ...media.Permission,
 ) media.Grant {
-	argTest.Helper()
+	test.Helper()
 
 	grant, err := media.NewGrant(
 		schemaMediaID,
-		argUserID,
-		mediaPermissionSet(argTest, argPermissions...),
+		userID,
+		mediaPermissionSet(test, permissions...),
 	)
 	if err != nil {
-		argTest.Fatalf("create media grant fixture: %v", err)
+		test.Fatalf("create media grant fixture: %v", err)
 	}
 
 	return grant
 }
 
 func mediaPermissionSet(
-	argTest *testing.T,
-	argPermissions ...media.Permission,
+	test *testing.T,
+	requested ...media.Permission,
 ) media.PermissionSet {
-	argTest.Helper()
+	test.Helper()
 
-	permissions, err := media.NewPermissionSet(argPermissions...)
+	permissionSet, err := media.NewPermissionSet(requested...)
 	if err != nil {
-		argTest.Fatalf("create permission set fixture: %v", err)
+		test.Fatalf("create permission set fixture: %v", err)
 	}
 
-	return permissions
+	return permissionSet
 }

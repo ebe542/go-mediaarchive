@@ -10,10 +10,10 @@ Options:
   --help       Show this help text.
 `
 
-func (app application) runQualityGateCommand(argArguments []string) error {
+func (app application) runQualityGateCommand(arguments []string) error {
 	runAct := false
 	runRace := true
-	for _, argument := range argArguments {
+	for _, argument := range arguments {
 		switch argument {
 		case "--act":
 			runAct = true

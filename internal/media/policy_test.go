@@ -232,45 +232,45 @@ func TestAuthorizeRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
-func validPolicyItem(argTest *testing.T) media.Item {
-	argTest.Helper()
+func validPolicyItem(test *testing.T) media.Item {
+	test.Helper()
 
 	item, err := newValidItem([]string{"Archive Author"})
 	if err != nil {
-		argTest.Fatalf("create policy media item: %v", err)
+		test.Fatalf("create policy media item: %v", err)
 	}
 
 	return item
 }
 
 func policyUser(
-	argID string,
-	argRole identity.Role,
-	argActive bool,
+	id string,
+	role identity.Role,
+	active bool,
 ) identity.User {
 	return identity.User{
-		ID:       argID,
+		ID:       id,
 		Username: "policy_user",
-		Role:     argRole,
-		Active:   argActive,
+		Role:     role,
+		Active:   active,
 	}
 }
 
 func validPolicyGrant(
-	argTest *testing.T,
-	argMediaID string,
-	argUserID string,
-	argPermission media.Permission,
+	test *testing.T,
+	mediaID string,
+	userID string,
+	permission media.Permission,
 ) media.Grant {
-	argTest.Helper()
+	test.Helper()
 
 	grant, err := media.NewGrant(
-		argMediaID,
-		argUserID,
-		permissionSet(argTest, argPermission),
+		mediaID,
+		userID,
+		permissionSet(test, permission),
 	)
 	if err != nil {
-		argTest.Fatalf("create policy grant: %v", err)
+		test.Fatalf("create policy grant: %v", err)
 	}
 
 	return grant

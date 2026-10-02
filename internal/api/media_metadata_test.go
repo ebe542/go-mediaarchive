@@ -36,56 +36,56 @@ type recordingMediaMetadataService struct {
 
 func (service *recordingMediaMetadataService) CreateItem(
 	_ context.Context,
-	argActor identity.User,
-	argInput appmedia.CreateItemInput,
+	actor identity.User,
+	input appmedia.CreateItemInput,
 ) (domainmedia.Item, error) {
-	service.record("create", argActor, "")
-	service.createInput = argInput
+	service.record("create", actor, "")
+	service.createInput = input
 
 	return service.item, service.err
 }
 
 func (service *recordingMediaMetadataService) ItemByID(
 	_ context.Context,
-	argActor identity.User,
-	argID string,
+	actor identity.User,
+	id string,
 ) (domainmedia.Item, error) {
-	service.record("read", argActor, argID)
+	service.record("read", actor, id)
 
 	return service.item, service.err
 }
 
 func (service *recordingMediaMetadataService) UpdateItem(
 	_ context.Context,
-	argActor identity.User,
-	argID string,
-	argInput appmedia.UpdateItemInput,
+	actor identity.User,
+	id string,
+	input appmedia.UpdateItemInput,
 ) (domainmedia.Item, error) {
-	service.record("update", argActor, argID)
-	service.updateInput = argInput
+	service.record("update", actor, id)
+	service.updateInput = input
 
 	return service.item, service.err
 }
 
 func (service *recordingMediaMetadataService) DeleteItem(
 	_ context.Context,
-	argActor identity.User,
-	argID string,
+	actor identity.User,
+	id string,
 ) error {
-	service.record("delete", argActor, argID)
+	service.record("delete", actor, id)
 
 	return service.err
 }
 
 func (service *recordingMediaMetadataService) record(
-	argOperation string,
-	argActor identity.User,
-	argID string,
+	operation string,
+	actor identity.User,
+	id string,
 ) {
 	service.calls++
-	service.operation = argOperation
-	service.actor = argActor
-	service.id = argID
+	service.operation = operation
+	service.actor = actor
+	service.id = id
 }
 
 func TestMediaMetadataEndpointsRequireAuthentication(t *testing.T) {
@@ -279,10 +279,10 @@ func TestMediaMetadataMapsApplicationErrors(t *testing.T) {
 	}
 }
 
-func authenticatedMediaRequest(argMethod string, argPath string, argBody string) *http.Request {
-	request := httptest.NewRequest(argMethod, argPath, strings.NewReader(argBody))
+func authenticatedMediaRequest(method string, path string, body string) *http.Request {
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer media-session")
-	if argBody != "" {
+	if body != "" {
 		request.Header.Set("Content-Type", "application/json")
 	}
 
@@ -302,13 +302,13 @@ func validMediaRequestBody() string {
 		strings.Repeat("5a", sha256.Size) + `"}`
 }
 
-func apiMediaItem(argTest *testing.T, argAuthors []string) domainmedia.Item {
-	argTest.Helper()
+func apiMediaItem(test *testing.T, authors []string) domainmedia.Item {
+	test.Helper()
 
 	item, err := domainmedia.NewItem(
 		apiMediaID,
 		"Security Engineering",
-		argAuthors,
+		authors,
 		"security-engineering.pdf",
 		domainmedia.TypeBook,
 		"application/pdf",
@@ -319,18 +319,18 @@ func apiMediaItem(argTest *testing.T, argAuthors []string) domainmedia.Item {
 		time.Date(2026, time.September, 13, 11, 0, 0, 0, time.FixedZone("test", 2*60*60)),
 	)
 	if err != nil {
-		argTest.Fatalf("create media fixture: %v", err)
+		test.Fatalf("create media fixture: %v", err)
 	}
 
 	return item
 }
 
 func assertMediaResponse(
-	argTest *testing.T,
-	argResponse *httptest.ResponseRecorder,
-	argItem domainmedia.Item,
+	test *testing.T,
+	response *httptest.ResponseRecorder,
+	item domainmedia.Item,
 ) {
-	argTest.Helper()
+	test.Helper()
 
 	var responseBody struct {
 		ID        string    `json:"id"`
@@ -339,14 +339,14 @@ func assertMediaResponse(
 		OwnerID   string    `json:"ownerId"`
 		CreatedAt time.Time `json:"createdAt"`
 	}
-	if err := json.NewDecoder(argResponse.Body).Decode(&responseBody); err != nil {
-		argTest.Fatalf("decode media response: %v", err)
+	if err := json.NewDecoder(response.Body).Decode(&responseBody); err != nil {
+		test.Fatalf("decode media response: %v", err)
 	}
-	if responseBody.ID != argItem.ID || responseBody.OwnerID != argItem.OwnerID ||
+	if responseBody.ID != item.ID || responseBody.OwnerID != item.OwnerID ||
 		responseBody.SHA256 != strings.Repeat("5a", sha256.Size) {
-		argTest.Fatalf("unexpected media response %+v", responseBody)
+		test.Fatalf("unexpected media response %+v", responseBody)
 	}
 	if responseBody.CreatedAt.Location() != time.UTC {
-		argTest.Fatalf("expected UTC timestamp, got %s", responseBody.CreatedAt)
+		test.Fatalf("expected UTC timestamp, got %s", responseBody.CreatedAt)
 	}
 }

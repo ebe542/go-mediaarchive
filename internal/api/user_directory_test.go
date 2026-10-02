@@ -25,10 +25,10 @@ type recordingUserLister struct {
 
 func (lister *recordingUserLister) ListUsers(
 	_ context.Context,
-	argInput appusers.ListUsersInput,
+	input appusers.ListUsersInput,
 ) (appusers.UserPage, error) {
 	lister.listCalls++
-	lister.input = argInput
+	lister.input = input
 
 	return lister.page, lister.err
 }
@@ -230,26 +230,26 @@ func TestUserDirectoryHidesApplicationFailures(t *testing.T) {
 }
 
 func userDirectoryTestHandler(
-	argRole identity.Role,
-	argLister api.UserLister,
+	role identity.Role,
+	lister api.UserLister,
 ) http.Handler {
 	return api.NewHandler(
 		api.WithUserDirectoryAPI(
 			&recordingSessionResolver{
 				user: identity.User{
 					ID:     "223e4567-e89b-12d3-a456-426614174000",
-					Role:   argRole,
+					Role:   role,
 					Active: true,
 				},
 			},
-			argLister,
+			lister,
 		),
 	)
 }
 
 func userDirectoryFixture(
 	t *testing.T,
-	argCreatedAt time.Time,
+	createdAt time.Time,
 ) identity.User {
 	t.Helper()
 
@@ -258,7 +258,7 @@ func userDirectoryFixture(
 		"archive_viewer",
 		"Archive Viewer",
 		identity.RoleViewer,
-		argCreatedAt,
+		createdAt,
 	)
 	if err != nil {
 		t.Fatalf("create user fixture: %v", err)

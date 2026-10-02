@@ -39,56 +39,56 @@ type PasswordEnrollment struct {
 
 // NewPasswordEnrollment validates and creates a password enrollment.
 func NewPasswordEnrollment(
-	argUserID string,
-	argTokenHash [sha256.Size]byte,
-	argNow time.Time,
-	argLifetime time.Duration,
+	userID string,
+	tokenHash [sha256.Size]byte,
+	now time.Time,
+	lifetime time.Duration,
 ) (PasswordEnrollment, error) {
-	parsedUserID, err := uuid.Parse(argUserID)
+	parsedUserID, err := uuid.Parse(userID)
 	if err != nil ||
 		parsedUserID == uuid.Nil ||
-		parsedUserID.String() != argUserID {
+		parsedUserID.String() != userID {
 		return PasswordEnrollment{}, fmt.Errorf(
 			"%w: expected a canonical lowercase UUID",
 			ErrInvalidEnrollmentUserID,
 		)
 	}
 
-	if argTokenHash == [sha256.Size]byte{} {
+	if tokenHash == [sha256.Size]byte{} {
 		return PasswordEnrollment{}, ErrInvalidEnrollmentTokenHash
 	}
 
-	if argNow.IsZero() {
+	if now.IsZero() {
 		return PasswordEnrollment{}, fmt.Errorf(
 			"%w: creation time must not be zero",
 			ErrInvalidEnrollmentTimestamp,
 		)
 	}
 
-	if argLifetime <= 0 {
+	if lifetime <= 0 {
 		return PasswordEnrollment{}, fmt.Errorf(
 			"%w: expected a positive duration",
 			ErrInvalidEnrollmentLifetime,
 		)
 	}
 
-	timestamp := argNow.UTC()
+	timestamp := now.UTC()
 
 	return PasswordEnrollment{
-		UserID:    argUserID,
-		TokenHash: argTokenHash,
+		UserID:    userID,
+		TokenHash: tokenHash,
 		CreatedAt: timestamp,
-		ExpiresAt: timestamp.Add(argLifetime),
+		ExpiresAt: timestamp.Add(lifetime),
 	}, nil
 }
 
 // IsValidAt reports whether the enrollment may create a credential.
-func (enrollment PasswordEnrollment) IsValidAt(argNow time.Time) bool {
-	if argNow.IsZero() {
+func (enrollment PasswordEnrollment) IsValidAt(now time.Time) bool {
+	if now.IsZero() {
 		return false
 	}
 
-	timestamp := argNow.UTC()
+	timestamp := now.UTC()
 
 	return !timestamp.Before(enrollment.CreatedAt) &&
 		timestamp.Before(enrollment.ExpiresAt)

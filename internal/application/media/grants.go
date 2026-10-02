@@ -38,42 +38,42 @@ type GrantService struct {
 
 // NewGrantService creates a storage-independent media grant service.
 func NewGrantService(
-	argMedia MediaFinder,
-	argGrants GrantRepository,
-	argUsers UserFinder,
+	media MediaFinder,
+	grants GrantRepository,
+	users UserFinder,
 ) *GrantService {
-	return &GrantService{media: argMedia, grants: argGrants, users: argUsers}
+	return &GrantService{media: media, grants: grants, users: users}
 }
 
 // ReplaceGrant replaces one active user's complete permission set.
 func (service *GrantService) ReplaceGrant(
-	argContext context.Context,
-	argActor identity.User,
-	argMediaID string,
-	argUserID string,
-	argPermissions domainmedia.PermissionSet,
+	ctx context.Context,
+	actor identity.User,
+	mediaID string,
+	userID string,
+	permissions domainmedia.PermissionSet,
 ) (domainmedia.Grant, error) {
-	item, err := service.sharedItem(argContext, argActor, argMediaID)
+	item, err := service.sharedItem(ctx, actor, mediaID)
 	if err != nil {
 		return domainmedia.Grant{}, err
 	}
-	if argUserID == item.OwnerID {
+	if userID == item.OwnerID {
 		return domainmedia.Grant{}, ErrOwnerGrant
 	}
 
-	grant, err := domainmedia.NewGrant(argMediaID, argUserID, argPermissions)
+	grant, err := domainmedia.NewGrant(mediaID, userID, permissions)
 	if err != nil {
 		return domainmedia.Grant{}, fmt.Errorf("create media grant: %w", err)
 	}
 
-	user, err := service.users.FindByID(argContext, argUserID)
+	user, err := service.users.FindByID(ctx, userID)
 	if err != nil {
 		return domainmedia.Grant{}, fmt.Errorf("retrieve media grantee: %w", err)
 	}
 	if !user.Active {
 		return domainmedia.Grant{}, ErrInactiveGrantee
 	}
-	if err := service.grants.Save(argContext, grant); err != nil {
+	if err := service.grants.Save(ctx, grant); err != nil {
 		return domainmedia.Grant{}, fmt.Errorf("persist media grant: %w", err)
 	}
 
@@ -82,16 +82,16 @@ func (service *GrantService) ReplaceGrant(
 
 // GrantByUser returns one grant after authorizing its inspection.
 func (service *GrantService) GrantByUser(
-	argContext context.Context,
-	argActor identity.User,
-	argMediaID string,
-	argUserID string,
+	ctx context.Context,
+	actor identity.User,
+	mediaID string,
+	userID string,
 ) (domainmedia.Grant, error) {
-	if _, err := service.sharedItem(argContext, argActor, argMediaID); err != nil {
+	if _, err := service.sharedItem(ctx, actor, mediaID); err != nil {
 		return domainmedia.Grant{}, err
 	}
 
-	grant, err := service.grants.Find(argContext, argMediaID, argUserID)
+	grant, err := service.grants.Find(ctx, mediaID, userID)
 	if err != nil {
 		return domainmedia.Grant{}, fmt.Errorf("retrieve media grant: %w", err)
 	}
@@ -101,15 +101,15 @@ func (service *GrantService) GrantByUser(
 
 // GrantsByMedia lists all grants after authorizing their inspection.
 func (service *GrantService) GrantsByMedia(
-	argContext context.Context,
-	argActor identity.User,
-	argMediaID string,
+	ctx context.Context,
+	actor identity.User,
+	mediaID string,
 ) ([]domainmedia.Grant, error) {
-	if _, err := service.sharedItem(argContext, argActor, argMediaID); err != nil {
+	if _, err := service.sharedItem(ctx, actor, mediaID); err != nil {
 		return nil, err
 	}
 
-	grants, err := service.grants.ListByMedia(argContext, argMediaID)
+	grants, err := service.grants.ListByMedia(ctx, mediaID)
 	if err != nil {
 		return nil, fmt.Errorf("list media grants: %w", err)
 	}
@@ -119,19 +119,19 @@ func (service *GrantService) GrantsByMedia(
 
 // RevokeGrant explicitly deletes one stored grant.
 func (service *GrantService) RevokeGrant(
-	argContext context.Context,
-	argActor identity.User,
-	argMediaID string,
-	argUserID string,
+	ctx context.Context,
+	actor identity.User,
+	mediaID string,
+	userID string,
 ) error {
-	item, err := service.sharedItem(argContext, argActor, argMediaID)
+	item, err := service.sharedItem(ctx, actor, mediaID)
 	if err != nil {
 		return err
 	}
-	if argUserID == item.OwnerID {
+	if userID == item.OwnerID {
 		return ErrOwnerGrant
 	}
-	if err := service.grants.Delete(argContext, argMediaID, argUserID); err != nil {
+	if err := service.grants.Delete(ctx, mediaID, userID); err != nil {
 		return fmt.Errorf("delete media grant: %w", err)
 	}
 
@@ -139,14 +139,14 @@ func (service *GrantService) RevokeGrant(
 }
 
 func (service *GrantService) sharedItem(
-	argContext context.Context,
-	argActor identity.User,
-	argMediaID string,
+	ctx context.Context,
+	actor identity.User,
+	mediaID string,
 ) (domainmedia.Item, error) {
 	return authorizeItem(
-		argContext,
-		argActor,
-		argMediaID,
+		ctx,
+		actor,
+		mediaID,
 		domainmedia.PermissionShare,
 		service.media,
 		service.grants,

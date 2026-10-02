@@ -22,17 +22,17 @@ type LineReader struct {
 }
 
 // NewLineReader creates a line reader around an input stream.
-func NewLineReader(argInput io.Reader) *LineReader {
-	return &LineReader{scanner: bufio.NewScanner(argInput)}
+func NewLineReader(input io.Reader) *LineReader {
+	return &LineReader{scanner: bufio.NewScanner(input)}
 }
 
 // Read writes a prompt and waits for one line or context cancellation.
 func (reader *LineReader) Read(
-	argContext context.Context,
-	argOutput io.Writer,
-	argPrompt string,
+	ctx context.Context,
+	output io.Writer,
+	prompt string,
 ) (string, bool, error) {
-	fmt.Fprint(argOutput, argPrompt)
+	fmt.Fprint(output, prompt)
 
 	type result struct {
 		line      string
@@ -50,8 +50,8 @@ func (reader *LineReader) Read(
 	}()
 
 	select {
-	case <-argContext.Done():
-		return "", false, argContext.Err()
+	case <-ctx.Done():
+		return "", false, ctx.Err()
 	case scanned := <-results:
 		return scanned.line, scanned.available, scanned.err
 	}
@@ -65,8 +65,8 @@ type Session struct {
 }
 
 // NewSession creates empty prompt and authentication state.
-func NewSession(argApplication string) *Session {
-	return &Session{application: argApplication}
+func NewSession(application string) *Session {
+	return &Session{application: application}
 }
 
 // Prompt identifies the authenticated user and current application.
@@ -86,9 +86,9 @@ func (session *Session) Authenticated() bool { return session.accessToken != "" 
 func (session *Session) AccessToken() string { return session.accessToken }
 
 // Set records a server-confirmed identity and its bearer token.
-func (session *Session) Set(argUsername string, argAccessToken string) {
-	session.username = argUsername
-	session.accessToken = argAccessToken
+func (session *Session) Set(username string, accessToken string) {
+	session.username = username
+	session.accessToken = accessToken
 }
 
 // Clear removes all local authentication state.
@@ -99,12 +99,12 @@ func (session *Session) Clear() {
 
 // ReadRequiredSecret repeats an empty secret prompt.
 func ReadRequiredSecret(
-	argReader SecretReader,
-	argPrompt string,
-	argReport func(error),
+	reader SecretReader,
+	prompt string,
+	report func(error),
 ) ([]byte, error) {
 	for {
-		secret, err := argReader(argPrompt)
+		secret, err := reader(prompt)
 		if err != nil {
 			return nil, err
 		}
@@ -113,24 +113,24 @@ func ReadRequiredSecret(
 		}
 
 		ClearSecret(secret)
-		argReport(errors.New("value is required; try again"))
+		report(errors.New("value is required; try again"))
 	}
 }
 
 // ReadConfirmedSecret repeats both prompts until their values match.
 func ReadConfirmedSecret(
-	argReader SecretReader,
-	argReport func(error),
+	reader SecretReader,
+	report func(error),
 ) ([]byte, error) {
 	for {
-		secret, err := ReadRequiredSecret(argReader, "New password: ", argReport)
+		secret, err := ReadRequiredSecret(reader, "New password: ", report)
 		if err != nil {
 			return nil, fmt.Errorf("read new password: %w", err)
 		}
 		confirmation, err := ReadRequiredSecret(
-			argReader,
+			reader,
 			"Confirm new password: ",
-			argReport,
+			report,
 		)
 		if err != nil {
 			ClearSecret(secret)
@@ -145,40 +145,40 @@ func ReadConfirmedSecret(
 
 		ClearSecret(secret)
 		ClearSecret(confirmation)
-		argReport(errors.New("password confirmation does not match; try again"))
+		report(errors.New("password confirmation does not match; try again"))
 	}
 }
 
 // ClearSecret overwrites a mutable secret buffer.
-func ClearSecret(argSecret []byte) {
-	for index := range argSecret {
-		argSecret[index] = 0
+func ClearSecret(secret []byte) {
+	for index := range secret {
+		secret[index] = 0
 	}
 }
 
 // PrintError writes a safe structured API error or a local error.
-func PrintError(argOutput io.Writer, argError error) {
+func PrintError(output io.Writer, inputError error) {
 	var apiError *apiclient.APIError
-	if errors.As(argError, &apiError) {
-		fmt.Fprintf(argOutput, "Error [%s]: %s\n", apiError.Code, apiError.Message)
+	if errors.As(inputError, &apiError) {
+		fmt.Fprintf(output, "Error [%s]: %s\n", apiError.Code, apiError.Message)
 
 		return
 	}
-	fmt.Fprintf(argOutput, "Error: %v\n", argError)
+	fmt.Fprintf(output, "Error: %v\n", inputError)
 }
 
 // FormatLocalTime renders an instant in the operating system's local zone.
-func FormatLocalTime(argTime time.Time) string {
-	return argTime.Local().Format(time.RFC3339)
+func FormatLocalTime(timestamp time.Time) string {
+	return timestamp.Local().Format(time.RFC3339)
 }
 
 // PrintUser writes the common user representation.
-func PrintUser(argOutput io.Writer, argUser apiclient.User) {
-	fmt.Fprintf(argOutput, "ID: %s\n", argUser.ID)
-	fmt.Fprintf(argOutput, "Username: %s\n", argUser.Username)
-	fmt.Fprintf(argOutput, "Display name: %s\n", argUser.DisplayName)
-	fmt.Fprintf(argOutput, "Role: %s\n", argUser.Role)
-	fmt.Fprintf(argOutput, "Active: %t\n", argUser.Active)
-	fmt.Fprintf(argOutput, "Created: %s\n", FormatLocalTime(argUser.CreatedAt))
-	fmt.Fprintf(argOutput, "Updated: %s\n", FormatLocalTime(argUser.UpdatedAt))
+func PrintUser(output io.Writer, user apiclient.User) {
+	fmt.Fprintf(output, "ID: %s\n", user.ID)
+	fmt.Fprintf(output, "Username: %s\n", user.Username)
+	fmt.Fprintf(output, "Display name: %s\n", user.DisplayName)
+	fmt.Fprintf(output, "Role: %s\n", user.Role)
+	fmt.Fprintf(output, "Active: %t\n", user.Active)
+	fmt.Fprintf(output, "Created: %s\n", FormatLocalTime(user.CreatedAt))
+	fmt.Fprintf(output, "Updated: %s\n", FormatLocalTime(user.UpdatedAt))
 }

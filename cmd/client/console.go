@@ -34,33 +34,33 @@ type userConsole struct {
 }
 
 func newUserConsole(
-	argAPI userAPI,
-	argInput io.Reader,
-	argOutput io.Writer,
-	argErrorOutput io.Writer,
-	argReadSecret secretReader,
-	argLogoutTimeout time.Duration,
+	api userAPI,
+	input io.Reader,
+	output io.Writer,
+	errorOutput io.Writer,
+	readSecret secretReader,
+	logoutTimeout time.Duration,
 ) *userConsole {
 	return &userConsole{
-		api:           argAPI,
-		input:         sharedcli.NewLineReader(argInput),
-		output:        argOutput,
-		errorOutput:   argErrorOutput,
-		readSecret:    argReadSecret,
-		logoutTimeout: argLogoutTimeout,
+		api:           api,
+		input:         sharedcli.NewLineReader(input),
+		output:        output,
+		errorOutput:   errorOutput,
+		readSecret:    readSecret,
+		logoutTimeout: logoutTimeout,
 		session:       sharedcli.NewSession("mediaarchive"),
 	}
 }
 
 // run processes commands until the user exits or the context is canceled.
-func (console *userConsole) run(argContext context.Context) error {
+func (console *userConsole) run(ctx context.Context) error {
 	fmt.Fprintln(console.output, "Media Archive interactive client")
 	fmt.Fprintln(console.output, "Type 'help' to list available commands.")
 
 	defer console.logoutOnExit()
 	for {
 		line, available, err := console.input.Read(
-			argContext,
+			ctx,
 			console.output,
 			console.session.Prompt(),
 		)
@@ -76,7 +76,7 @@ func (console *userConsole) run(argContext context.Context) error {
 			return nil
 		}
 
-		exit, err := console.execute(argContext, line)
+		exit, err := console.execute(ctx, line)
 		if err != nil {
 			console.printError(err)
 		}
@@ -87,10 +87,10 @@ func (console *userConsole) run(argContext context.Context) error {
 }
 
 func (console *userConsole) execute(
-	argContext context.Context,
-	argLine string,
+	ctx context.Context,
+	line string,
 ) (bool, error) {
-	fields := strings.Fields(argLine)
+	fields := strings.Fields(line)
 	if len(fields) == 0 {
 		return false, nil
 	}
@@ -108,27 +108,27 @@ func (console *userConsole) execute(
 			return false, commandUsage("health")
 		}
 
-		return false, console.health(argContext)
+		return false, console.health(ctx)
 	case "login":
 		if len(fields) != 2 {
 			return false, commandUsage("login <username>")
 		}
 
-		return false, console.login(argContext, fields[1])
+		return false, console.login(ctx, fields[1])
 	case "logout":
 		if len(fields) != 1 {
 			return false, commandUsage("logout")
 		}
 
-		return false, console.logout(argContext)
+		return false, console.logout(ctx)
 	case "me":
 		if len(fields) != 1 {
 			return false, commandUsage("me")
 		}
 
-		return false, console.me(argContext)
+		return false, console.me(ctx)
 	case "password":
-		return false, console.password(argContext, fields[1:])
+		return false, console.password(ctx, fields[1:])
 	case "exit", "quit", "bye":
 		if len(fields) != 1 {
 			return false, commandUsage(fields[0])
@@ -140,8 +140,8 @@ func (console *userConsole) execute(
 	}
 }
 
-func (console *userConsole) health(argContext context.Context) error {
-	status, err := console.api.Health(argContext)
+func (console *userConsole) health(ctx context.Context) error {
+	status, err := console.api.Health(ctx)
 	if err != nil {
 		return fmt.Errorf("check server health: %w", err)
 	}
@@ -151,8 +151,8 @@ func (console *userConsole) health(argContext context.Context) error {
 }
 
 func (console *userConsole) login(
-	argContext context.Context,
-	argUsername string,
+	ctx context.Context,
+	username string,
 ) error {
 	if console.session.Authenticated() {
 		return errors.New("already logged in; log out before starting another session")
@@ -168,11 +168,11 @@ func (console *userConsole) login(
 	}
 	defer sharedcli.ClearSecret(password)
 
-	session, err := console.api.Login(argContext, argUsername, password)
+	session, err := console.api.Login(ctx, username, password)
 	if err != nil {
 		return fmt.Errorf("login: %w", err)
 	}
-	user, err := console.api.CurrentUser(argContext, session.AccessToken)
+	user, err := console.api.CurrentUser(ctx, session.AccessToken)
 	if err != nil {
 		console.revokeUnusableSession(session.AccessToken)
 
@@ -184,11 +184,11 @@ func (console *userConsole) login(
 	return nil
 }
 
-func (console *userConsole) logout(argContext context.Context) error {
+func (console *userConsole) logout(ctx context.Context) error {
 	if !console.session.Authenticated() {
 		return errors.New("not logged in")
 	}
-	if err := console.api.Logout(argContext, console.session.AccessToken()); err != nil {
+	if err := console.api.Logout(ctx, console.session.AccessToken()); err != nil {
 		return fmt.Errorf("logout: %w", err)
 	}
 
@@ -198,10 +198,10 @@ func (console *userConsole) logout(argContext context.Context) error {
 	return nil
 }
 
-func (console *userConsole) revokeUnusableSession(argAccessToken string) {
+func (console *userConsole) revokeUnusableSession(accessToken string) {
 	ctx, cancel := context.WithTimeout(context.Background(), console.logoutTimeout)
 	defer cancel()
-	if err := console.api.Logout(ctx, argAccessToken); err != nil {
+	if err := console.api.Logout(ctx, accessToken); err != nil {
 		console.printError(fmt.Errorf("revoke unusable session: %w", err))
 	}
 }
@@ -219,12 +219,12 @@ func (console *userConsole) logoutOnExit() {
 	console.session.Clear()
 }
 
-func (console *userConsole) me(argContext context.Context) error {
+func (console *userConsole) me(ctx context.Context) error {
 	if !console.session.Authenticated() {
 		return errors.New("not logged in")
 	}
 
-	user, err := console.api.CurrentUser(argContext, console.session.AccessToken())
+	user, err := console.api.CurrentUser(ctx, console.session.AccessToken())
 	if err != nil {
 		return fmt.Errorf("get current user: %w", err)
 	}
@@ -234,24 +234,24 @@ func (console *userConsole) me(argContext context.Context) error {
 }
 
 func (console *userConsole) password(
-	argContext context.Context,
-	argArguments []string,
+	ctx context.Context,
+	arguments []string,
 ) error {
-	if len(argArguments) != 1 {
+	if len(arguments) != 1 {
 		return commandUsage("password enroll|change")
 	}
 
-	switch argArguments[0] {
+	switch arguments[0] {
 	case "enroll":
-		return console.enrollPassword(argContext)
+		return console.enrollPassword(ctx)
 	case "change":
-		return console.changePassword(argContext)
+		return console.changePassword(ctx)
 	default:
 		return commandUsage("password enroll|change")
 	}
 }
 
-func (console *userConsole) enrollPassword(argContext context.Context) error {
+func (console *userConsole) enrollPassword(ctx context.Context) error {
 	if console.session.Authenticated() {
 		return errors.New("log out before enrolling a password")
 	}
@@ -276,7 +276,7 @@ func (console *userConsole) enrollPassword(argContext context.Context) error {
 	defer sharedcli.ClearSecret(password)
 
 	if err := console.api.CompletePasswordEnrollment(
-		argContext,
+		ctx,
 		string(token),
 		password,
 	); err != nil {
@@ -287,7 +287,7 @@ func (console *userConsole) enrollPassword(argContext context.Context) error {
 	return nil
 }
 
-func (console *userConsole) changePassword(argContext context.Context) error {
+func (console *userConsole) changePassword(ctx context.Context) error {
 	if !console.session.Authenticated() {
 		return errors.New("not logged in")
 	}
@@ -312,7 +312,7 @@ func (console *userConsole) changePassword(argContext context.Context) error {
 	defer sharedcli.ClearSecret(newPassword)
 
 	if err := console.api.ChangePassword(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
 		currentPassword,
 		newPassword,
@@ -339,10 +339,10 @@ func (console *userConsole) printHelp() {
 	fmt.Fprintln(console.output, "  exit | quit | bye")
 }
 
-func (console *userConsole) printError(argError error) {
-	sharedcli.PrintError(console.errorOutput, argError)
+func (console *userConsole) printError(inputError error) {
+	sharedcli.PrintError(console.errorOutput, inputError)
 }
 
-func commandUsage(argUsage string) error {
-	return fmt.Errorf("usage: %s", argUsage)
+func commandUsage(usage string) error {
+	return fmt.Errorf("usage: %s", usage)
 }

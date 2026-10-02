@@ -50,34 +50,34 @@ type adminConsole struct {
 }
 
 func newAdminConsole(
-	argAPI adminAPI,
-	argInput io.Reader,
-	argOutput io.Writer,
-	argErrorOutput io.Writer,
-	argReadSecret secretReader,
-	argLogoutTimeout time.Duration,
+	api adminAPI,
+	input io.Reader,
+	output io.Writer,
+	errorOutput io.Writer,
+	readSecret secretReader,
+	logoutTimeout time.Duration,
 ) *adminConsole {
 	return &adminConsole{
-		api:           argAPI,
-		input:         sharedcli.NewLineReader(argInput),
-		output:        argOutput,
-		errorOutput:   argErrorOutput,
-		readSecret:    argReadSecret,
-		logoutTimeout: argLogoutTimeout,
+		api:           api,
+		input:         sharedcli.NewLineReader(input),
+		output:        output,
+		errorOutput:   errorOutput,
+		readSecret:    readSecret,
+		logoutTimeout: logoutTimeout,
 		session:       sharedcli.NewSession("mediaarchive-admin"),
 		pageLimit:     defaultUserLimit,
 	}
 }
 
 // run processes administrator commands until the console is closed.
-func (console *adminConsole) run(argContext context.Context) error {
+func (console *adminConsole) run(ctx context.Context) error {
 	fmt.Fprintln(console.output, "Media Archive administrator console")
 	fmt.Fprintln(console.output, "Type 'help' to list available commands.")
 	defer console.logoutOnExit()
 
 	for {
 		line, available, err := console.readCommand(
-			argContext,
+			ctx,
 			console.session.Prompt(),
 		)
 		if errors.Is(err, context.Canceled) {
@@ -92,7 +92,7 @@ func (console *adminConsole) run(argContext context.Context) error {
 			return nil
 		}
 
-		exit, err := console.execute(argContext, line)
+		exit, err := console.execute(ctx, line)
 		if err != nil {
 			console.printError(err)
 		}
@@ -103,17 +103,17 @@ func (console *adminConsole) run(argContext context.Context) error {
 }
 
 func (console *adminConsole) readCommand(
-	argContext context.Context,
-	argPrompt string,
+	ctx context.Context,
+	prompt string,
 ) (string, bool, error) {
-	return console.input.Read(argContext, console.output, argPrompt)
+	return console.input.Read(ctx, console.output, prompt)
 }
 
 func (console *adminConsole) execute(
-	argContext context.Context,
-	argLine string,
+	ctx context.Context,
+	line string,
 ) (bool, error) {
-	fields := strings.Fields(argLine)
+	fields := strings.Fields(line)
 	if len(fields) == 0 {
 		return false, nil
 	}
@@ -131,29 +131,29 @@ func (console *adminConsole) execute(
 			return false, adminCommandUsage("health")
 		}
 
-		return false, console.health(argContext)
+		return false, console.health(ctx)
 	case "login":
 		if len(fields) != 2 {
 			return false, adminCommandUsage("login <username>")
 		}
 
-		return false, console.login(argContext, fields[1])
+		return false, console.login(ctx, fields[1])
 	case "logout":
 		if len(fields) != 1 {
 			return false, adminCommandUsage("logout")
 		}
 
-		return false, console.logout(argContext)
+		return false, console.logout(ctx)
 	case "me":
 		if len(fields) != 1 {
 			return false, adminCommandUsage("me")
 		}
 
-		return false, console.me(argContext)
+		return false, console.me(ctx)
 	case "user":
-		return false, console.user(argContext, fields[1:])
+		return false, console.user(ctx, fields[1:])
 	case "password":
-		return false, console.password(argContext, fields[1:])
+		return false, console.password(ctx, fields[1:])
 	case "exit", "quit", "bye":
 		if len(fields) != 1 {
 			return false, adminCommandUsage(fields[0])
@@ -165,8 +165,8 @@ func (console *adminConsole) execute(
 	}
 }
 
-func (console *adminConsole) health(argContext context.Context) error {
-	status, err := console.api.Health(argContext)
+func (console *adminConsole) health(ctx context.Context) error {
+	status, err := console.api.Health(ctx)
 	if err != nil {
 		return fmt.Errorf("check server health: %w", err)
 	}
@@ -176,8 +176,8 @@ func (console *adminConsole) health(argContext context.Context) error {
 }
 
 func (console *adminConsole) login(
-	argContext context.Context,
-	argUsername string,
+	ctx context.Context,
+	username string,
 ) error {
 	if console.session.Authenticated() {
 		return errors.New("already logged in; log out before starting another session")
@@ -193,12 +193,12 @@ func (console *adminConsole) login(
 	}
 	defer sharedcli.ClearSecret(password)
 
-	session, err := console.api.Login(argContext, argUsername, password)
+	session, err := console.api.Login(ctx, username, password)
 	if err != nil {
 		return fmt.Errorf("login: %w", err)
 	}
 
-	user, err := console.api.CurrentUser(argContext, session.AccessToken)
+	user, err := console.api.CurrentUser(ctx, session.AccessToken)
 	if err != nil {
 		console.revokeRejectedSession(session.AccessToken)
 
@@ -216,19 +216,19 @@ func (console *adminConsole) login(
 	return nil
 }
 
-func (console *adminConsole) revokeRejectedSession(argAccessToken string) {
+func (console *adminConsole) revokeRejectedSession(accessToken string) {
 	ctx, cancel := context.WithTimeout(context.Background(), console.logoutTimeout)
 	defer cancel()
-	if err := console.api.Logout(ctx, argAccessToken); err != nil {
+	if err := console.api.Logout(ctx, accessToken); err != nil {
 		console.printError(fmt.Errorf("revoke rejected session: %w", err))
 	}
 }
 
-func (console *adminConsole) logout(argContext context.Context) error {
+func (console *adminConsole) logout(ctx context.Context) error {
 	if err := console.requireAuthentication(); err != nil {
 		return err
 	}
-	if err := console.api.Logout(argContext, console.session.AccessToken()); err != nil {
+	if err := console.api.Logout(ctx, console.session.AccessToken()); err != nil {
 		return fmt.Errorf("logout: %w", err)
 	}
 	console.clearSession()
@@ -256,12 +256,12 @@ func (console *adminConsole) clearSession() {
 	console.nextCursor = ""
 }
 
-func (console *adminConsole) me(argContext context.Context) error {
+func (console *adminConsole) me(ctx context.Context) error {
 	if err := console.requireAuthentication(); err != nil {
 		return err
 	}
 
-	user, err := console.api.CurrentUser(argContext, console.session.AccessToken())
+	user, err := console.api.CurrentUser(ctx, console.session.AccessToken())
 	if err != nil {
 		return fmt.Errorf("get current user: %w", err)
 	}
@@ -271,81 +271,81 @@ func (console *adminConsole) me(argContext context.Context) error {
 }
 
 func (console *adminConsole) user(
-	argContext context.Context,
-	argArguments []string,
+	ctx context.Context,
+	arguments []string,
 ) error {
 	if err := console.requireAuthentication(); err != nil {
 		return err
 	}
-	if len(argArguments) == 0 {
+	if len(arguments) == 0 {
 		return adminCommandUsage("user list|get|create|update|activate|deactivate|delete")
 	}
 
-	switch argArguments[0] {
+	switch arguments[0] {
 	case "list":
-		return console.startUserList(argContext, argArguments[1:])
+		return console.startUserList(ctx, arguments[1:])
 	case "next":
-		if len(argArguments) != 1 {
+		if len(arguments) != 1 {
 			return adminCommandUsage("user next")
 		}
 
-		return console.nextUserPage(argContext)
+		return console.nextUserPage(ctx)
 	case "first":
-		if len(argArguments) != 1 {
+		if len(arguments) != 1 {
 			return adminCommandUsage("user first")
 		}
 
-		return console.firstUserPage(argContext)
+		return console.firstUserPage(ctx)
 	case "get":
-		if len(argArguments) != 2 {
+		if len(arguments) != 2 {
 			return adminCommandUsage("user get <id>")
 		}
 
-		return console.getUser(argContext, argArguments[1])
+		return console.getUser(ctx, arguments[1])
 	case "create":
-		if len(argArguments) != 1 {
+		if len(arguments) != 1 {
 			return adminCommandUsage("user create")
 		}
 
-		return console.createUser(argContext)
+		return console.createUser(ctx)
 	case "update":
-		if len(argArguments) != 2 {
+		if len(arguments) != 2 {
 			return adminCommandUsage("user update <id>")
 		}
 
-		return console.updateUser(argContext, argArguments[1])
+		return console.updateUser(ctx, arguments[1])
 	case "activate", "deactivate":
-		if len(argArguments) != 2 {
-			return adminCommandUsage("user " + argArguments[0] + " <id>")
+		if len(arguments) != 2 {
+			return adminCommandUsage("user " + arguments[0] + " <id>")
 		}
 
 		return console.setUserActive(
-			argContext,
-			argArguments[1],
-			argArguments[0] == "activate",
+			ctx,
+			arguments[1],
+			arguments[0] == "activate",
 		)
 	case "delete":
-		if len(argArguments) != 2 {
+		if len(arguments) != 2 {
 			return adminCommandUsage("user delete <id>")
 		}
 
-		return console.deleteUser(argContext, argArguments[1])
+		return console.deleteUser(ctx, arguments[1])
 	default:
-		return fmt.Errorf("unknown user command %q", argArguments[0])
+		return fmt.Errorf("unknown user command %q", arguments[0])
 	}
 }
 
 func (console *adminConsole) startUserList(
-	argContext context.Context,
-	argArguments []string,
+	ctx context.Context,
+	arguments []string,
 ) error {
-	if len(argArguments) > 1 {
+	if len(arguments) > 1 {
 		return adminCommandUsage("user list [limit]")
 	}
 
 	limit := defaultUserLimit
-	if len(argArguments) == 1 {
-		parsedLimit, err := strconv.Atoi(argArguments[0])
+	if len(arguments) == 1 {
+		parsedLimit, err := strconv.Atoi(arguments[0])
 		if err != nil || parsedLimit < 1 || parsedLimit > maximumUserLimit {
 			return fmt.Errorf("user list limit must be between 1 and %d", maximumUserLimit)
 		}
@@ -354,7 +354,7 @@ func (console *adminConsole) startUserList(
 	console.pageLimit = limit
 	console.pageStarted = true
 
-	if err := console.loadUserPage(argContext, ""); err != nil {
+	if err := console.loadUserPage(ctx, ""); err != nil {
 		console.pageStarted = false
 
 		return err
@@ -363,7 +363,7 @@ func (console *adminConsole) startUserList(
 	return nil
 }
 
-func (console *adminConsole) nextUserPage(argContext context.Context) error {
+func (console *adminConsole) nextUserPage(ctx context.Context) error {
 	if !console.pageStarted {
 		return errors.New("start pagination with 'user list [limit]'")
 	}
@@ -371,26 +371,26 @@ func (console *adminConsole) nextUserPage(argContext context.Context) error {
 		return errors.New("there is no next user page")
 	}
 
-	return console.loadUserPage(argContext, console.nextCursor)
+	return console.loadUserPage(ctx, console.nextCursor)
 }
 
-func (console *adminConsole) firstUserPage(argContext context.Context) error {
+func (console *adminConsole) firstUserPage(ctx context.Context) error {
 	if !console.pageStarted {
 		return errors.New("start pagination with 'user list [limit]'")
 	}
 
-	return console.loadUserPage(argContext, "")
+	return console.loadUserPage(ctx, "")
 }
 
 func (console *adminConsole) loadUserPage(
-	argContext context.Context,
-	argCursor string,
+	ctx context.Context,
+	cursor string,
 ) error {
 	page, err := console.api.ListUsers(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
 		console.pageLimit,
-		argCursor,
+		cursor,
 	)
 	if err != nil {
 		return fmt.Errorf("list users: %w", err)
@@ -420,10 +420,10 @@ func (console *adminConsole) loadUserPage(
 }
 
 func (console *adminConsole) getUser(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) error {
-	user, err := console.api.UserByID(argContext, console.session.AccessToken(), argID)
+	user, err := console.api.UserByID(ctx, console.session.AccessToken(), id)
 	if err != nil {
 		return fmt.Errorf("get user: %w", err)
 	}
@@ -432,22 +432,22 @@ func (console *adminConsole) getUser(
 	return nil
 }
 
-func (console *adminConsole) createUser(argContext context.Context) error {
-	username, err := console.requiredValue(argContext, "Username: ")
+func (console *adminConsole) createUser(ctx context.Context) error {
+	username, err := console.requiredValue(ctx, "Username: ")
 	if err != nil {
 		return err
 	}
-	displayName, err := console.requiredValue(argContext, "Display name: ")
+	displayName, err := console.requiredValue(ctx, "Display name: ")
 	if err != nil {
 		return err
 	}
-	role, err := console.readRole(argContext, "Role (viewer|editor|admin): ", "")
+	role, err := console.readRole(ctx, "Role (viewer|editor|admin): ", "")
 	if err != nil {
 		return err
 	}
 
 	user, err := console.api.CreateUser(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
 		apiclient.UserInput{
 			Username:    username,
@@ -464,20 +464,20 @@ func (console *adminConsole) createUser(argContext context.Context) error {
 }
 
 func (console *adminConsole) updateUser(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) error {
 	current, err := console.api.UserByID(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
-		argID,
+		id,
 	)
 	if err != nil {
 		return fmt.Errorf("get user for update: %w", err)
 	}
 
 	username, err := console.optionalValue(
-		argContext,
+		ctx,
 		fmt.Sprintf("Username [%s]: ", current.Username),
 		current.Username,
 	)
@@ -485,7 +485,7 @@ func (console *adminConsole) updateUser(
 		return err
 	}
 	displayName, err := console.optionalValue(
-		argContext,
+		ctx,
 		fmt.Sprintf("Display name [%s]: ", current.DisplayName),
 		current.DisplayName,
 	)
@@ -493,7 +493,7 @@ func (console *adminConsole) updateUser(
 		return err
 	}
 	role, err := console.readRole(
-		argContext,
+		ctx,
 		fmt.Sprintf("Role (viewer|editor|admin) [%s]: ", current.Role),
 		current.Role,
 	)
@@ -502,9 +502,9 @@ func (console *adminConsole) updateUser(
 	}
 
 	updated, err := console.api.UpdateUser(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
-		argID,
+		id,
 		apiclient.UserInput{
 			Username:    username,
 			DisplayName: displayName,
@@ -520,15 +520,15 @@ func (console *adminConsole) updateUser(
 }
 
 func (console *adminConsole) setUserActive(
-	argContext context.Context,
-	argID string,
-	argActive bool,
+	ctx context.Context,
+	id string,
+	active bool,
 ) error {
 	user, err := console.api.SetUserActive(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
-		argID,
-		argActive,
+		id,
+		active,
 	)
 	if err != nil {
 		return fmt.Errorf("set user activation: %w", err)
@@ -539,13 +539,13 @@ func (console *adminConsole) setUserActive(
 }
 
 func (console *adminConsole) deleteUser(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) error {
 	user, err := console.api.UserByID(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
-		argID,
+		id,
 	)
 	if err != nil {
 		return fmt.Errorf("get user for deletion: %w", err)
@@ -554,7 +554,7 @@ func (console *adminConsole) deleteUser(
 
 	for {
 		confirmation, available, err := console.readCommand(
-			argContext,
+			ctx,
 			fmt.Sprintf(
 				"Type username %q to permanently delete this user (blank cancels): ",
 				user.Username,
@@ -583,7 +583,7 @@ func (console *adminConsole) deleteUser(
 	}
 
 	if err := console.api.DeleteUser(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
 		user.ID,
 	); err != nil {
@@ -598,30 +598,30 @@ func (console *adminConsole) deleteUser(
 }
 
 func (console *adminConsole) password(
-	argContext context.Context,
-	argArguments []string,
+	ctx context.Context,
+	arguments []string,
 ) error {
 	if err := console.requireAuthentication(); err != nil {
 		return err
 	}
-	if len(argArguments) == 2 && argArguments[0] == "enrollment" {
-		return console.issuePasswordEnrollment(argContext, argArguments[1])
+	if len(arguments) == 2 && arguments[0] == "enrollment" {
+		return console.issuePasswordEnrollment(ctx, arguments[1])
 	}
-	if len(argArguments) == 1 && argArguments[0] == "change" {
-		return console.changePassword(argContext)
+	if len(arguments) == 1 && arguments[0] == "change" {
+		return console.changePassword(ctx)
 	}
 
 	return adminCommandUsage("password enrollment <user-id>|change")
 }
 
 func (console *adminConsole) issuePasswordEnrollment(
-	argContext context.Context,
-	argUserID string,
+	ctx context.Context,
+	userID string,
 ) error {
 	enrollment, err := console.api.IssuePasswordEnrollment(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
-		argUserID,
+		userID,
 	)
 	if err != nil {
 		return fmt.Errorf("issue password enrollment: %w", err)
@@ -637,7 +637,7 @@ func (console *adminConsole) issuePasswordEnrollment(
 	return nil
 }
 
-func (console *adminConsole) changePassword(argContext context.Context) error {
+func (console *adminConsole) changePassword(ctx context.Context) error {
 	currentPassword, err := sharedcli.ReadRequiredSecret(
 		console.readSecret,
 		"Current password: ",
@@ -658,7 +658,7 @@ func (console *adminConsole) changePassword(argContext context.Context) error {
 	defer sharedcli.ClearSecret(newPassword)
 
 	if err := console.api.ChangePassword(
-		argContext,
+		ctx,
 		console.session.AccessToken(),
 		currentPassword,
 		newPassword,
@@ -672,11 +672,11 @@ func (console *adminConsole) changePassword(argContext context.Context) error {
 }
 
 func (console *adminConsole) requiredValue(
-	argContext context.Context,
-	argPrompt string,
+	ctx context.Context,
+	prompt string,
 ) (string, error) {
 	for {
-		value, available, err := console.readCommand(argContext, argPrompt)
+		value, available, err := console.readCommand(ctx, prompt)
 		if err != nil {
 			return "", fmt.Errorf("read value: %w", err)
 		}
@@ -693,11 +693,11 @@ func (console *adminConsole) requiredValue(
 }
 
 func (console *adminConsole) optionalValue(
-	argContext context.Context,
-	argPrompt string,
-	argDefault string,
+	ctx context.Context,
+	prompt string,
+	defaultValue string,
 ) (string, error) {
-	value, available, err := console.readCommand(argContext, argPrompt)
+	value, available, err := console.readCommand(ctx, prompt)
 	if err != nil {
 		return "", fmt.Errorf("read value: %w", err)
 	}
@@ -706,27 +706,27 @@ func (console *adminConsole) optionalValue(
 	}
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return argDefault, nil
+		return defaultValue, nil
 	}
 
 	return value, nil
 }
 
 func (console *adminConsole) readRole(
-	argContext context.Context,
-	argPrompt string,
-	argDefault identity.Role,
+	ctx context.Context,
+	prompt string,
+	defaultValue identity.Role,
 ) (identity.Role, error) {
 	for {
-		value, available, err := console.readCommand(argContext, argPrompt)
+		value, available, err := console.readCommand(ctx, prompt)
 		if err != nil {
 			return "", fmt.Errorf("read role: %w", err)
 		}
 		if !available {
 			return "", io.EOF
 		}
-		if strings.TrimSpace(value) == "" && argDefault.Valid() {
-			return argDefault, nil
+		if strings.TrimSpace(value) == "" && defaultValue.Valid() {
+			return defaultValue, nil
 		}
 
 		role := identity.Role(strings.TrimSpace(value))
@@ -767,10 +767,10 @@ func (console *adminConsole) printHelp() {
 	fmt.Fprintln(console.output, "  exit | quit | bye")
 }
 
-func (console *adminConsole) printError(argError error) {
-	sharedcli.PrintError(console.errorOutput, argError)
+func (console *adminConsole) printError(inputError error) {
+	sharedcli.PrintError(console.errorOutput, inputError)
 }
 
-func adminCommandUsage(argUsage string) error {
-	return fmt.Errorf("usage: %s", argUsage)
+func adminCommandUsage(usage string) error {
+	return fmt.Errorf("usage: %s", usage)
 }

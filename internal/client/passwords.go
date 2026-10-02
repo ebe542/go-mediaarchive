@@ -16,16 +16,16 @@ type PasswordEnrollment struct {
 
 // IssuePasswordEnrollment creates or replaces a user's enrollment token.
 func (client *Client) IssuePasswordEnrollment(
-	argContext context.Context,
-	argAccessToken string,
-	argUserID string,
+	ctx context.Context,
+	accessToken string,
+	userID string,
 ) (PasswordEnrollment, error) {
 	var enrollment PasswordEnrollment
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodPost,
-		"/api/v1/users/"+url.PathEscape(argUserID)+"/password-enrollment",
-		argAccessToken,
+		"/api/v1/users/"+url.PathEscape(userID)+"/password-enrollment",
+		accessToken,
 		nil,
 		http.StatusCreated,
 		&enrollment,
@@ -44,19 +44,19 @@ func (client *Client) IssuePasswordEnrollment(
 
 // CompletePasswordEnrollment creates an initial password credential.
 func (client *Client) CompletePasswordEnrollment(
-	argContext context.Context,
-	argToken string,
-	argPassword []byte,
+	ctx context.Context,
+	token string,
+	password []byte,
 ) error {
 	return client.doJSON(
-		argContext,
+		ctx,
 		http.MethodPost,
 		"/api/v1/auth/password-enrollments",
 		"",
 		struct {
 			Token    string `json:"token"`
 			Password string `json:"password"`
-		}{Token: argToken, Password: string(argPassword)},
+		}{Token: token, Password: string(password)},
 		http.StatusNoContent,
 		nil,
 		"complete password enrollment",
@@ -65,22 +65,22 @@ func (client *Client) CompletePasswordEnrollment(
 
 // ChangePassword replaces the authenticated user's password.
 func (client *Client) ChangePassword(
-	argContext context.Context,
-	argAccessToken string,
-	argCurrentPassword []byte,
-	argNewPassword []byte,
+	ctx context.Context,
+	accessToken string,
+	currentPassword []byte,
+	newPassword []byte,
 ) error {
 	return client.doJSON(
-		argContext,
+		ctx,
 		http.MethodPut,
 		"/api/v1/users/me/password",
-		argAccessToken,
+		accessToken,
 		struct {
 			CurrentPassword string `json:"currentPassword"`
 			NewPassword     string `json:"newPassword"`
 		}{
-			CurrentPassword: string(argCurrentPassword),
-			NewPassword:     string(argNewPassword),
+			CurrentPassword: string(currentPassword),
+			NewPassword:     string(newPassword),
 		},
 		http.StatusNoContent,
 		nil,

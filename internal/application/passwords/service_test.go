@@ -340,9 +340,9 @@ type recordingPasswordHasher struct {
 	called      bool
 }
 
-func (hasher *recordingPasswordHasher) Hash(argPassword []byte) (string, error) {
+func (hasher *recordingPasswordHasher) Hash(password []byte) (string, error) {
 	hasher.called = true
-	hasher.password = append([]byte(nil), argPassword...)
+	hasher.password = append([]byte(nil), password...)
 
 	return hasher.encodedHash, hasher.err
 }
@@ -360,9 +360,9 @@ type recordingEnrollmentStore struct {
 
 func (store *recordingEnrollmentStore) SaveForCredentiallessUser(
 	_ context.Context,
-	argEnrollment credential.PasswordEnrollment,
+	enrollment credential.PasswordEnrollment,
 ) error {
-	store.savedEnrollment = argEnrollment
+	store.savedEnrollment = enrollment
 
 	return store.saveErr
 }
@@ -376,13 +376,13 @@ func (store *recordingEnrollmentStore) FindByTokenHash(
 
 func (store *recordingEnrollmentStore) CreateCredentialAndConsume(
 	_ context.Context,
-	argTokenHash [sha256.Size]byte,
-	argCredential credential.PasswordCredential,
+	tokenHash [sha256.Size]byte,
+	credential credential.PasswordCredential,
 	_ time.Time,
 ) error {
 	store.consumeCalled = true
-	store.consumedHash = argTokenHash
-	store.createdCredential = argCredential
+	store.consumedHash = tokenHash
+	store.createdCredential = credential
 
 	return store.consumeErr
 }

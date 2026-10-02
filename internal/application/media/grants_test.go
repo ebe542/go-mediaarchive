@@ -27,14 +27,14 @@ type recordingGrantRepository struct {
 
 func (repository *recordingGrantRepository) Find(
 	_ context.Context,
-	argMediaID string,
-	argUserID string,
+	mediaID string,
+	userID string,
 ) (domainmedia.Grant, error) {
-	repository.findCalls = append(repository.findCalls, argMediaID+":"+argUserID)
+	repository.findCalls = append(repository.findCalls, mediaID+":"+userID)
 	if repository.findError != nil {
 		return domainmedia.Grant{}, repository.findError
 	}
-	grant, found := repository.grants[argUserID]
+	grant, found := repository.grants[userID]
 	if !found {
 		return domainmedia.Grant{}, domainmedia.ErrGrantNotFound
 	}
@@ -44,9 +44,9 @@ func (repository *recordingGrantRepository) Find(
 
 func (repository *recordingGrantRepository) Save(
 	_ context.Context,
-	argGrant domainmedia.Grant,
+	grant domainmedia.Grant,
 ) error {
-	repository.saved = argGrant
+	repository.saved = grant
 
 	return repository.saveError
 }
@@ -70,11 +70,11 @@ func (repository *recordingGrantRepository) ListByMedia(
 
 func (repository *recordingGrantRepository) Delete(
 	_ context.Context,
-	argMediaID string,
-	argUserID string,
+	mediaID string,
+	userID string,
 ) error {
-	repository.deletedMedia = argMediaID
-	repository.deletedUser = argUserID
+	repository.deletedMedia = mediaID
+	repository.deletedUser = userID
 
 	return repository.deleteError
 }

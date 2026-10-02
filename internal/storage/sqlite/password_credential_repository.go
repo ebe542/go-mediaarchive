@@ -20,24 +20,24 @@ var _ credential.PasswordCredentialRepository = (*PasswordCredentialRepository)(
 
 // NewPasswordCredentialRepository creates a SQLite credential repository.
 func NewPasswordCredentialRepository(
-	argDatabase *sql.DB,
+	database *sql.DB,
 ) *PasswordCredentialRepository {
 	return &PasswordCredentialRepository{
-		database: argDatabase,
+		database: database,
 	}
 }
 
 // FindByUserID retrieves a password credential by its user ID.
 func (repository *PasswordCredentialRepository) FindByUserID(
-	argContext context.Context,
-	argUserID string,
+	ctx context.Context,
+	userID string,
 ) (credential.PasswordCredential, error) {
 	var storedCredential credential.PasswordCredential
 	var createdAt string
 	var updatedAt string
 
 	err := repository.database.QueryRowContext(
-		argContext,
+		ctx,
 		`
 			SELECT
 				user_id,
@@ -47,7 +47,7 @@ func (repository *PasswordCredentialRepository) FindByUserID(
 			FROM password_credentials
 			WHERE user_id = ?
 		`,
-		argUserID,
+		userID,
 	).Scan(
 		&storedCredential.UserID,
 		&storedCredential.PasswordHash,
@@ -58,7 +58,7 @@ func (repository *PasswordCredentialRepository) FindByUserID(
 		return credential.PasswordCredential{}, fmt.Errorf(
 			"%w: user ID %q",
 			credential.ErrPasswordCredentialNotFound,
-			argUserID,
+			userID,
 		)
 	}
 	if err != nil {
@@ -96,25 +96,25 @@ func (repository *PasswordCredentialRepository) FindByUserID(
 // ChangePasswordAndRevokeSessions atomically replaces a password hash and
 // revokes every session belonging to the credential's user.
 func (repository *PasswordCredentialRepository) ChangePasswordAndRevokeSessions(
-	argContext context.Context,
-	argCredential credential.PasswordCredential,
+	ctx context.Context,
+	passwordCredential credential.PasswordCredential,
 ) error {
-	transaction, err := repository.database.BeginTx(argContext, nil)
+	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin password change: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
 
 	result, err := transaction.ExecContext(
-		argContext,
+		ctx,
 		`
 			UPDATE password_credentials
 			SET password_hash = ?, updated_at = ?
 			WHERE user_id = ?
 		`,
-		argCredential.PasswordHash,
-		argCredential.UpdatedAt.Format(time.RFC3339Nano),
-		argCredential.UserID,
+		passwordCredential.PasswordHash,
+		passwordCredential.UpdatedAt.Format(time.RFC3339Nano),
+		passwordCredential.UserID,
 	)
 	if err != nil {
 		return fmt.Errorf("update password credential: %w", err)
@@ -129,14 +129,14 @@ func (repository *PasswordCredentialRepository) ChangePasswordAndRevokeSessions(
 	}
 
 	_, err = transaction.ExecContext(
-		argContext,
+		ctx,
 		`
 			UPDATE sessions
 			SET revoked_at = COALESCE(revoked_at, ?)
 			WHERE user_id = ?
 		`,
-		argCredential.UpdatedAt.Format(time.RFC3339Nano),
-		argCredential.UserID,
+		passwordCredential.UpdatedAt.Format(time.RFC3339Nano),
+		passwordCredential.UserID,
 	)
 	if err != nil {
 		return fmt.Errorf("revoke password change sessions: %w", err)

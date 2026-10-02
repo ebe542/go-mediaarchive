@@ -20,19 +20,19 @@ var ErrUserOwnsMedia = errors.New("user owns media")
 
 // UserRepository defines persistence operations required by user services.
 type UserRepository interface {
-	Create(argContext context.Context, argUser User) error
-	FindByID(argContext context.Context, argID string) (User, error)
+	Create(ctx context.Context, user User) error
+	FindByID(ctx context.Context, id string) (User, error)
 	FindByUsername(
-		argContext context.Context,
-		argUsername string,
+		ctx context.Context,
+		username string,
 	) (User, error)
-	Update(argContext context.Context, argUser User) error
+	Update(ctx context.Context, user User) error
 	UpdatePreservingLastAdministrator(
-		argContext context.Context,
-		argUser User,
+		ctx context.Context,
+		user User,
 	) error
 	DeletePreservingLastAdministrator(
-		argContext context.Context,
-		argID string,
+		ctx context.Context,
+		id string,
 	) error
 }

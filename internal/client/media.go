@@ -65,16 +65,16 @@ type mediaResponse struct {
 
 // CreateMedia creates a media identity owned by the authenticated user.
 func (client *Client) CreateMedia(
-	argContext context.Context,
-	argAccessToken string,
-	argInput MediaInput,
+	ctx context.Context,
+	accessToken string,
+	input MediaInput,
 ) (Media, error) {
 	return client.mutateMedia(
-		argContext,
+		ctx,
 		http.MethodPost,
 		"/api/v1/media",
-		argAccessToken,
-		argInput,
+		accessToken,
+		input,
 		http.StatusCreated,
 		"create media",
 	)
@@ -82,16 +82,16 @@ func (client *Client) CreateMedia(
 
 // MediaByID returns discoverable metadata for one media identity.
 func (client *Client) MediaByID(
-	argContext context.Context,
-	argAccessToken string,
-	argID string,
+	ctx context.Context,
+	accessToken string,
+	id string,
 ) (Media, error) {
 	var response mediaResponse
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodGet,
-		"/api/v1/media/"+url.PathEscape(argID),
-		argAccessToken,
+		"/api/v1/media/"+url.PathEscape(id),
+		accessToken,
 		nil,
 		http.StatusOK,
 		&response,
@@ -105,17 +105,17 @@ func (client *Client) MediaByID(
 
 // UpdateMedia replaces mutable metadata for one media identity.
 func (client *Client) UpdateMedia(
-	argContext context.Context,
-	argAccessToken string,
-	argID string,
-	argInput MediaInput,
+	ctx context.Context,
+	accessToken string,
+	id string,
+	input MediaInput,
 ) (Media, error) {
 	return client.mutateMedia(
-		argContext,
+		ctx,
 		http.MethodPut,
-		"/api/v1/media/"+url.PathEscape(argID),
-		argAccessToken,
-		argInput,
+		"/api/v1/media/"+url.PathEscape(id),
+		accessToken,
+		input,
 		http.StatusOK,
 		"update media",
 	)
@@ -123,15 +123,15 @@ func (client *Client) UpdateMedia(
 
 // DeleteMedia permanently removes one authorized media identity.
 func (client *Client) DeleteMedia(
-	argContext context.Context,
-	argAccessToken string,
-	argID string,
+	ctx context.Context,
+	accessToken string,
+	id string,
 ) error {
 	return client.doJSON(
-		argContext,
+		ctx,
 		http.MethodDelete,
-		"/api/v1/media/"+url.PathEscape(argID),
-		argAccessToken,
+		"/api/v1/media/"+url.PathEscape(id),
+		accessToken,
 		nil,
 		http.StatusNoContent,
 		nil,
@@ -140,65 +140,65 @@ func (client *Client) DeleteMedia(
 }
 
 func (client *Client) mutateMedia(
-	argContext context.Context,
-	argMethod string,
-	argPath string,
-	argAccessToken string,
-	argInput MediaInput,
-	argExpectedStatus int,
-	argOperation string,
+	ctx context.Context,
+	method string,
+	path string,
+	accessToken string,
+	input MediaInput,
+	expectedStatus int,
+	operation string,
 ) (Media, error) {
 	request := mediaRequest{
-		Title:            argInput.Title,
-		Authors:          append([]string{}, argInput.Authors...),
-		OriginalFilename: argInput.OriginalFilename,
-		Type:             argInput.Type,
-		MIMEType:         argInput.MIMEType,
-		Size:             argInput.Size,
-		SHA256:           hex.EncodeToString(argInput.Checksum[:]),
+		Title:            input.Title,
+		Authors:          append([]string{}, input.Authors...),
+		OriginalFilename: input.OriginalFilename,
+		Type:             input.Type,
+		MIMEType:         input.MIMEType,
+		Size:             input.Size,
+		SHA256:           hex.EncodeToString(input.Checksum[:]),
 	}
 	var response mediaResponse
 	if err := client.doJSON(
-		argContext,
-		argMethod,
-		argPath,
-		argAccessToken,
+		ctx,
+		method,
+		path,
+		accessToken,
 		request,
-		argExpectedStatus,
+		expectedStatus,
 		&response,
-		argOperation,
+		operation,
 	); err != nil {
 		return Media{}, err
 	}
 
-	return decodeMediaResponse(response, argOperation)
+	return decodeMediaResponse(response, operation)
 }
 
-func decodeMediaResponse(argResponse mediaResponse, argOperation string) (Media, error) {
-	if argResponse.Authors == nil ||
-		len(argResponse.SHA256) != sha256.Size*2 ||
-		argResponse.SHA256 != strings.ToLower(argResponse.SHA256) {
-		return Media{}, fmt.Errorf("validate %s response: media is incomplete", argOperation)
+func decodeMediaResponse(response mediaResponse, operation string) (Media, error) {
+	if response.Authors == nil ||
+		len(response.SHA256) != sha256.Size*2 ||
+		response.SHA256 != strings.ToLower(response.SHA256) {
+		return Media{}, fmt.Errorf("validate %s response: media is incomplete", operation)
 	}
-	checksum, err := hex.DecodeString(argResponse.SHA256)
+	checksum, err := hex.DecodeString(response.SHA256)
 	if err != nil {
-		return Media{}, fmt.Errorf("validate %s response checksum: %w", argOperation, err)
+		return Media{}, fmt.Errorf("validate %s response checksum: %w", operation, err)
 	}
 	item, err := domainmedia.NewItem(
-		argResponse.ID,
-		argResponse.Title,
-		argResponse.Authors,
-		argResponse.OriginalFilename,
-		argResponse.Type,
-		argResponse.MIMEType,
-		argResponse.Size,
+		response.ID,
+		response.Title,
+		response.Authors,
+		response.OriginalFilename,
+		response.Type,
+		response.MIMEType,
+		response.Size,
 		checksum,
-		argResponse.OwnerID,
-		argResponse.CreatedAt,
-		argResponse.UpdatedAt,
+		response.OwnerID,
+		response.CreatedAt,
+		response.UpdatedAt,
 	)
 	if err != nil {
-		return Media{}, fmt.Errorf("validate %s response: %w", argOperation, err)
+		return Media{}, fmt.Errorf("validate %s response: %w", operation, err)
 	}
 
 	return Media{

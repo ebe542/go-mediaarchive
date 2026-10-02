@@ -17,20 +17,20 @@ type Session struct {
 
 // Login authenticates a user and creates a server-side session.
 func (client *Client) Login(
-	argContext context.Context,
-	argUsername string,
-	argPassword []byte,
+	ctx context.Context,
+	username string,
+	password []byte,
 ) (Session, error) {
 	var session Session
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodPost,
 		"/api/v1/auth/sessions",
 		"",
 		struct {
 			Username string `json:"username"`
 			Password string `json:"password"`
-		}{Username: argUsername, Password: string(argPassword)},
+		}{Username: username, Password: string(password)},
 		http.StatusCreated,
 		&session,
 		"login",
@@ -49,14 +49,14 @@ func (client *Client) Login(
 
 // Logout revokes the current server-side session.
 func (client *Client) Logout(
-	argContext context.Context,
-	argAccessToken string,
+	ctx context.Context,
+	accessToken string,
 ) error {
 	return client.doJSON(
-		argContext,
+		ctx,
 		http.MethodDelete,
 		"/api/v1/auth/sessions/current",
-		argAccessToken,
+		accessToken,
 		nil,
 		http.StatusNoContent,
 		nil,

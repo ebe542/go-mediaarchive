@@ -20,20 +20,20 @@ var (
 // PasswordChangeRepository atomically updates a credential and its sessions.
 type PasswordChangeRepository interface {
 	FindByUserID(
-		argContext context.Context,
-		argUserID string,
+		ctx context.Context,
+		userID string,
 	) (credential.PasswordCredential, error)
 
 	ChangePasswordAndRevokeSessions(
-		argContext context.Context,
-		argCredential credential.PasswordCredential,
+		ctx context.Context,
+		credential credential.PasswordCredential,
 	) error
 }
 
 // PasswordVerifierHasher verifies and creates encoded password hashes.
 type PasswordVerifierHasher interface {
-	Verify(argPassword []byte, argEncodedHash string) (bool, error)
-	Hash(argPassword []byte) (string, error)
+	Verify(password []byte, encodedHash string) (bool, error)
+	Hash(password []byte) (string, error)
 }
 
 // ChangeService coordinates authenticated password replacements.
@@ -45,34 +45,34 @@ type ChangeService struct {
 
 // NewChangeService creates a password change service with explicit dependencies.
 func NewChangeService(
-	argCredentials PasswordChangeRepository,
-	argHasher PasswordVerifierHasher,
-	argClock Clock,
+	credentials PasswordChangeRepository,
+	hasher PasswordVerifierHasher,
+	clock Clock,
 ) *ChangeService {
 	return &ChangeService{
-		credentials: argCredentials,
-		hasher:      argHasher,
-		currentTime: argClock,
+		credentials: credentials,
+		hasher:      hasher,
+		currentTime: clock,
 	}
 }
 
 // ChangePassword verifies the old password and atomically invalidates sessions.
 func (service *ChangeService) ChangePassword(
-	argContext context.Context,
-	argUserID string,
-	argCurrentPassword []byte,
-	argNewPassword []byte,
+	ctx context.Context,
+	userID string,
+	currentPassword []byte,
+	newPassword []byte,
 ) error {
 	storedCredential, err := service.credentials.FindByUserID(
-		argContext,
-		argUserID,
+		ctx,
+		userID,
 	)
 	if err != nil {
 		return fmt.Errorf("retrieve changed password credential: %w", err)
 	}
 
 	matches, err := service.hasher.Verify(
-		argCurrentPassword,
+		currentPassword,
 		storedCredential.PasswordHash,
 	)
 	if err != nil {
@@ -82,14 +82,14 @@ func (service *ChangeService) ChangePassword(
 		return ErrInvalidCurrentPassword
 	}
 
-	if err := password.Validate(argNewPassword); err != nil {
+	if err := password.Validate(newPassword); err != nil {
 		return fmt.Errorf("validate new password: %w", err)
 	}
-	if bytes.Equal(argCurrentPassword, argNewPassword) {
+	if bytes.Equal(currentPassword, newPassword) {
 		return ErrPasswordUnchanged
 	}
 
-	encodedHash, err := service.hasher.Hash(argNewPassword)
+	encodedHash, err := service.hasher.Hash(newPassword)
 	if err != nil {
 		return fmt.Errorf("hash new password: %w", err)
 	}
@@ -103,7 +103,7 @@ func (service *ChangeService) ChangePassword(
 	}
 
 	if err := service.credentials.ChangePasswordAndRevokeSessions(
-		argContext,
+		ctx,
 		updatedCredential,
 	); err != nil {
 		return fmt.Errorf("persist password change: %w", err)

@@ -65,49 +65,49 @@ func TestUserRepositoryPreservesUserAndCredentialsWhenMediaIsOwned(t *testing.T)
 }
 
 func insertDeletionTestMedia(
-	argTest *testing.T,
-	argContext context.Context,
-	argDatabase *sql.DB,
-	argMediaID string,
-	argOwnerID string,
+	test *testing.T,
+	ctx context.Context,
+	database *sql.DB,
+	mediaID string,
+	ownerID string,
 ) {
-	argTest.Helper()
+	test.Helper()
 
-	if _, err := argDatabase.ExecContext(
-		argContext,
+	if _, err := database.ExecContext(
+		ctx,
 		validMediaInsertSQL,
-		argMediaID,
+		mediaID,
 		"Deletion Test",
 		"deletion-test.pdf",
 		"document",
 		"application/pdf",
 		1024,
 		make([]byte, sha256.Size),
-		argOwnerID,
+		ownerID,
 		schemaTimestamp,
 		schemaTimestamp,
 	); err != nil {
-		argTest.Fatalf("insert deletion test media: %v", err)
+		test.Fatalf("insert deletion test media: %v", err)
 	}
 }
 
 func assertTableRecordCount(
-	argTest *testing.T,
-	argContext context.Context,
-	argDatabase *sql.DB,
-	argTable string,
-	argColumn string,
-	argValue string,
-	argExpected int,
+	test *testing.T,
+	ctx context.Context,
+	database *sql.DB,
+	table string,
+	column string,
+	value string,
+	expected int,
 ) {
-	argTest.Helper()
+	test.Helper()
 
 	var count int
-	query := "SELECT COUNT(*) FROM " + argTable + " WHERE " + argColumn + " = ?"
-	if err := argDatabase.QueryRowContext(argContext, query, argValue).Scan(&count); err != nil {
-		argTest.Fatalf("count %s records: %v", argTable, err)
+	query := "SELECT COUNT(*) FROM " + table + " WHERE " + column + " = ?"
+	if err := database.QueryRowContext(ctx, query, value).Scan(&count); err != nil {
+		test.Fatalf("count %s records: %v", table, err)
 	}
-	if count != argExpected {
-		argTest.Fatalf("expected %d %s records, got %d", argExpected, argTable, count)
+	if count != expected {
+		test.Fatalf("expected %d %s records, got %d", expected, table, count)
 	}
 }

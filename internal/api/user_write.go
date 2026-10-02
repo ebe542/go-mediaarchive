@@ -12,36 +12,36 @@ import (
 // UserWriter performs administrator-controlled user identity mutations.
 type UserWriter interface {
 	CreateUser(
-		argContext context.Context,
-		argInput appusers.CreateUserInput,
+		ctx context.Context,
+		input appusers.CreateUserInput,
 	) (identity.User, error)
 	UpdateUser(
-		argContext context.Context,
-		argActorID string,
-		argID string,
-		argInput appusers.UpdateUserInput,
+		ctx context.Context,
+		actorID string,
+		id string,
+		input appusers.UpdateUserInput,
 	) (identity.User, error)
 	SetUserActive(
-		argContext context.Context,
-		argActorID string,
-		argID string,
-		argActive bool,
+		ctx context.Context,
+		actorID string,
+		id string,
+		active bool,
 	) (identity.User, error)
 	DeleteUser(
-		argContext context.Context,
-		argActorID string,
-		argID string,
+		ctx context.Context,
+		actorID string,
+		id string,
 	) error
 }
 
 // WithUserManagementAPI enables administrator-only user mutation endpoints.
 func WithUserManagementAPI(
-	argResolver SessionResolver,
-	argUserWriter UserWriter,
+	resolver SessionResolver,
+	userWriter UserWriter,
 ) Option {
-	return func(argConfiguration *handlerConfiguration) {
-		argConfiguration.sessionResolver = argResolver
-		argConfiguration.userWriter = argUserWriter
+	return func(configuration *handlerConfiguration) {
+		configuration.sessionResolver = resolver
+		configuration.userWriter = userWriter
 	}
 }
 
@@ -56,22 +56,22 @@ type userDetailsRequest struct {
 }
 
 func (handler *userWriteHandler) createUser(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
 	var requestBody userDetailsRequest
 	if err := decodeJSONRequest(
-		argResponse,
-		argRequest,
+		response,
+		request,
 		&requestBody,
 	); err != nil {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
 
 	createdUser, err := handler.users.CreateUser(
-		argRequest.Context(),
+		request.Context(),
 		appusers.CreateUserInput{
 			Username:    requestBody.Username,
 			DisplayName: requestBody.DisplayName,
@@ -79,30 +79,30 @@ func (handler *userWriteHandler) createUser(
 		},
 	)
 	if err != nil {
-		writeUserApplicationError(argResponse, err)
+		writeUserApplicationError(response, err)
 
 		return
 	}
 
-	argResponse.Header().Set(
+	response.Header().Set(
 		"Location",
 		"/api/v1/users/"+createdUser.ID,
 	)
 	writeUserResponseWithStatus(
-		argResponse,
+		response,
 		createdUser,
 		http.StatusCreated,
 	)
 }
 
 func (handler *userWriteHandler) updateUser(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := AuthenticatedUser(argRequest.Context())
+	actor, exists := AuthenticatedUser(request.Context())
 	if !exists {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -113,19 +113,19 @@ func (handler *userWriteHandler) updateUser(
 
 	var requestBody userDetailsRequest
 	if err := decodeJSONRequest(
-		argResponse,
-		argRequest,
+		response,
+		request,
 		&requestBody,
 	); err != nil {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
 
 	updatedUser, err := handler.users.UpdateUser(
-		argRequest.Context(),
+		request.Context(),
 		actor.ID,
-		argRequest.PathValue("id"),
+		request.PathValue("id"),
 		appusers.UpdateUserInput{
 			Username:    requestBody.Username,
 			DisplayName: requestBody.DisplayName,
@@ -133,22 +133,22 @@ func (handler *userWriteHandler) updateUser(
 		},
 	)
 	if err != nil {
-		writeUserApplicationError(argResponse, err)
+		writeUserApplicationError(response, err)
 
 		return
 	}
 
-	writeUserResponse(argResponse, updatedUser)
+	writeUserResponse(response, updatedUser)
 }
 
 func (handler *userWriteHandler) setUserActive(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := AuthenticatedUser(argRequest.Context())
+	actor, exists := AuthenticatedUser(request.Context())
 	if !exists {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -161,38 +161,38 @@ func (handler *userWriteHandler) setUserActive(
 		Active *bool `json:"active"`
 	}
 	if err := decodeJSONRequest(
-		argResponse,
-		argRequest,
+		response,
+		request,
 		&requestBody,
 	); err != nil || requestBody.Active == nil {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
 
 	updatedUser, err := handler.users.SetUserActive(
-		argRequest.Context(),
+		request.Context(),
 		actor.ID,
-		argRequest.PathValue("id"),
+		request.PathValue("id"),
 		*requestBody.Active,
 	)
 	if err != nil {
-		writeUserApplicationError(argResponse, err)
+		writeUserApplicationError(response, err)
 
 		return
 	}
 
-	writeUserResponse(argResponse, updatedUser)
+	writeUserResponse(response, updatedUser)
 }
 
 func (handler *userWriteHandler) deleteUser(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := AuthenticatedUser(argRequest.Context())
+	actor, exists := AuthenticatedUser(request.Context())
 	if !exists {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -202,22 +202,22 @@ func (handler *userWriteHandler) deleteUser(
 	}
 
 	if err := handler.users.DeleteUser(
-		argRequest.Context(),
+		request.Context(),
 		actor.ID,
-		argRequest.PathValue("id"),
+		request.PathValue("id"),
 	); err != nil {
-		writeUserApplicationError(argResponse, err)
+		writeUserApplicationError(response, err)
 
 		return
 	}
 
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusNoContent)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusNoContent)
 }
 
-func writeInvalidRequest(argResponse http.ResponseWriter) {
+func writeInvalidRequest(response http.ResponseWriter) {
 	writeJSONError(
-		argResponse,
+		response,
 		http.StatusBadRequest,
 		"invalid_request",
 		"Invalid request.",
@@ -225,57 +225,57 @@ func writeInvalidRequest(argResponse http.ResponseWriter) {
 }
 
 func writeUserApplicationError(
-	argResponse http.ResponseWriter,
-	argError error,
+	response http.ResponseWriter,
+	inputError error,
 ) {
 	switch {
-	case isInvalidUserInput(argError):
-		writeInvalidRequest(argResponse)
-	case errors.Is(argError, identity.ErrUserNotFound):
+	case isInvalidUserInput(inputError):
+		writeInvalidRequest(response)
+	case errors.Is(inputError, identity.ErrUserNotFound):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusNotFound,
 			"not_found",
 			"Resource not found.",
 		)
-	case errors.Is(argError, identity.ErrUserConflict):
+	case errors.Is(inputError, identity.ErrUserConflict):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusConflict,
 			"conflict",
 			"User identity conflicts with an existing resource.",
 		)
-	case errors.Is(argError, appusers.ErrSelfLockout):
+	case errors.Is(inputError, appusers.ErrSelfLockout):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusConflict,
 			"self_lockout",
 			"An administrator cannot remove their own access.",
 		)
-	case errors.Is(argError, appusers.ErrSelfDeletion):
+	case errors.Is(inputError, appusers.ErrSelfDeletion):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusConflict,
 			"self_deletion",
 			"An administrator cannot delete their own identity.",
 		)
-	case errors.Is(argError, identity.ErrLastAdministrator):
+	case errors.Is(inputError, identity.ErrLastAdministrator):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusConflict,
 			"last_administrator",
 			"The last active administrator must be preserved.",
 		)
-	case errors.Is(argError, identity.ErrUserOwnsMedia):
+	case errors.Is(inputError, identity.ErrUserOwnsMedia):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusConflict,
 			"owned_media",
 			"The user owns media that must be transferred or deleted first.",
 		)
 	default:
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -283,10 +283,10 @@ func writeUserApplicationError(
 	}
 }
 
-func isInvalidUserInput(argError error) bool {
-	return errors.Is(argError, identity.ErrInvalidUserID) ||
-		errors.Is(argError, identity.ErrInvalidUsername) ||
-		errors.Is(argError, identity.ErrInvalidDisplayName) ||
-		errors.Is(argError, identity.ErrInvalidRole) ||
-		errors.Is(argError, identity.ErrInvalidTimestamp)
+func isInvalidUserInput(inputError error) bool {
+	return errors.Is(inputError, identity.ErrInvalidUserID) ||
+		errors.Is(inputError, identity.ErrInvalidUsername) ||
+		errors.Is(inputError, identity.ErrInvalidDisplayName) ||
+		errors.Is(inputError, identity.ErrInvalidRole) ||
+		errors.Is(inputError, identity.ErrInvalidTimestamp)
 }

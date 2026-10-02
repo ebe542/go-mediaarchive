@@ -31,22 +31,22 @@ type Cursor struct {
 
 // NewCursor validates and creates a user-directory cursor.
 func NewCursor(
-	argCreatedAt time.Time,
-	argID string,
+	createdAt time.Time,
+	id string,
 ) (Cursor, error) {
-	if argCreatedAt.IsZero() {
+	if createdAt.IsZero() {
 		return Cursor{}, fmt.Errorf(
 			"%w: creation time must not be zero",
 			ErrInvalidCursor,
 		)
 	}
-	if err := identity.ValidateUserID(argID); err != nil {
+	if err := identity.ValidateUserID(id); err != nil {
 		return Cursor{}, fmt.Errorf("%w: %v", ErrInvalidCursor, err)
 	}
 
 	return Cursor{
-		CreatedAt: argCreatedAt.UTC(),
-		ID:        argID,
+		CreatedAt: createdAt.UTC(),
+		ID:        id,
 	}, nil
 }
 
@@ -65,9 +65,9 @@ type UserPage struct {
 // UserPageRepository loads users after an optional immutable ordering key.
 type UserPageRepository interface {
 	ListUsers(
-		argContext context.Context,
-		argCursor *Cursor,
-		argLimit int,
+		ctx context.Context,
+		cursor *Cursor,
+		limit int,
 	) ([]identity.User, error)
 }
 
@@ -79,10 +79,10 @@ type Repository interface {
 
 // ListUsers retrieves a validated keyset-paginated directory page.
 func (service *Service) ListUsers(
-	argContext context.Context,
-	argInput ListUsersInput,
+	ctx context.Context,
+	input ListUsersInput,
 ) (UserPage, error) {
-	limit := argInput.Limit
+	limit := input.Limit
 	if limit == 0 {
 		limit = DefaultPageLimit
 	}
@@ -94,21 +94,21 @@ func (service *Service) ListUsers(
 		)
 	}
 
-	if argInput.Cursor != nil {
+	if input.Cursor != nil {
 		validatedCursor, err := NewCursor(
-			argInput.Cursor.CreatedAt,
-			argInput.Cursor.ID,
+			input.Cursor.CreatedAt,
+			input.Cursor.ID,
 		)
 		if err != nil {
 			return UserPage{}, err
 		}
 
-		argInput.Cursor = &validatedCursor
+		input.Cursor = &validatedCursor
 	}
 
 	users, err := service.repository.ListUsers(
-		argContext,
-		argInput.Cursor,
+		ctx,
+		input.Cursor,
 		limit+1,
 	)
 	if err != nil {

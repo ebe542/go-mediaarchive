@@ -70,11 +70,11 @@ func TestReleaseValidateRejectsInvalidState(t *testing.T) {
 func TestReleaseBuildCreatesArchivesAndChecksums(t *testing.T) {
 	root := createReleaseProject(t)
 	runner := newRecordingRunner()
-	runner.onRun = func(argCommand Command) error {
-		if argCommand.Name != "go" || len(argCommand.Args) < 5 || argCommand.Args[0] != "build" {
+	runner.onRun = func(command Command) error {
+		if command.Name != "go" || len(command.Args) < 5 || command.Args[0] != "build" {
 			return nil
 		}
-		outputPath := argCommand.Args[3]
+		outputPath := command.Args[3]
 		return os.WriteFile(outputPath, []byte("test binary"), 0o755)
 	}
 	app := application{stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, runner: runner, root: root}
@@ -131,8 +131,8 @@ func TestReleaseBuildCreatesArchivesAndChecksums(t *testing.T) {
 func TestReleaseBuildDoesNotPublishAfterBuildFailure(t *testing.T) {
 	root := createReleaseProject(t)
 	runner := newRecordingRunner()
-	runner.onRun = func(argCommand Command) error {
-		if argCommand.Name == "go" && len(argCommand.Args) > 0 && argCommand.Args[0] == "build" {
+	runner.onRun = func(command Command) error {
+		if command.Name == "go" && len(command.Args) > 0 && command.Args[0] == "build" {
 			return errors.New("build failed")
 		}
 
@@ -156,33 +156,33 @@ func TestReleaseBuildDoesNotPublishAfterBuildFailure(t *testing.T) {
 	}
 }
 
-func createReleaseProject(argTest *testing.T) string {
-	argTest.Helper()
+func createReleaseProject(test *testing.T) string {
+	test.Helper()
 
-	root := argTest.TempDir()
-	writeTestFile(argTest, filepath.Join(root, "CHANGELOG.md"), "## [1.2.3] - 2026-09-12\n", 0o644)
-	writeTestFile(argTest, filepath.Join(root, "LICENSE"), "MIT License\n", 0o644)
-	writeTestFile(argTest, filepath.Join(root, "README.md"), "# Test project\n", 0o644)
+	root := test.TempDir()
+	writeTestFile(test, filepath.Join(root, "CHANGELOG.md"), "## [1.2.3] - 2026-09-12\n", 0o644)
+	writeTestFile(test, filepath.Join(root, "LICENSE"), "MIT License\n", 0o644)
+	writeTestFile(test, filepath.Join(root, "README.md"), "# Test project\n", 0o644)
 
 	return root
 }
 
 func writeTestFile(
-	argTest *testing.T,
-	argPath string,
-	argContent string,
-	argMode os.FileMode,
+	test *testing.T,
+	path string,
+	content string,
+	mode os.FileMode,
 ) {
-	argTest.Helper()
+	test.Helper()
 
-	if err := os.WriteFile(argPath, []byte(argContent), argMode); err != nil {
-		argTest.Fatalf("write test file: %v", err)
+	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		test.Fatalf("write test file: %v", err)
 	}
 }
 
-func containsString(argValues []string, argExpected string) bool {
-	for _, value := range argValues {
-		if value == argExpected {
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
 			return true
 		}
 	}

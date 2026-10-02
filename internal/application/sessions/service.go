@@ -15,9 +15,9 @@ import (
 // Authenticator verifies a username and password.
 type Authenticator interface {
 	Authenticate(
-		argContext context.Context,
-		argUsername string,
-		argPassword []byte,
+		ctx context.Context,
+		username string,
+		password []byte,
 	) (identity.User, error)
 }
 
@@ -33,8 +33,8 @@ type TokenGenerator interface {
 // UserFinder loads the current user state for a session.
 type UserFinder interface {
 	FindByID(
-		argContext context.Context,
-		argID string,
+		ctx context.Context,
+		id string,
 	) (identity.User, error)
 }
 
@@ -63,35 +63,35 @@ type Service struct {
 
 // NewService creates a server-side session service.
 func NewService(
-	argAuthenticator Authenticator,
-	argUserFinder UserFinder,
-	argRepository session.Repository,
-	argTokenGenerator TokenGenerator,
-	argClock Clock,
-	argAbsoluteLifetime time.Duration,
-	argIdleTimeout time.Duration,
+	authenticator Authenticator,
+	userFinder UserFinder,
+	repository session.Repository,
+	tokenGenerator TokenGenerator,
+	clock Clock,
+	absoluteLifetime time.Duration,
+	idleTimeout time.Duration,
 ) *Service {
 	return &Service{
-		authenticator:    argAuthenticator,
-		userFinder:       argUserFinder,
-		repository:       argRepository,
-		tokenGenerator:   argTokenGenerator,
-		currentTime:      argClock,
-		absoluteLifetime: argAbsoluteLifetime,
-		idleTimeout:      argIdleTimeout,
+		authenticator:    authenticator,
+		userFinder:       userFinder,
+		repository:       repository,
+		tokenGenerator:   tokenGenerator,
+		currentTime:      clock,
+		absoluteLifetime: absoluteLifetime,
+		idleTimeout:      idleTimeout,
 	}
 }
 
 // Create authenticates a user and persists a new server-side session.
 func (service *Service) Create(
-	argContext context.Context,
-	argUsername string,
-	argPassword []byte,
+	ctx context.Context,
+	username string,
+	password []byte,
 ) (Created, error) {
 	user, err := service.authenticator.Authenticate(
-		argContext,
-		argUsername,
-		argPassword,
+		ctx,
+		username,
+		password,
 	)
 	if err != nil {
 		return Created{}, fmt.Errorf(
@@ -122,7 +122,7 @@ func (service *Service) Create(
 	}
 
 	if err := service.repository.Create(
-		argContext,
+		ctx,
 		createdSession,
 	); err != nil {
 		return Created{}, fmt.Errorf(
@@ -139,13 +139,13 @@ func (service *Service) Create(
 
 // Resolve authenticates an active session and records recent use.
 func (service *Service) Resolve(
-	argContext context.Context,
-	argAccessToken string,
+	ctx context.Context,
+	accessToken string,
 ) (identity.User, error) {
-	tokenHash := session.HashToken(argAccessToken)
+	tokenHash := session.HashToken(accessToken)
 
 	storedSession, err := service.repository.FindByTokenHash(
-		argContext,
+		ctx,
 		tokenHash,
 	)
 	if errors.Is(err, session.ErrNotFound) {
@@ -159,7 +159,7 @@ func (service *Service) Resolve(
 	}
 
 	user, err := service.userFinder.FindByID(
-		argContext,
+		ctx,
 		storedSession.UserID,
 	)
 	if errors.Is(err, identity.ErrUserNotFound) {
@@ -183,7 +183,7 @@ func (service *Service) Resolve(
 	}
 
 	if err := service.repository.Touch(
-		argContext,
+		ctx,
 		tokenHash,
 		currentTime,
 	); errors.Is(err, session.ErrNotFound) {
@@ -200,14 +200,14 @@ func (service *Service) Resolve(
 
 // Revoke idempotently invalidates a presented session token.
 func (service *Service) Revoke(
-	argContext context.Context,
-	argAccessToken string,
+	ctx context.Context,
+	accessToken string,
 ) error {
-	tokenHash := session.HashToken(argAccessToken)
+	tokenHash := session.HashToken(accessToken)
 	currentTime := service.currentTime().UTC()
 
 	if err := service.repository.Revoke(
-		argContext,
+		ctx,
 		tokenHash,
 		currentTime,
 	); err != nil {

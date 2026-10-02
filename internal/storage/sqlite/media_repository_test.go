@@ -220,14 +220,14 @@ func TestMediaRepositoryDeletesGrantsAuthorsAndItem(t *testing.T) {
 	}
 }
 
-func mediaRepositoryItem(argTest *testing.T, argAuthors []string) media.Item {
-	argTest.Helper()
+func mediaRepositoryItem(test *testing.T, authors []string) media.Item {
+	test.Helper()
 
 	createdAt := time.Date(2026, time.September, 10, 10, 0, 0, 0, time.UTC)
 	item, err := media.NewItem(
 		schemaMediaID,
 		"Security Book",
-		argAuthors,
+		authors,
 		"security-book.pdf",
 		media.TypeBook,
 		"application/pdf",
@@ -238,37 +238,37 @@ func mediaRepositoryItem(argTest *testing.T, argAuthors []string) media.Item {
 		createdAt,
 	)
 	if err != nil {
-		argTest.Fatalf("create media fixture: %v", err)
+		test.Fatalf("create media fixture: %v", err)
 	}
 
 	return item
 }
 
 func assertMediaItem(
-	argTest *testing.T,
-	argActual media.Item,
-	argExpected media.Item,
+	test *testing.T,
+	actual media.Item,
+	expected media.Item,
 ) {
-	argTest.Helper()
+	test.Helper()
 
-	if argActual.ID != argExpected.ID ||
-		argActual.Title != argExpected.Title ||
-		argActual.OriginalFilename != argExpected.OriginalFilename ||
-		argActual.Type != argExpected.Type ||
-		argActual.MIMEType != argExpected.MIMEType ||
-		argActual.Size != argExpected.Size ||
-		argActual.Checksum != argExpected.Checksum ||
-		argActual.OwnerID != argExpected.OwnerID ||
-		!argActual.CreatedAt.Equal(argExpected.CreatedAt) ||
-		!argActual.UpdatedAt.Equal(argExpected.UpdatedAt) {
-		argTest.Errorf("expected media %+v, got %+v", argExpected, argActual)
+	if actual.ID != expected.ID ||
+		actual.Title != expected.Title ||
+		actual.OriginalFilename != expected.OriginalFilename ||
+		actual.Type != expected.Type ||
+		actual.MIMEType != expected.MIMEType ||
+		actual.Size != expected.Size ||
+		actual.Checksum != expected.Checksum ||
+		actual.OwnerID != expected.OwnerID ||
+		!actual.CreatedAt.Equal(expected.CreatedAt) ||
+		!actual.UpdatedAt.Equal(expected.UpdatedAt) {
+		test.Errorf("expected media %+v, got %+v", expected, actual)
 	}
-	if len(argActual.Authors) != len(argExpected.Authors) {
-		argTest.Fatalf("expected authors %v, got %v", argExpected.Authors, argActual.Authors)
+	if len(actual.Authors) != len(expected.Authors) {
+		test.Fatalf("expected authors %v, got %v", expected.Authors, actual.Authors)
 	}
-	for index := range argExpected.Authors {
-		if argActual.Authors[index] != argExpected.Authors[index] {
-			argTest.Errorf("expected authors %v, got %v", argExpected.Authors, argActual.Authors)
+	for index := range expected.Authors {
+		if actual.Authors[index] != expected.Authors[index] {
+			test.Errorf("expected authors %v, got %v", expected.Authors, actual.Authors)
 		}
 	}
 }

@@ -63,12 +63,12 @@ type Opened struct {
 // Store persists and removes managed media content.
 type Store interface {
 	Put(
-		argContext context.Context,
-		argMediaID string,
-		argSource io.Reader,
-		argMaximumSize int64,
+		ctx context.Context,
+		mediaID string,
+		source io.Reader,
+		maximumSize int64,
 	) (Stored, error)
-	Delete(argContext context.Context, argStorageKey string) error
+	Delete(ctx context.Context, storageKey string) error
 }
 
 // ReadStore opens managed content through an opaque storage key.
@@ -79,14 +79,14 @@ type ReadStore interface {
 // StagedDeletion represents content hidden from its published key but not yet
 // irreversibly removed.
 type StagedDeletion interface {
-	Commit(argContext context.Context) error
-	Rollback(argContext context.Context) error
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
 }
 
 // DeletionStore temporarily hides managed content before permanent deletion.
 type DeletionStore interface {
 	StageDelete(
-		argContext context.Context,
-		argStorageKey string,
+		ctx context.Context,
+		storageKey string,
 	) (StagedDeletion, error)
 }

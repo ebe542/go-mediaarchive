@@ -18,30 +18,30 @@ type MediaGrantRepository struct {
 var _ media.GrantRepository = (*MediaGrantRepository)(nil)
 
 // NewMediaGrantRepository creates a SQLite-backed grant repository.
-func NewMediaGrantRepository(argDatabase *sql.DB) *MediaGrantRepository {
-	return &MediaGrantRepository{database: argDatabase}
+func NewMediaGrantRepository(database *sql.DB) *MediaGrantRepository {
+	return &MediaGrantRepository{database: database}
 }
 
 // Save inserts a grant or replaces its complete permission mask.
 func (repository *MediaGrantRepository) Save(
-	argContext context.Context,
-	argGrant media.Grant,
+	ctx context.Context,
+	grant media.Grant,
 ) error {
-	if err := argGrant.Validate(); err != nil {
+	if err := grant.Validate(); err != nil {
 		return fmt.Errorf("validate media grant for save: %w", err)
 	}
 
 	_, err := repository.database.ExecContext(
-		argContext,
+		ctx,
 		`
 			INSERT INTO media_grants (media_id, user_id, permissions)
 			VALUES (?, ?, ?)
 			ON CONFLICT (media_id, user_id)
 			DO UPDATE SET permissions = excluded.permissions
 		`,
-		argGrant.MediaID,
-		argGrant.UserID,
-		argGrant.Permissions,
+		grant.MediaID,
+		grant.UserID,
+		grant.Permissions,
 	)
 	if err != nil {
 		return fmt.Errorf("save media grant: %w", err)
@@ -52,50 +52,50 @@ func (repository *MediaGrantRepository) Save(
 
 // Find retrieves one grant by its media and grantee IDs.
 func (repository *MediaGrantRepository) Find(
-	argContext context.Context,
-	argMediaID string,
-	argUserID string,
+	ctx context.Context,
+	mediaID string,
+	userID string,
 ) (media.Grant, error) {
 	var permissions int64
 	err := repository.database.QueryRowContext(
-		argContext,
+		ctx,
 		`
 			SELECT permissions
 			FROM media_grants
 			WHERE media_id = ? AND user_id = ?
 		`,
-		argMediaID,
-		argUserID,
+		mediaID,
+		userID,
 	).Scan(&permissions)
 	if errors.Is(err, sql.ErrNoRows) {
 		return media.Grant{}, fmt.Errorf(
 			"%w: media ID %q and user ID %q",
 			media.ErrGrantNotFound,
-			argMediaID,
-			argUserID,
+			mediaID,
+			userID,
 		)
 	}
 	if err != nil {
 		return media.Grant{}, fmt.Errorf("select media grant: %w", err)
 	}
 
-	return validateStoredGrant(argMediaID, argUserID, permissions)
+	return validateStoredGrant(mediaID, userID, permissions)
 }
 
 // ListByMedia returns grants in deterministic grantee-ID order.
 func (repository *MediaGrantRepository) ListByMedia(
-	argContext context.Context,
-	argMediaID string,
+	ctx context.Context,
+	mediaID string,
 ) ([]media.Grant, error) {
 	rows, err := repository.database.QueryContext(
-		argContext,
+		ctx,
 		`
 			SELECT user_id, permissions
 			FROM media_grants
 			WHERE media_id = ?
 			ORDER BY user_id
 		`,
-		argMediaID,
+		mediaID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list media grants: %w", err)
@@ -109,7 +109,7 @@ func (repository *MediaGrantRepository) ListByMedia(
 		if err := rows.Scan(&userID, &permissions); err != nil {
 			return nil, fmt.Errorf("scan media grant: %w", err)
 		}
-		grant, err := validateStoredGrant(argMediaID, userID, permissions)
+		grant, err := validateStoredGrant(mediaID, userID, permissions)
 		if err != nil {
 			return nil, err
 		}
@@ -124,15 +124,15 @@ func (repository *MediaGrantRepository) ListByMedia(
 
 // Delete explicitly removes one grant instead of storing an empty mask.
 func (repository *MediaGrantRepository) Delete(
-	argContext context.Context,
-	argMediaID string,
-	argUserID string,
+	ctx context.Context,
+	mediaID string,
+	userID string,
 ) error {
 	result, err := repository.database.ExecContext(
-		argContext,
+		ctx,
 		`DELETE FROM media_grants WHERE media_id = ? AND user_id = ?`,
-		argMediaID,
-		argUserID,
+		mediaID,
+		userID,
 	)
 	if err != nil {
 		return fmt.Errorf("delete media grant: %w", err)
@@ -149,21 +149,21 @@ func (repository *MediaGrantRepository) Delete(
 }
 
 func validateStoredGrant(
-	argMediaID string,
-	argUserID string,
-	argPermissions int64,
+	mediaID string,
+	userID string,
+	permissions int64,
 ) (media.Grant, error) {
-	if argPermissions < 0 || argPermissions > 255 {
+	if permissions < 0 || permissions > 255 {
 		return media.Grant{}, fmt.Errorf(
 			"validate stored media grant: %w: permission value %d",
 			media.ErrInvalidGrant,
-			argPermissions,
+			permissions,
 		)
 	}
 	grant, err := media.NewGrant(
-		argMediaID,
-		argUserID,
-		media.PermissionSet(argPermissions),
+		mediaID,
+		userID,
+		media.PermissionSet(permissions),
 	)
 	if err != nil {
 		return media.Grant{}, fmt.Errorf("validate stored media grant: %w", err)

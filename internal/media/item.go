@@ -97,23 +97,23 @@ type Item struct {
 
 // NewItem validates and creates a storage-independent media identity.
 func NewItem(
-	argID string,
-	argTitle string,
-	argAuthors []string,
-	argOriginalFilename string,
-	argType Type,
-	argMIMEType string,
-	argSize int64,
-	argChecksum []byte,
-	argOwnerID string,
-	argCreatedAt time.Time,
-	argUpdatedAt time.Time,
+	id string,
+	rawTitle string,
+	rawAuthors []string,
+	rawFilename string,
+	valueType Type,
+	rawMIMEType string,
+	size int64,
+	checksumBytes []byte,
+	ownerID string,
+	createdAt time.Time,
+	updatedAt time.Time,
 ) (Item, error) {
-	if err := validateCanonicalUUID(argID, ErrInvalidMediaID); err != nil {
+	if err := validateCanonicalUUID(id, ErrInvalidMediaID); err != nil {
 		return Item{}, err
 	}
 
-	title := strings.TrimSpace(argTitle)
+	title := strings.TrimSpace(rawTitle)
 	if length := utf8.RuneCountInString(title); length < 1 || length > maximumTitleLength {
 		return Item{}, fmt.Errorf(
 			"%w: length must be between 1 and %d characters",
@@ -128,30 +128,30 @@ func NewItem(
 		)
 	}
 
-	authors, err := normalizeAuthors(argAuthors)
+	authors, err := normalizeAuthors(rawAuthors)
 	if err != nil {
 		return Item{}, err
 	}
 
-	originalFilename, err := normalizeOriginalFilename(argOriginalFilename)
+	originalFilename, err := normalizeOriginalFilename(rawFilename)
 	if err != nil {
 		return Item{}, err
 	}
 
-	if !argType.Valid() {
-		return Item{}, fmt.Errorf("%w: %q", ErrInvalidMediaType, argType)
+	if !valueType.Valid() {
+		return Item{}, fmt.Errorf("%w: %q", ErrInvalidMediaType, valueType)
 	}
 
-	mimeType, err := normalizeMIMEType(argMIMEType)
+	mimeType, err := normalizeMIMEType(rawMIMEType)
 	if err != nil {
 		return Item{}, err
 	}
 
-	if argSize <= 0 {
+	if size <= 0 {
 		return Item{}, fmt.Errorf("%w: size must be positive", ErrInvalidSize)
 	}
 
-	if len(argChecksum) != sha256.Size {
+	if len(checksumBytes) != sha256.Size {
 		return Item{}, fmt.Errorf(
 			"%w: expected %d bytes",
 			ErrInvalidChecksum,
@@ -159,15 +159,15 @@ func NewItem(
 		)
 	}
 	var checksum [sha256.Size]byte
-	copy(checksum[:], argChecksum)
+	copy(checksum[:], checksumBytes)
 
-	if err := validateCanonicalUUID(argOwnerID, ErrInvalidOwnerID); err != nil {
+	if err := validateCanonicalUUID(ownerID, ErrInvalidOwnerID); err != nil {
 		return Item{}, err
 	}
-	if argCreatedAt.IsZero() || argUpdatedAt.IsZero() {
+	if createdAt.IsZero() || updatedAt.IsZero() {
 		return Item{}, fmt.Errorf("%w: timestamps must not be zero", ErrInvalidTimestamp)
 	}
-	if argUpdatedAt.Before(argCreatedAt) {
+	if updatedAt.Before(createdAt) {
 		return Item{}, fmt.Errorf(
 			"%w: update time must not precede creation time",
 			ErrInvalidTimestamp,
@@ -175,31 +175,31 @@ func NewItem(
 	}
 
 	return Item{
-		ID:               argID,
+		ID:               id,
 		Title:            title,
 		Authors:          authors,
 		OriginalFilename: originalFilename,
-		Type:             argType,
+		Type:             valueType,
 		MIMEType:         mimeType,
-		Size:             argSize,
+		Size:             size,
 		Checksum:         checksum,
-		OwnerID:          argOwnerID,
-		CreatedAt:        argCreatedAt.UTC(),
-		UpdatedAt:        argUpdatedAt.UTC(),
+		OwnerID:          ownerID,
+		CreatedAt:        createdAt.UTC(),
+		UpdatedAt:        updatedAt.UTC(),
 	}, nil
 }
 
-func validateCanonicalUUID(argID string, argError error) error {
-	parsedID, err := uuid.Parse(argID)
-	if err != nil || parsedID == uuid.Nil || parsedID.String() != argID {
-		return fmt.Errorf("%w: expected a canonical lowercase UUID", argError)
+func validateCanonicalUUID(id string, inputError error) error {
+	parsedID, err := uuid.Parse(id)
+	if err != nil || parsedID == uuid.Nil || parsedID.String() != id {
+		return fmt.Errorf("%w: expected a canonical lowercase UUID", inputError)
 	}
 
 	return nil
 }
 
-func normalizeAuthors(argAuthors []string) ([]string, error) {
-	if len(argAuthors) > maximumAuthorCount {
+func normalizeAuthors(rawAuthors []string) ([]string, error) {
+	if len(rawAuthors) > maximumAuthorCount {
 		return nil, fmt.Errorf(
 			"%w: at most %d authors are allowed",
 			ErrInvalidAuthors,
@@ -207,9 +207,9 @@ func normalizeAuthors(argAuthors []string) ([]string, error) {
 		)
 	}
 
-	authors := make([]string, len(argAuthors))
-	seen := make(map[string]struct{}, len(argAuthors))
-	for index, author := range argAuthors {
+	authors := make([]string, len(rawAuthors))
+	seen := make(map[string]struct{}, len(rawAuthors))
+	for index, author := range rawAuthors {
 		normalized := strings.TrimSpace(author)
 		length := utf8.RuneCountInString(normalized)
 		if length < 1 || length > maximumAuthorLength {
@@ -242,8 +242,8 @@ func normalizeAuthors(argAuthors []string) ([]string, error) {
 	return authors, nil
 }
 
-func normalizeOriginalFilename(argFilename string) (string, error) {
-	filename := strings.TrimSpace(argFilename)
+func normalizeOriginalFilename(rawFilename string) (string, error) {
+	filename := strings.TrimSpace(rawFilename)
 	length := utf8.RuneCountInString(filename)
 	if length < 1 || length > maximumOriginalFilenameLength {
 		return "", fmt.Errorf(
@@ -268,8 +268,8 @@ func normalizeOriginalFilename(argFilename string) (string, error) {
 	return filename, nil
 }
 
-func normalizeMIMEType(argMIMEType string) (string, error) {
-	value := strings.TrimSpace(argMIMEType)
+func normalizeMIMEType(mimeType string) (string, error) {
+	value := strings.TrimSpace(mimeType)
 	if length := utf8.RuneCountInString(value); length < 1 || length > maximumMIMETypeLength {
 		return "", fmt.Errorf(
 			"%w: length must be between 1 and %d characters",
@@ -296,8 +296,8 @@ func normalizeMIMEType(argMIMEType string) (string, error) {
 	return mediaType, nil
 }
 
-func containsControlCharacter(argValue string) bool {
-	for _, character := range argValue {
+func containsControlCharacter(value string) bool {
+	for _, character := range value {
 		if unicode.IsControl(character) {
 			return true
 		}

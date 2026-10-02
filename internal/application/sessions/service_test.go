@@ -17,9 +17,9 @@ type recordingAuthenticator struct {
 }
 
 func (authenticator *recordingAuthenticator) Authenticate(
-	argContext context.Context,
-	argUsername string,
-	argPassword []byte,
+	ctx context.Context,
+	username string,
+	password []byte,
 ) (identity.User, error) {
 	return authenticator.user, authenticator.err
 }
@@ -51,41 +51,41 @@ type recordingSessionRepository struct {
 }
 
 func (repository *recordingSessionRepository) Create(
-	argContext context.Context,
-	argSession session.Session,
+	ctx context.Context,
+	session session.Session,
 ) error {
-	repository.createdSession = argSession
+	repository.createdSession = session
 
 	return nil
 }
 
 func (repository *recordingSessionRepository) FindByTokenHash(
-	argContext context.Context,
-	argTokenHash [sha256.Size]byte,
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
 ) (session.Session, error) {
 	return repository.storedSession, repository.findError
 }
 
 func (repository *recordingSessionRepository) Touch(
-	argContext context.Context,
-	argTokenHash [sha256.Size]byte,
-	argNow time.Time,
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
+	now time.Time,
 ) error {
-	repository.touchedHash = argTokenHash
-	repository.touchedAt = argNow
+	repository.touchedHash = tokenHash
+	repository.touchedAt = now
 	repository.touchCalls++
 
 	return nil
 }
 
 func (repository *recordingSessionRepository) Revoke(
-	argContext context.Context,
-	argTokenHash [sha256.Size]byte,
-	argNow time.Time,
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
+	now time.Time,
 ) error {
 	repository.revokeCalls++
-	repository.revokedHash = argTokenHash
-	repository.revokedAt = argNow
+	repository.revokedHash = tokenHash
+	repository.revokedAt = now
 
 	return nil
 }
@@ -96,8 +96,8 @@ type recordingUserFinder struct {
 }
 
 func (finder *recordingUserFinder) FindByID(
-	argContext context.Context,
-	argID string,
+	ctx context.Context,
+	id string,
 ) (identity.User, error) {
 	return finder.user, finder.err
 }

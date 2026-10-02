@@ -157,10 +157,10 @@ func TestNewHTTPClientRejectsCustomCAForPlainHTTP(t *testing.T) {
 func TestNewHTTPClientTrustsCustomCA(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(
 		func(
-			argResponse http.ResponseWriter,
-			argRequest *http.Request,
+			response http.ResponseWriter,
+			request *http.Request,
 		) {
-			argResponse.WriteHeader(http.StatusNoContent)
+			response.WriteHeader(http.StatusNoContent)
 		},
 	))
 	t.Cleanup(server.Close)
@@ -212,14 +212,14 @@ func TestNewHTTPClientTrustsCustomCA(t *testing.T) {
 func TestRunHealthCommandWithCustomCA(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(
 		func(
-			argResponse http.ResponseWriter,
-			argRequest *http.Request,
+			response http.ResponseWriter,
+			request *http.Request,
 		) {
-			argResponse.Header().Set(
+			response.Header().Set(
 				"Content-Type",
 				"application/json; charset=utf-8",
 			)
-			_, _ = argResponse.Write([]byte(`{"status":"ok"}`))
+			_, _ = response.Write([]byte(`{"status":"ok"}`))
 		},
 	))
 	t.Cleanup(server.Close)
@@ -276,10 +276,10 @@ func TestRunHealthCommandWithCustomCA(t *testing.T) {
 func TestNewHTTPClientRejectsUntrustedCertificate(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(
 		func(
-			argResponse http.ResponseWriter,
-			argRequest *http.Request,
+			response http.ResponseWriter,
+			request *http.Request,
 		) {
-			argResponse.WriteHeader(http.StatusNoContent)
+			response.WriteHeader(http.StatusNoContent)
 		},
 	))
 	t.Cleanup(server.Close)

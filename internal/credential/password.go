@@ -29,39 +29,39 @@ type PasswordCredential struct {
 
 // NewPasswordCredential validates and creates a password credential.
 func NewPasswordCredential(
-	argUserID string,
-	argPasswordHash string,
-	argNow time.Time,
+	userID string,
+	passwordHash string,
+	now time.Time,
 ) (PasswordCredential, error) {
-	parsedUserID, err := uuid.Parse(argUserID)
+	parsedUserID, err := uuid.Parse(userID)
 	if err != nil ||
 		parsedUserID == uuid.Nil ||
-		parsedUserID.String() != argUserID {
+		parsedUserID.String() != userID {
 		return PasswordCredential{}, fmt.Errorf(
 			"%w: expected a canonical lowercase UUID",
 			ErrInvalidUserID,
 		)
 	}
 
-	if !strings.HasPrefix(argPasswordHash, "$argon2id$") {
+	if !strings.HasPrefix(passwordHash, "$argon2id$") {
 		return PasswordCredential{}, fmt.Errorf(
 			"%w: expected an Argon2id encoding",
 			ErrInvalidPasswordHash,
 		)
 	}
 
-	if argNow.IsZero() {
+	if now.IsZero() {
 		return PasswordCredential{}, fmt.Errorf(
 			"%w: creation time must not be zero",
 			ErrInvalidTimestamp,
 		)
 	}
 
-	timestamp := argNow.UTC()
+	timestamp := now.UTC()
 
 	return PasswordCredential{
-		UserID:       argUserID,
-		PasswordHash: argPasswordHash,
+		UserID:       userID,
+		PasswordHash: passwordHash,
 		CreatedAt:    timestamp,
 		UpdatedAt:    timestamp,
 	}, nil
@@ -69,10 +69,10 @@ func NewPasswordCredential(
 
 // WithPasswordHash returns a credential with a validated replacement hash.
 func (credential PasswordCredential) WithPasswordHash(
-	argPasswordHash string,
-	argNow time.Time,
+	passwordHash string,
+	now time.Time,
 ) (PasswordCredential, error) {
-	if !strings.HasPrefix(argPasswordHash, "$argon2id$") {
+	if !strings.HasPrefix(passwordHash, "$argon2id$") {
 		return PasswordCredential{}, fmt.Errorf(
 			"%w: expected an Argon2id encoding",
 			ErrInvalidPasswordHash,
@@ -80,16 +80,16 @@ func (credential PasswordCredential) WithPasswordHash(
 	}
 
 	if credential.CreatedAt.IsZero() ||
-		argNow.IsZero() ||
-		argNow.UTC().Before(credential.CreatedAt) {
+		now.IsZero() ||
+		now.UTC().Before(credential.CreatedAt) {
 		return PasswordCredential{}, fmt.Errorf(
 			"%w: update time must not precede creation time",
 			ErrInvalidTimestamp,
 		)
 	}
 
-	credential.PasswordHash = argPasswordHash
-	credential.UpdatedAt = argNow.UTC()
+	credential.PasswordHash = passwordHash
+	credential.UpdatedAt = now.UTC()
 
 	return credential, nil
 }

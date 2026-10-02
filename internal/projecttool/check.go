@@ -13,9 +13,9 @@ Options:
   --help  Show this help text.
 `
 
-func (app application) runCheckCommand(argArguments []string) error {
+func (app application) runCheckCommand(arguments []string) error {
 	runRace := false
-	for _, argument := range argArguments {
+	for _, argument := range arguments {
 		switch argument {
 		case "--race":
 			runRace = true
@@ -32,7 +32,7 @@ func (app application) runCheckCommand(argArguments []string) error {
 	return app.runChecks(runRace)
 }
 
-func (app application) runChecks(argRunRace bool) error {
+func (app application) runChecks(runRace bool) error {
 	fmt.Fprintf(app.stdout, "Checking project in %s\n", app.root)
 	if err := app.runStep("Go version", "go", "version"); err != nil {
 		return err
@@ -69,7 +69,7 @@ func (app application) runChecks(argRunRace bool) error {
 		}
 	}
 
-	if argRunRace {
+	if runRace {
 		if err := app.runStep("Race detector", "go", "test", "-count=1", "-race", "./..."); err != nil {
 			return err
 		}

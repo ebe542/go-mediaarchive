@@ -19,10 +19,10 @@ type recordingHasher struct {
 }
 
 func (hasher *recordingHasher) Hash(
-	argPassword []byte,
+	password []byte,
 ) (string, error) {
 	hasher.calls++
-	hasher.receivedPassword = append([]byte(nil), argPassword...)
+	hasher.receivedPassword = append([]byte(nil), password...)
 
 	return hasher.encodedHash, hasher.hashError
 }
@@ -35,13 +35,13 @@ type recordingBootstrapper struct {
 }
 
 func (bootstrapper *recordingBootstrapper) BootstrapAdmin(
-	argContext context.Context,
-	argUser identity.User,
-	argCredential credential.PasswordCredential,
+	ctx context.Context,
+	user identity.User,
+	credential credential.PasswordCredential,
 ) error {
 	bootstrapper.calls++
-	bootstrapper.user = argUser
-	bootstrapper.credential = argCredential
+	bootstrapper.user = user
+	bootstrapper.credential = credential
 
 	return bootstrapper.err
 }

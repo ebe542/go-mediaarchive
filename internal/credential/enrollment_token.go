@@ -17,10 +17,10 @@ type EnrollmentTokenGenerator struct {
 
 // NewEnrollmentTokenGenerator creates a generator with explicit randomness.
 func NewEnrollmentTokenGenerator(
-	argRandom io.Reader,
+	random io.Reader,
 ) *EnrollmentTokenGenerator {
 	return &EnrollmentTokenGenerator{
-		random: argRandom,
+		random: random,
 	}
 }
 
@@ -51,6 +51,6 @@ func (generator *EnrollmentTokenGenerator) Generate() (
 }
 
 // HashEnrollmentToken hashes a presented opaque enrollment token.
-func HashEnrollmentToken(argToken string) [sha256.Size]byte {
-	return sha256.Sum256([]byte(argToken))
+func HashEnrollmentToken(token string) [sha256.Size]byte {
+	return sha256.Sum256([]byte(token))
 }

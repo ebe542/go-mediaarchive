@@ -12,27 +12,27 @@ import (
 const maximumJSONBodySize = 64 * 1024
 
 func decodeJSONRequest(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
-	argDestination any,
+	response http.ResponseWriter,
+	request *http.Request,
+	destination any,
 ) error {
 	mediaType, _, err := mime.ParseMediaType(
-		argRequest.Header.Get("Content-Type"),
+		request.Header.Get("Content-Type"),
 	)
 	if err != nil || mediaType != "application/json" {
 		return errors.New("expected application/json content type")
 	}
 
-	argRequest.Body = http.MaxBytesReader(
-		argResponse,
-		argRequest.Body,
+	request.Body = http.MaxBytesReader(
+		response,
+		request.Body,
 		maximumJSONBodySize,
 	)
 
-	decoder := json.NewDecoder(argRequest.Body)
+	decoder := json.NewDecoder(request.Body)
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(argDestination); err != nil {
+	if err := decoder.Decode(destination); err != nil {
 		return fmt.Errorf("decode JSON request: %w", err)
 	}
 
@@ -43,10 +43,10 @@ func decodeJSONRequest(
 	return nil
 }
 
-func ensureJSONEnd(argDecoder *json.Decoder) error {
+func ensureJSONEnd(decoder *json.Decoder) error {
 	var additionalValue any
 
-	if err := argDecoder.Decode(&additionalValue); !errors.Is(err, io.EOF) {
+	if err := decoder.Decode(&additionalValue); !errors.Is(err, io.EOF) {
 		if err == nil {
 			return errors.New("additional JSON value")
 		}

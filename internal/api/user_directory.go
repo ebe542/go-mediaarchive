@@ -18,19 +18,19 @@ import (
 // UserLister retrieves bounded pages from the user directory.
 type UserLister interface {
 	ListUsers(
-		argContext context.Context,
-		argInput appusers.ListUsersInput,
+		ctx context.Context,
+		input appusers.ListUsersInput,
 	) (appusers.UserPage, error)
 }
 
 // WithUserDirectoryAPI enables administrator-only user listing.
 func WithUserDirectoryAPI(
-	argResolver SessionResolver,
-	argUserLister UserLister,
+	resolver SessionResolver,
+	userLister UserLister,
 ) Option {
-	return func(argConfiguration *handlerConfiguration) {
-		argConfiguration.userDirectoryResolver = argResolver
-		argConfiguration.userLister = argUserLister
+	return func(configuration *handlerConfiguration) {
+		configuration.userDirectoryResolver = resolver
+		configuration.userLister = userLister
 	}
 }
 
@@ -44,26 +44,26 @@ type userCursorDocument struct {
 }
 
 func (handler *userDirectoryHandler) listUsers(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	input, err := parseUserDirectoryQuery(argRequest.URL.Query())
+	input, err := parseUserDirectoryQuery(request.URL.Query())
 	if err != nil {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
 
-	page, err := handler.users.ListUsers(argRequest.Context(), input)
+	page, err := handler.users.ListUsers(request.Context(), input)
 	if errors.Is(err, appusers.ErrInvalidPageLimit) ||
 		errors.Is(err, appusers.ErrInvalidCursor) {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return
 	}
 	if err != nil {
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusInternalServerError,
 			"internal_error",
 			"Internal server error.",
@@ -86,7 +86,7 @@ func (handler *userDirectoryHandler) listUsers(
 		responseBody.NextCursor, err = encodeUserCursor(*page.NextCursor)
 		if err != nil {
 			writeJSONError(
-				argResponse,
+				response,
 				http.StatusInternalServerError,
 				"internal_error",
 				"Internal server error.",
@@ -96,19 +96,19 @@ func (handler *userDirectoryHandler) listUsers(
 		}
 	}
 
-	argResponse.Header().Set(
+	response.Header().Set(
 		"Content-Type",
 		"application/json; charset=utf-8",
 	)
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(argResponse).Encode(responseBody)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(response).Encode(responseBody)
 }
 
 func parseUserDirectoryQuery(
-	argValues url.Values,
+	values url.Values,
 ) (appusers.ListUsersInput, error) {
-	for name, values := range argValues {
+	for name, values := range values {
 		if name != "limit" && name != "cursor" {
 			return appusers.ListUsersInput{}, errors.New(
 				"unexpected user-directory query parameter",
@@ -122,7 +122,7 @@ func parseUserDirectoryQuery(
 	}
 
 	input := appusers.ListUsersInput{}
-	if values, exists := argValues["limit"]; exists {
+	if values, exists := values["limit"]; exists {
 		limit, err := strconv.Atoi(values[0])
 		if err != nil || limit < 1 || limit > appusers.MaximumPageLimit {
 			return appusers.ListUsersInput{}, appusers.ErrInvalidPageLimit
@@ -131,7 +131,7 @@ func parseUserDirectoryQuery(
 		input.Limit = limit
 	}
 
-	if values, exists := argValues["cursor"]; exists {
+	if values, exists := values["cursor"]; exists {
 		cursor, err := decodeUserCursor(values[0])
 		if err != nil {
 			return appusers.ListUsersInput{}, err
@@ -143,10 +143,10 @@ func parseUserDirectoryQuery(
 	return input, nil
 }
 
-func encodeUserCursor(argCursor appusers.Cursor) (string, error) {
+func encodeUserCursor(cursor appusers.Cursor) (string, error) {
 	validatedCursor, err := appusers.NewCursor(
-		argCursor.CreatedAt,
-		argCursor.ID,
+		cursor.CreatedAt,
+		cursor.ID,
 	)
 	if err != nil {
 		return "", err
@@ -163,12 +163,12 @@ func encodeUserCursor(argCursor appusers.Cursor) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(document), nil
 }
 
-func decodeUserCursor(argEncoded string) (appusers.Cursor, error) {
-	if argEncoded == "" {
+func decodeUserCursor(encoded string) (appusers.Cursor, error) {
+	if encoded == "" {
 		return appusers.Cursor{}, appusers.ErrInvalidCursor
 	}
 
-	document, err := base64.RawURLEncoding.DecodeString(argEncoded)
+	document, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil {
 		return appusers.Cursor{}, fmt.Errorf(
 			"%w: decode Base64URL: %v",
@@ -200,9 +200,9 @@ func decodeUserCursor(argEncoded string) (appusers.Cursor, error) {
 }
 
 func decodeUserCursorDocument(
-	argDocument []byte,
+	encodedDocument []byte,
 ) (userCursorDocument, error) {
-	decoder := json.NewDecoder(bytes.NewReader(argDocument))
+	decoder := json.NewDecoder(bytes.NewReader(encodedDocument))
 
 	openingToken, err := decoder.Token()
 	if err != nil || openingToken != json.Delim('{') {

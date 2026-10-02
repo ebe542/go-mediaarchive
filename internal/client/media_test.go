@@ -29,20 +29,20 @@ func TestMediaMetadataOperationsUseTypedHTTPContract(t *testing.T) {
 	}{
 		{
 			"create", http.MethodPost, "/api/v1/media", http.StatusCreated, true,
-			func(argClient *client.Client) (client.Media, error) {
-				return argClient.CreateMedia(context.Background(), "access-token", input)
+			func(client *client.Client) (client.Media, error) {
+				return client.CreateMedia(context.Background(), "access-token", input)
 			},
 		},
 		{
 			"read", http.MethodGet, "/api/v1/media/" + clientMediaID, http.StatusOK, false,
-			func(argClient *client.Client) (client.Media, error) {
-				return argClient.MediaByID(context.Background(), "access-token", clientMediaID)
+			func(client *client.Client) (client.Media, error) {
+				return client.MediaByID(context.Background(), "access-token", clientMediaID)
 			},
 		},
 		{
 			"update", http.MethodPut, "/api/v1/media/" + clientMediaID, http.StatusOK, true,
-			func(argClient *client.Client) (client.Media, error) {
-				return argClient.UpdateMedia(context.Background(), "access-token", clientMediaID, input)
+			func(client *client.Client) (client.Media, error) {
+				return client.UpdateMedia(context.Background(), "access-token", clientMediaID, input)
 			},
 		},
 	} {
@@ -139,15 +139,15 @@ func clientMediaInput() client.MediaInput {
 }
 
 func writeClientMediaResponse(
-	argTest *testing.T,
-	argResponse http.ResponseWriter,
-	argStatus int,
+	test *testing.T,
+	response http.ResponseWriter,
+	status int,
 ) {
-	argTest.Helper()
+	test.Helper()
 
-	argResponse.Header().Set("Content-Type", "application/json")
-	argResponse.WriteHeader(argStatus)
-	_, _ = argResponse.Write([]byte(clientMediaResponseJSON()))
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(status)
+	_, _ = response.Write([]byte(clientMediaResponseJSON()))
 }
 
 func clientMediaResponseJSON() string {

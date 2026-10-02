@@ -19,15 +19,15 @@ func TestUserReadOperations(t *testing.T) {
 		{
 			name: "current user",
 			path: "/api/v1/users/me",
-			call: func(argClient *client.Client) (client.User, error) {
-				return argClient.CurrentUser(context.Background(), "access-token")
+			call: func(client *client.Client) (client.User, error) {
+				return client.CurrentUser(context.Background(), "access-token")
 			},
 		},
 		{
 			name: "user by ID",
 			path: "/api/v1/users/user-id",
-			call: func(argClient *client.Client) (client.User, error) {
-				return argClient.UserByID(context.Background(), "access-token", "user-id")
+			call: func(client *client.Client) (client.User, error) {
+				return client.UserByID(context.Background(), "access-token", "user-id")
 			},
 		},
 	}
@@ -95,8 +95,8 @@ func TestUserWriteOperations(t *testing.T) {
 			method:         http.MethodPost,
 			path:           "/api/v1/users",
 			expectedStatus: http.StatusCreated,
-			call: func(argClient *client.Client) (client.User, error) {
-				return argClient.CreateUser(context.Background(), "access-token", input)
+			call: func(client *client.Client) (client.User, error) {
+				return client.CreateUser(context.Background(), "access-token", input)
 			},
 		},
 		{
@@ -104,8 +104,8 @@ func TestUserWriteOperations(t *testing.T) {
 			method:         http.MethodPut,
 			path:           "/api/v1/users/user-id",
 			expectedStatus: http.StatusOK,
-			call: func(argClient *client.Client) (client.User, error) {
-				return argClient.UpdateUser(context.Background(), "access-token", "user-id", input)
+			call: func(client *client.Client) (client.User, error) {
+				return client.UpdateUser(context.Background(), "access-token", "user-id", input)
 			},
 		},
 	}
@@ -183,30 +183,30 @@ func TestDeleteUser(t *testing.T) {
 }
 
 func writeUser(
-	argTest *testing.T,
-	argResponse http.ResponseWriter,
-	argStatus int,
-	argActive bool,
+	test *testing.T,
+	response http.ResponseWriter,
+	status int,
+	active bool,
 ) {
-	argTest.Helper()
+	test.Helper()
 
-	writeJSON(argTest, argResponse, argStatus, client.User{
+	writeJSON(test, response, status, client.User{
 		ID:          "user-id",
 		Username:    "archive_editor",
 		DisplayName: "Archive Editor",
 		Role:        identity.RoleEditor,
-		Active:      argActive,
+		Active:      active,
 		CreatedAt:   time.Date(2026, time.September, 8, 10, 0, 0, 0, time.UTC),
 		UpdatedAt:   time.Date(2026, time.September, 8, 11, 0, 0, 0, time.UTC),
 	})
 }
 
-func assertUser(argTest *testing.T, argUser client.User, argActive bool) {
-	argTest.Helper()
+func assertUser(test *testing.T, user client.User, active bool) {
+	test.Helper()
 
-	if argUser.ID != "user-id" ||
-		argUser.Username != "archive_editor" ||
-		argUser.Active != argActive {
-		argTest.Errorf("unexpected user: %+v", argUser)
+	if user.ID != "user-id" ||
+		user.Username != "archive_editor" ||
+		user.Active != active {
+		test.Errorf("unexpected user: %+v", user)
 	}
 }

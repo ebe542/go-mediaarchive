@@ -32,11 +32,11 @@ type mediaUploadRequest struct {
 
 // UploadMedia streams one file into server-managed content storage.
 func (client *Client) UploadMedia(
-	argContext context.Context,
-	argAccessToken string,
-	argInput MediaUploadInput,
+	ctx context.Context,
+	accessToken string,
+	input MediaUploadInput,
 ) (Media, error) {
-	if argInput.Source == nil {
+	if input.Source == nil {
 		return Media{}, errors.New("upload media source is required")
 	}
 
@@ -44,7 +44,7 @@ func (client *Client) UploadMedia(
 	multipartWriter := multipart.NewWriter(pipeWriter)
 	writeResult := make(chan error, 1)
 	go func() {
-		writeErr := writeMediaUpload(multipartWriter, argInput)
+		writeErr := writeMediaUpload(multipartWriter, input)
 		if closeErr := multipartWriter.Close(); writeErr == nil {
 			writeErr = closeErr
 		}
@@ -53,7 +53,7 @@ func (client *Client) UploadMedia(
 	}()
 
 	request, err := http.NewRequestWithContext(
-		argContext,
+		ctx,
 		http.MethodPost,
 		client.baseURL+"/api/v1/media/uploads",
 		pipeReader,
@@ -66,8 +66,8 @@ func (client *Client) UploadMedia(
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
-	if argAccessToken != "" {
-		request.Header.Set("Authorization", "Bearer "+argAccessToken)
+	if accessToken != "" {
+		request.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
 	response, requestErr := client.httpClient.Do(request)
@@ -96,20 +96,20 @@ func (client *Client) UploadMedia(
 }
 
 func writeMediaUpload(
-	argWriter *multipart.Writer,
-	argInput MediaUploadInput,
+	writer *multipart.Writer,
+	input MediaUploadInput,
 ) error {
 	metadataHeader := make(textproto.MIMEHeader)
 	metadataHeader.Set("Content-Disposition", `form-data; name="metadata"`)
 	metadataHeader.Set("Content-Type", "application/json")
-	metadataPart, err := argWriter.CreatePart(metadataHeader)
+	metadataPart, err := writer.CreatePart(metadataHeader)
 	if err != nil {
 		return fmt.Errorf("create upload metadata part: %w", err)
 	}
 	if err := json.NewEncoder(metadataPart).Encode(mediaUploadRequest{
-		Title:   argInput.Title,
-		Authors: append([]string{}, argInput.Authors...),
-		Type:    argInput.Type,
+		Title:   input.Title,
+		Authors: append([]string{}, input.Authors...),
+		Type:    input.Type,
 	}); err != nil {
 		return fmt.Errorf("encode upload metadata: %w", err)
 	}
@@ -117,26 +117,26 @@ func writeMediaUpload(
 	fileHeader := make(textproto.MIMEHeader)
 	fileHeader.Set(
 		"Content-Disposition",
-		mimeFormatDisposition(argInput.OriginalFilename),
+		mimeFormatDisposition(input.OriginalFilename),
 	)
-	fileHeader.Set("Content-Type", argInput.MIMEType)
-	filePart, err := argWriter.CreatePart(fileHeader)
+	fileHeader.Set("Content-Type", input.MIMEType)
+	filePart, err := writer.CreatePart(fileHeader)
 	if err != nil {
 		return fmt.Errorf("create upload file part: %w", err)
 	}
-	if argInput.Source == nil {
+	if input.Source == nil {
 		return errors.New("upload media source is required")
 	}
-	if _, err := io.Copy(filePart, argInput.Source); err != nil {
+	if _, err := io.Copy(filePart, input.Source); err != nil {
 		return fmt.Errorf("read upload media source: %w", err)
 	}
 
 	return nil
 }
 
-func mimeFormatDisposition(argFilename string) string {
+func mimeFormatDisposition(filename string) string {
 	return mime.FormatMediaType(
 		"form-data",
-		map[string]string{"name": "file", "filename": argFilename},
+		map[string]string{"name": "file", "filename": filename},
 	)
 }

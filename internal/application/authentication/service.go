@@ -16,16 +16,16 @@ var ErrInvalidCredentials = errors.New("invalid username or password")
 // PasswordVerifier compares a password with an encoded password hash.
 type PasswordVerifier interface {
 	Verify(
-		argPassword []byte,
-		argEncodedHash string,
+		password []byte,
+		encodedHash string,
 	) (bool, error)
 }
 
 // UserFinder loads identities by normalized username for authentication.
 type UserFinder interface {
 	FindByUsername(
-		argContext context.Context,
-		argUsername string,
+		ctx context.Context,
+		username string,
 	) (identity.User, error)
 }
 
@@ -39,39 +39,39 @@ type Service struct {
 
 // NewService creates an authentication service.
 func NewService(
-	argUsers UserFinder,
-	argCredentials credential.PasswordCredentialRepository,
-	argVerifier PasswordVerifier,
-	argDummyHash string,
+	users UserFinder,
+	credentials credential.PasswordCredentialRepository,
+	verifier PasswordVerifier,
+	dummyHash string,
 ) *Service {
 	return &Service{
-		users:       argUsers,
-		credentials: argCredentials,
-		verifier:    argVerifier,
-		dummyHash:   argDummyHash,
+		users:       users,
+		credentials: credentials,
+		verifier:    verifier,
+		dummyHash:   dummyHash,
 	}
 }
 
 // Authenticate verifies a username and password without revealing account state.
 func (service *Service) Authenticate(
-	argContext context.Context,
-	argUsername string,
-	argPassword []byte,
+	ctx context.Context,
+	username string,
+	password []byte,
 ) (identity.User, error) {
-	normalizedUsername, err := identity.NormalizeUsername(argUsername)
+	normalizedUsername, err := identity.NormalizeUsername(username)
 	if err != nil {
 		return identity.User{}, service.rejectWithDummyVerification(
-			argPassword,
+			password,
 		)
 	}
 
 	user, err := service.users.FindByUsername(
-		argContext,
+		ctx,
 		normalizedUsername,
 	)
 	if errors.Is(err, identity.ErrUserNotFound) {
 		return identity.User{}, service.rejectWithDummyVerification(
-			argPassword,
+			password,
 		)
 	}
 	if err != nil {
@@ -82,7 +82,7 @@ func (service *Service) Authenticate(
 	}
 
 	passwordCredential, err := service.credentials.FindByUserID(
-		argContext,
+		ctx,
 		user.ID,
 	)
 	if errors.Is(
@@ -90,7 +90,7 @@ func (service *Service) Authenticate(
 		credential.ErrPasswordCredentialNotFound,
 	) {
 		return identity.User{}, service.rejectWithDummyVerification(
-			argPassword,
+			password,
 		)
 	}
 	if err != nil {
@@ -101,7 +101,7 @@ func (service *Service) Authenticate(
 	}
 
 	matches, err := service.verifier.Verify(
-		argPassword,
+		password,
 		passwordCredential.PasswordHash,
 	)
 	if err != nil {
@@ -119,10 +119,10 @@ func (service *Service) Authenticate(
 }
 
 func (service *Service) rejectWithDummyVerification(
-	argPassword []byte,
+	password []byte,
 ) error {
 	if _, err := service.verifier.Verify(
-		argPassword,
+		password,
 		service.dummyHash,
 	); err != nil {
 		return fmt.Errorf(

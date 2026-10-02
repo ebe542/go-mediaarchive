@@ -43,24 +43,24 @@ type HealthStatus struct {
 }
 
 // New creates an API client for the provided server base URL.
-func New(argBaseURL string, argHTTPClient *http.Client) *Client {
-	if argHTTPClient == nil {
-		argHTTPClient = &http.Client{Timeout: defaultTimeout}
+func New(baseURL string, httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: defaultTimeout}
 	}
 
 	return &Client{
-		baseURL:    strings.TrimRight(argBaseURL, "/"),
-		httpClient: argHTTPClient,
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		httpClient: httpClient,
 	}
 }
 
 // Health requests the current operational status from the server.
 func (client *Client) Health(
-	argContext context.Context,
+	ctx context.Context,
 ) (HealthStatus, error) {
 	var status HealthStatus
 	if err := client.doJSON(
-		argContext,
+		ctx,
 		http.MethodGet,
 		"/api/v1/health",
 		"",
@@ -82,84 +82,84 @@ func (client *Client) Health(
 }
 
 func (client *Client) doJSON(
-	argContext context.Context,
-	argMethod string,
-	argPath string,
-	argAccessToken string,
-	argRequestBody any,
-	argExpectedStatus int,
-	argResponseBody any,
-	argOperation string,
+	ctx context.Context,
+	method string,
+	path string,
+	accessToken string,
+	requestDocument any,
+	expectedStatus int,
+	responseBody any,
+	operation string,
 ) error {
 	var requestBody io.Reader
 	var encodedRequest []byte
-	if argRequestBody != nil {
+	if requestDocument != nil {
 		var err error
-		encodedRequest, err = json.Marshal(argRequestBody)
+		encodedRequest, err = json.Marshal(requestDocument)
 		if err != nil {
-			return fmt.Errorf("encode %s request: %w", argOperation, err)
+			return fmt.Errorf("encode %s request: %w", operation, err)
 		}
 		defer clearBytes(encodedRequest)
 		requestBody = bytes.NewReader(encodedRequest)
 	}
 
 	request, err := http.NewRequestWithContext(
-		argContext,
-		argMethod,
-		client.baseURL+argPath,
+		ctx,
+		method,
+		client.baseURL+path,
 		requestBody,
 	)
 	if err != nil {
-		return fmt.Errorf("create %s request: %w", argOperation, err)
+		return fmt.Errorf("create %s request: %w", operation, err)
 	}
 	request.Header.Set("Accept", "application/json")
-	if argRequestBody != nil {
+	if requestBody != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	if argAccessToken != "" {
-		request.Header.Set("Authorization", "Bearer "+argAccessToken)
+	if accessToken != "" {
+		request.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		return fmt.Errorf("request %s: %w", argOperation, err)
+		return fmt.Errorf("request %s: %w", operation, err)
 	}
 	defer func() { _ = response.Body.Close() }()
 
 	return handleJSONResponse(
 		response,
-		argExpectedStatus,
-		argResponseBody,
-		argOperation,
+		expectedStatus,
+		responseBody,
+		operation,
 	)
 }
 
 func handleJSONResponse(
-	argResponse *http.Response,
-	argExpectedStatus int,
-	argResponseBody any,
-	argOperation string,
+	response *http.Response,
+	expectedStatus int,
+	responseBody any,
+	operation string,
 ) error {
-	if argResponse.StatusCode == argExpectedStatus && argResponseBody == nil {
+	if response.StatusCode == expectedStatus && responseBody == nil {
 		return nil
 	}
 
 	responseDocument, err := io.ReadAll(io.LimitReader(
-		argResponse.Body,
+		response.Body,
 		maximumResponseBodySize+1,
 	))
 	if err != nil {
-		return fmt.Errorf("read %s response: %w", argOperation, err)
+		return fmt.Errorf("read %s response: %w", operation, err)
 	}
 	if len(responseDocument) > maximumResponseBodySize {
-		return fmt.Errorf("validate %s response: body is too large", argOperation)
+		return fmt.Errorf("validate %s response: body is too large", operation)
 	}
 
-	if err := validateJSONContentType(argResponse, argOperation); err != nil {
+	if err := validateJSONContentType(response, operation); err != nil {
 		return err
 	}
 
-	if argResponse.StatusCode != argExpectedStatus {
+	if response.StatusCode != expectedStatus {
 		var errorDocument struct {
 			Error struct {
 				Code    string `json:"code"`
@@ -171,43 +171,43 @@ func handleJSONResponse(
 			errorDocument.Error.Message == "" {
 			return fmt.Errorf(
 				"request %s: unexpected HTTP status %s",
-				argOperation,
-				argResponse.Status,
+				operation,
+				response.Status,
 			)
 		}
 
 		return &APIError{
-			StatusCode: argResponse.StatusCode,
+			StatusCode: response.StatusCode,
 			Code:       errorDocument.Error.Code,
 			Message:    errorDocument.Error.Message,
 		}
 	}
 
-	if err := decodeSingleJSON(responseDocument, argResponseBody); err != nil {
-		return fmt.Errorf("decode %s response: %w", argOperation, err)
+	if err := decodeSingleJSON(responseDocument, responseBody); err != nil {
+		return fmt.Errorf("decode %s response: %w", operation, err)
 	}
 
 	return nil
 }
 
 func validateJSONContentType(
-	argResponse *http.Response,
-	argOperation string,
+	response *http.Response,
+	operation string,
 ) error {
 	mediaType, _, err := mime.ParseMediaType(
-		argResponse.Header.Get("Content-Type"),
+		response.Header.Get("Content-Type"),
 	)
 	if err != nil {
 		return fmt.Errorf(
 			"parse %s response Content-Type: %w",
-			argOperation,
+			operation,
 			err,
 		)
 	}
 	if mediaType != "application/json" {
 		return fmt.Errorf(
 			"validate %s response Content-Type: expected %q, got %q",
-			argOperation,
+			operation,
 			"application/json",
 			mediaType,
 		)
@@ -216,11 +216,11 @@ func validateJSONContentType(
 	return nil
 }
 
-func decodeSingleJSON(argDocument []byte, argDestination any) error {
-	decoder := json.NewDecoder(bytes.NewReader(argDocument))
+func decodeSingleJSON(document []byte, destination any) error {
+	decoder := json.NewDecoder(bytes.NewReader(document))
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(argDestination); err != nil {
+	if err := decoder.Decode(destination); err != nil {
 		return err
 	}
 
@@ -236,8 +236,8 @@ func decodeSingleJSON(argDocument []byte, argDestination any) error {
 	return nil
 }
 
-func clearBytes(argValue []byte) {
-	for index := range argValue {
-		argValue[index] = 0
+func clearBytes(value []byte) {
+	for index := range value {
+		value[index] = 0
 	}
 }

@@ -36,12 +36,12 @@ type MediaGrantService interface {
 
 // WithMediaGrantAPI enables authenticated per-user media grant endpoints.
 func WithMediaGrantAPI(
-	argResolver SessionResolver,
-	argService MediaGrantService,
+	resolver SessionResolver,
+	service MediaGrantService,
 ) Option {
-	return func(argConfiguration *handlerConfiguration) {
-		argConfiguration.mediaGrantResolver = argResolver
-		argConfiguration.mediaGrants = argService
+	return func(configuration *handlerConfiguration) {
+		configuration.mediaGrantResolver = resolver
+		configuration.mediaGrants = service
 	}
 }
 
@@ -60,80 +60,80 @@ type mediaGrantResponse struct {
 }
 
 func (handler *mediaGrantHandler) replace(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := mediaActor(argRequest)
+	actor, exists := mediaActor(request)
 	if !exists {
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 
 		return
 	}
 
-	permissions, ok := decodePermissionSet(argResponse, argRequest)
+	permissions, ok := decodePermissionSet(response, request)
 	if !ok {
 		return
 	}
 	grant, err := handler.grants.ReplaceGrant(
-		argRequest.Context(),
+		request.Context(),
 		actor,
-		argRequest.PathValue("id"),
-		argRequest.PathValue("userId"),
+		request.PathValue("id"),
+		request.PathValue("userId"),
 		permissions,
 	)
 	if err != nil {
-		writeMediaGrantApplicationError(argResponse, err)
+		writeMediaGrantApplicationError(response, err)
 
 		return
 	}
 
-	writeMediaGrantResponse(argResponse, grant)
+	writeMediaGrantResponse(response, grant)
 }
 
 func (handler *mediaGrantHandler) read(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := mediaActor(argRequest)
+	actor, exists := mediaActor(request)
 	if !exists {
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 
 		return
 	}
 
 	grant, err := handler.grants.GrantByUser(
-		argRequest.Context(),
+		request.Context(),
 		actor,
-		argRequest.PathValue("id"),
-		argRequest.PathValue("userId"),
+		request.PathValue("id"),
+		request.PathValue("userId"),
 	)
 	if err != nil {
-		writeMediaGrantApplicationError(argResponse, err)
+		writeMediaGrantApplicationError(response, err)
 
 		return
 	}
 
-	writeMediaGrantResponse(argResponse, grant)
+	writeMediaGrantResponse(response, grant)
 }
 
 func (handler *mediaGrantHandler) list(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := mediaActor(argRequest)
+	actor, exists := mediaActor(request)
 	if !exists {
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 
 		return
 	}
 
 	grants, err := handler.grants.GrantsByMedia(
-		argRequest.Context(),
+		request.Context(),
 		actor,
-		argRequest.PathValue("id"),
+		request.PathValue("id"),
 	)
 	if err != nil {
-		writeMediaGrantApplicationError(argResponse, err)
+		writeMediaGrantApplicationError(response, err)
 
 		return
 	}
@@ -142,47 +142,47 @@ func (handler *mediaGrantHandler) list(
 	for _, grant := range grants {
 		responses = append(responses, newMediaGrantResponse(grant))
 	}
-	argResponse.Header().Set("Content-Type", "application/json; charset=utf-8")
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(argResponse).Encode(struct {
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(response).Encode(struct {
 		Grants []mediaGrantResponse `json:"grants"`
 	}{Grants: responses})
 }
 
 func (handler *mediaGrantHandler) revoke(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) {
-	actor, exists := mediaActor(argRequest)
+	actor, exists := mediaActor(request)
 	if !exists {
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 
 		return
 	}
 
 	if err := handler.grants.RevokeGrant(
-		argRequest.Context(),
+		request.Context(),
 		actor,
-		argRequest.PathValue("id"),
-		argRequest.PathValue("userId"),
+		request.PathValue("id"),
+		request.PathValue("userId"),
 	); err != nil {
-		writeMediaGrantApplicationError(argResponse, err)
+		writeMediaGrantApplicationError(response, err)
 
 		return
 	}
 
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusNoContent)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusNoContent)
 }
 
 func decodePermissionSet(
-	argResponse http.ResponseWriter,
-	argRequest *http.Request,
+	response http.ResponseWriter,
+	request *http.Request,
 ) (domainmedia.PermissionSet, bool) {
 	var requestBody mediaGrantRequest
-	if err := decodeJSONRequest(argResponse, argRequest, &requestBody); err != nil {
-		writeInvalidRequest(argResponse)
+	if err := decodeJSONRequest(response, request, &requestBody); err != nil {
+		writeInvalidRequest(response)
 
 		return 0, false
 	}
@@ -191,7 +191,7 @@ func decodePermissionSet(
 	for _, name := range requestBody.Permissions {
 		permission, err := domainmedia.ParsePermission(name)
 		if err != nil {
-			writeInvalidRequest(argResponse)
+			writeInvalidRequest(response)
 
 			return 0, false
 		}
@@ -199,7 +199,7 @@ func decodePermissionSet(
 	}
 	permissionSet, err := domainmedia.NewPermissionSet(permissions...)
 	if err != nil {
-		writeInvalidRequest(argResponse)
+		writeInvalidRequest(response)
 
 		return 0, false
 	}
@@ -207,57 +207,57 @@ func decodePermissionSet(
 	return permissionSet, true
 }
 
-func writeMediaGrantResponse(argResponse http.ResponseWriter, argGrant domainmedia.Grant) {
-	argResponse.Header().Set("Content-Type", "application/json; charset=utf-8")
-	argResponse.Header().Set("Cache-Control", "no-store")
-	argResponse.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(argResponse).Encode(newMediaGrantResponse(argGrant))
+func writeMediaGrantResponse(response http.ResponseWriter, grant domainmedia.Grant) {
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(response).Encode(newMediaGrantResponse(grant))
 }
 
-func newMediaGrantResponse(argGrant domainmedia.Grant) mediaGrantResponse {
-	values := argGrant.Permissions.Values()
+func newMediaGrantResponse(grant domainmedia.Grant) mediaGrantResponse {
+	values := grant.Permissions.Values()
 	permissions := make([]string, 0, len(values))
 	for _, permission := range values {
 		permissions = append(permissions, permission.String())
 	}
 
 	return mediaGrantResponse{
-		MediaID:     argGrant.MediaID,
-		UserID:      argGrant.UserID,
+		MediaID:     grant.MediaID,
+		UserID:      grant.UserID,
 		Permissions: permissions,
 	}
 }
 
-func writeMediaGrantApplicationError(argResponse http.ResponseWriter, argError error) {
+func writeMediaGrantApplicationError(response http.ResponseWriter, inputError error) {
 	switch {
-	case isInvalidGrantInput(argError):
-		writeInvalidRequest(argResponse)
-	case errors.Is(argError, appmedia.ErrMediaNotFound),
-		errors.Is(argError, domainmedia.ErrGrantNotFound),
-		errors.Is(argError, identity.ErrUserNotFound):
-		writeJSONError(argResponse, http.StatusNotFound, "not_found", "Resource not found.")
-	case errors.Is(argError, appmedia.ErrOwnerGrant):
+	case isInvalidGrantInput(inputError):
+		writeInvalidRequest(response)
+	case errors.Is(inputError, appmedia.ErrMediaNotFound),
+		errors.Is(inputError, domainmedia.ErrGrantNotFound),
+		errors.Is(inputError, identity.ErrUserNotFound):
+		writeJSONError(response, http.StatusNotFound, "not_found", "Resource not found.")
+	case errors.Is(inputError, appmedia.ErrOwnerGrant):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusConflict,
 			"owner_grant",
 			"A media owner cannot receive an explicit grant.",
 		)
-	case errors.Is(argError, appmedia.ErrInactiveGrantee):
+	case errors.Is(inputError, appmedia.ErrInactiveGrantee):
 		writeJSONError(
-			argResponse,
+			response,
 			http.StatusConflict,
 			"inactive_grantee",
 			"An inactive user cannot receive a media grant.",
 		)
 	default:
-		writeMediaContextError(argResponse)
+		writeMediaContextError(response)
 	}
 }
 
-func isInvalidGrantInput(argError error) bool {
-	return errors.Is(argError, identity.ErrInvalidUserID) ||
-		errors.Is(argError, domainmedia.ErrInvalidPermission) ||
-		errors.Is(argError, domainmedia.ErrInvalidPermissionSet) ||
-		errors.Is(argError, domainmedia.ErrInvalidGrant)
+func isInvalidGrantInput(inputError error) bool {
+	return errors.Is(inputError, identity.ErrInvalidUserID) ||
+		errors.Is(inputError, domainmedia.ErrInvalidPermission) ||
+		errors.Is(inputError, domainmedia.ErrInvalidPermissionSet) ||
+		errors.Is(inputError, domainmedia.ErrInvalidGrant)
 }

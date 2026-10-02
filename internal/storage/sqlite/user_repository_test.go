@@ -105,8 +105,8 @@ func TestUserRepositoryDeletesUserAuthenticationRecords(t *testing.T) {
 	}
 }
 
-func userReferenceColumn(argTable string) string {
-	if argTable == "users" {
+func userReferenceColumn(table string) string {
+	if table == "users" {
 		return "id"
 	}
 
@@ -675,12 +675,12 @@ func TestUserRepositorySerializesConcurrentAdministratorRemoval(
 	waitGroup.Add(len(demotedAdministrators))
 
 	for _, administrator := range demotedAdministrators {
-		go func(argAdministrator identity.User) {
+		go func(administrator identity.User) {
 			defer waitGroup.Done()
 
 			results <- repository.UpdatePreservingLastAdministrator(
 				ctx,
-				argAdministrator,
+				administrator,
 			)
 		}(administrator)
 	}
@@ -787,9 +787,9 @@ func TestUserRepositorySerializesConcurrentAdministratorDeletion(t *testing.T) {
 	var waitGroup sync.WaitGroup
 	for _, id := range administratorIDs {
 		waitGroup.Add(1)
-		go func(argID string) {
+		go func(id string) {
 			defer waitGroup.Done()
-			results <- repository.DeletePreservingLastAdministrator(ctx, argID)
+			results <- repository.DeletePreservingLastAdministrator(ctx, id)
 		}(id)
 	}
 	waitGroup.Wait()

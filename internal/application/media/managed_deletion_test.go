@@ -33,11 +33,11 @@ type recordingManagedDeletionRepository struct {
 
 func (repository *recordingManagedDeletionRepository) DeleteManaged(
 	_ context.Context,
-	argMediaID string,
-	argStorageKey string,
+	mediaID string,
+	storageKey string,
 ) error {
-	repository.mediaID = argMediaID
-	repository.storageKey = argStorageKey
+	repository.mediaID = mediaID
+	repository.storageKey = storageKey
 
 	return repository.err
 }
@@ -49,8 +49,8 @@ type recordingStagedDeletion struct {
 	rolledBack    bool
 }
 
-func (deletion *recordingStagedDeletion) Commit(argContext context.Context) error {
-	if err := argContext.Err(); err != nil {
+func (deletion *recordingStagedDeletion) Commit(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	deletion.committed = true
@@ -58,8 +58,8 @@ func (deletion *recordingStagedDeletion) Commit(argContext context.Context) erro
 	return deletion.commitError
 }
 
-func (deletion *recordingStagedDeletion) Rollback(argContext context.Context) error {
-	if err := argContext.Err(); err != nil {
+func (deletion *recordingStagedDeletion) Rollback(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	deletion.rolledBack = true
@@ -75,9 +75,9 @@ type recordingDeletionStore struct {
 
 func (store *recordingDeletionStore) StageDelete(
 	_ context.Context,
-	argStorageKey string,
+	storageKey string,
 ) (content.StagedDeletion, error) {
-	store.storageKey = argStorageKey
+	store.storageKey = storageKey
 
 	return store.deletion, store.err
 }

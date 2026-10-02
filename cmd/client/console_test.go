@@ -35,20 +35,20 @@ func (api *recordingUserAPI) Health(
 
 func (api *recordingUserAPI) Login(
 	_ context.Context,
-	argUsername string,
-	argPassword []byte,
+	username string,
+	password []byte,
 ) (apiclient.Session, error) {
-	api.loginUsername = argUsername
-	api.loginPassword = string(argPassword)
+	api.loginUsername = username
+	api.loginPassword = string(password)
 
 	return api.loginSession, nil
 }
 
 func (api *recordingUserAPI) Logout(
 	_ context.Context,
-	argAccessToken string,
+	accessToken string,
 ) error {
-	api.logoutTokens = append(api.logoutTokens, argAccessToken)
+	api.logoutTokens = append(api.logoutTokens, accessToken)
 
 	return nil
 }
@@ -62,24 +62,24 @@ func (api *recordingUserAPI) CurrentUser(
 
 func (api *recordingUserAPI) CompletePasswordEnrollment(
 	_ context.Context,
-	argToken string,
-	argPassword []byte,
+	token string,
+	password []byte,
 ) error {
-	api.enrollmentToken = argToken
-	api.enrollmentPassword = string(argPassword)
+	api.enrollmentToken = token
+	api.enrollmentPassword = string(password)
 
 	return nil
 }
 
 func (api *recordingUserAPI) ChangePassword(
 	_ context.Context,
-	argAccessToken string,
-	argCurrentPassword []byte,
-	argNewPassword []byte,
+	accessToken string,
+	currentPassword []byte,
+	newPassword []byte,
 ) error {
-	api.changeToken = argAccessToken
-	api.changeCurrentPassword = string(argCurrentPassword)
-	api.changeNewPassword = string(argNewPassword)
+	api.changeToken = accessToken
+	api.changeCurrentPassword = string(currentPassword)
+	api.changeNewPassword = string(newPassword)
 
 	return nil
 }
@@ -231,31 +231,31 @@ func TestUserConsoleContinuesAfterCommandError(t *testing.T) {
 }
 
 func queuedSecretReader(
-	argTest *testing.T,
-	argSecrets [][]byte,
+	test *testing.T,
+	secrets [][]byte,
 ) secretReader {
-	argTest.Helper()
+	test.Helper()
 
 	index := 0
 
 	return func(string) ([]byte, error) {
-		if index >= len(argSecrets) {
-			argTest.Fatal("unexpected secret request")
+		if index >= len(secrets) {
+			test.Fatal("unexpected secret request")
 		}
-		secret := argSecrets[index]
+		secret := secrets[index]
 		index++
 
 		return secret, nil
 	}
 }
 
-func assertSecretsCleared(argTest *testing.T, argSecrets [][]byte) {
-	argTest.Helper()
+func assertSecretsCleared(test *testing.T, secrets [][]byte) {
+	test.Helper()
 
-	for secretIndex, secret := range argSecrets {
+	for secretIndex, secret := range secrets {
 		for byteIndex, value := range secret {
 			if value != 0 {
-				argTest.Errorf(
+				test.Errorf(
 					"secret %d byte %d was not cleared",
 					secretIndex,
 					byteIndex,

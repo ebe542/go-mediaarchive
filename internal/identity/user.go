@@ -102,11 +102,11 @@ func isASCIIAlphanumeric(character byte) bool {
 }
 
 // ValidateUserID verifies a canonical lowercase non-nil UUID.
-func ValidateUserID(argID string) error {
-	parsedID, err := uuid.Parse(argID)
+func ValidateUserID(id string) error {
+	parsedID, err := uuid.Parse(id)
 	if err != nil ||
 		parsedID == uuid.Nil ||
-		parsedID.String() != argID {
+		parsedID.String() != id {
 		return fmt.Errorf(
 			"%w: expected a canonical lowercase UUID",
 			ErrInvalidUserID,
@@ -186,17 +186,17 @@ func NewUser(
 
 // UpdateDetails validates mutable user details and preserves identity state.
 func (user User) UpdateDetails(
-	argUsername string,
-	argDisplayName string,
-	argRole Role,
-	argNow time.Time,
+	username string,
+	displayName string,
+	role Role,
+	now time.Time,
 ) (User, error) {
 	updatedUser, err := NewUser(
 		user.ID,
-		argUsername,
-		argDisplayName,
-		argRole,
-		argNow,
+		username,
+		displayName,
+		role,
+		now,
 	)
 	if err != nil {
 		return User{}, err
@@ -210,18 +210,18 @@ func (user User) UpdateDetails(
 
 // SetActive changes the activation state and records the modification time.
 func (user User) SetActive(
-	argActive bool,
-	argNow time.Time,
+	active bool,
+	now time.Time,
 ) (User, error) {
-	if argNow.IsZero() {
+	if now.IsZero() {
 		return User{}, fmt.Errorf(
 			"%w: update time must not be zero",
 			ErrInvalidTimestamp,
 		)
 	}
 
-	user.Active = argActive
-	user.UpdatedAt = argNow.UTC()
+	user.Active = active
+	user.UpdatedAt = now.UTC()
 
 	return user, nil
 }

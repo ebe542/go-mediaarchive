@@ -17,9 +17,9 @@ type TokenGenerator struct {
 }
 
 // NewTokenGenerator creates a token generator with an explicit random source.
-func NewTokenGenerator(argRandom io.Reader) *TokenGenerator {
+func NewTokenGenerator(random io.Reader) *TokenGenerator {
 	return &TokenGenerator{
-		random: argRandom,
+		random: random,
 	}
 }
 
@@ -53,6 +53,6 @@ func (generator *TokenGenerator) Generate() (
 }
 
 // HashToken creates the storage hash for a presented opaque token.
-func HashToken(argToken string) [sha256.Size]byte {
-	return sha256.Sum256([]byte(argToken))
+func HashToken(token string) [sha256.Size]byte {
+	return sha256.Sum256([]byte(token))
 }
