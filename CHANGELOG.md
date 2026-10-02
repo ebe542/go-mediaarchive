@@ -28,6 +28,8 @@ checkpoints.
   authorization and indistinguishable unknown and unauthorized media.
 - Authenticated media metadata and per-user grant REST endpoints with strict
   JSON representations and a typed Go client for every operation.
+- Server-managed private content storage with bounded streaming uploads,
+  server-derived integrity metadata, and coordinated media deletion.
 - Media ownership protection for user deletion with transactional cleanup of
   grants held on other users' media.
 - Interactive end-user and administrator CLI applications with in-memory

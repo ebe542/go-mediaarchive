@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 18 is complete. The project currently provides:
+Milestone 19 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -42,6 +42,10 @@ Milestone 18 is complete. The project currently provides:
 - authenticated REST endpoints for media metadata and per-user grants without
   implicit administrator content access;
 - typed client operations for every media metadata and grant endpoint;
+- private server-managed filesystem storage with bounded authenticated uploads;
+- server-derived media size and SHA-256 integrity metadata;
+- coordinated deletion of managed files and their SQLite records;
+- a typed client operation that streams multipart uploads;
 - one-time initial password enrollment and authenticated password changes;
 - a cross-platform Go project tool for quality gates and release builds.
 
@@ -59,7 +63,8 @@ For local loopback development, run plain HTTP with:
 ```bash
 go run ./cmd/server \
   --addr 127.0.0.1:8080 \
-  --database ./data/mediaarchive.db
+  --database ./data/mediaarchive.db \
+  --content-directory ./data/content
 ```
 
 Check its health from another terminal:
@@ -90,6 +95,14 @@ go run ./cmd/server \
 
 The server requires TLS 1.3 or newer. Both TLS files must be configured
 together. Certificate and private-key files must remain outside version control.
+
+Managed uploads are stored below `data/content` by default and are limited to
+1 GiB. Configuration follows:
+
+```text
+--content-directory flag > MEDIAARCHIVE_CONTENT_DIRECTORY environment variable > data/content default
+--maximum-upload-size flag > MEDIAARCHIVE_MAXIMUM_UPLOAD_SIZE environment variable > 1073741824 default
+```
 
 Password enrollment tokens remain valid for 24 hours by default. Override the
 lifetime with a Go duration such as `12h`:

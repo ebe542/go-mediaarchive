@@ -220,7 +220,9 @@ content was successfully published by the storage adapter.
 The media foreign key uses restricted deletion. This deliberately prevents the
 existing metadata repository from deleting an item while a managed file is
 still attached. The application layer must coordinate file removal, location
-removal, and metadata removal explicitly.
+removal, and metadata removal explicitly. Managed deletion first stages the
+file outside its published key and then removes `media_contents`, grants,
+authors, and the media identity in one SQLite transaction.
 
 ## Storage and integrity rules
 

@@ -17,6 +17,7 @@ storage keys in SQLite and keep absolute filesystem paths out of the public API.
 - Enforce a configurable upload-size limit.
 - Wire the content directory and upload service into the server.
 - Add a typed streaming upload operation to the HTTP client.
+- Coordinate deletion of managed files and their database records.
 - Preserve the existing JSON metadata-creation endpoint for API compatibility.
 - Keep content reading, download, range requests, search, and interactive media
   commands outside this milestone.
@@ -90,6 +91,10 @@ The request uses `multipart/form-data` with exactly these logical parts:
 - `metadata`: JSON containing `title`, `authors`, and `type`;
 - `file`: the binary content and its original filename.
 
+The `metadata` part must precede the `file` part, and the file must be the final
+part. This ordering permits validation and direct streaming without buffering
+the uploaded file.
+
 Size and SHA-256 are intentionally absent from the request metadata because the
 server derives both values from the received bytes. The file part media type is
 validated and stored as metadata, but it is not treated as proof that the bytes
@@ -112,6 +117,21 @@ policy. Only active editors and administrators may create media identities.
 An uploaded item is owned by the authenticated actor. Neither a client-supplied
 owner ID nor a client-supplied storage key is accepted. Administrators receive no
 implicit access to content owned by another user.
+
+## Managed deletion
+
+Deletion retains the existing owner or explicit `delete` permission check. For
+managed content, the filesystem adapter first atomically moves the file from
+its published key to an internal deletion name on the same filesystem. SQLite
+then removes the content location, grants, authors, and media identity in one
+transaction.
+
+If the database transaction fails, the staged file is restored even when the
+request context has already been canceled. After a successful transaction, the
+staged file is removed permanently. A final removal failure is reported as an
+operational error; the file is no longer addressable through a storage key and
+is left for future orphan reconciliation. Metadata-only records continue to use
+their existing deletion path.
 
 ## Response and logging safety
 
@@ -169,8 +189,9 @@ validation, and structured API errors.
 2. Add the filesystem content store and focused adapter tests.
 3. Add SQLite content-location persistence and migration tests.
 4. Add the upload application service, compensation behavior, and service tests.
-5. Add the authenticated multipart endpoint and server composition.
-6. Add typed streaming upload support and complete the milestone documentation.
+5. Add coordinated deletion for managed media.
+6. Add the authenticated multipart endpoint and server composition.
+7. Add typed streaming upload support and complete the milestone documentation.
 
 Each implementation step is delivered as a complete Conventional Commit. Tests
 remain in the same commit as the behavior they specify.
@@ -184,12 +205,14 @@ remain in the same commit as the behavior they specify.
 - [x] Upload size and SHA-256 are derived from received bytes.
 - [x] Empty and oversized uploads are rejected without retaining partial files.
 - [x] Metadata failures compensate by removing newly stored content.
-- [ ] The multipart endpoint requires authentication and existing creation authorization.
-- [ ] Upload errors do not disclose internal filesystem or database details.
-- [ ] Server configuration follows flag, environment, and default precedence.
-- [ ] The typed client streams uploads without buffering complete files.
-- [ ] Standard project checks pass.
-- [ ] Local quality gate checks pass.
+- [x] Managed deletion coordinates filesystem staging and atomic database removal.
+- [x] Database deletion failures restore staged content.
+- [x] The multipart endpoint requires authentication and existing creation authorization.
+- [x] Upload errors do not disclose internal filesystem or database details.
+- [x] Server configuration follows flag, environment, and default precedence.
+- [x] The typed client streams uploads without buffering complete files.
+- [x] Standard project checks pass.
+- [x] Local quality gate checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-019` tag after all milestone commits are complete.

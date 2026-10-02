@@ -126,12 +126,26 @@ func (client *Client) doJSON(
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	if response.StatusCode == argExpectedStatus && argResponseBody == nil {
+	return handleJSONResponse(
+		response,
+		argExpectedStatus,
+		argResponseBody,
+		argOperation,
+	)
+}
+
+func handleJSONResponse(
+	argResponse *http.Response,
+	argExpectedStatus int,
+	argResponseBody any,
+	argOperation string,
+) error {
+	if argResponse.StatusCode == argExpectedStatus && argResponseBody == nil {
 		return nil
 	}
 
 	responseDocument, err := io.ReadAll(io.LimitReader(
-		response.Body,
+		argResponse.Body,
 		maximumResponseBodySize+1,
 	))
 	if err != nil {
@@ -141,11 +155,11 @@ func (client *Client) doJSON(
 		return fmt.Errorf("validate %s response: body is too large", argOperation)
 	}
 
-	if err := validateJSONContentType(response, argOperation); err != nil {
+	if err := validateJSONContentType(argResponse, argOperation); err != nil {
 		return err
 	}
 
-	if response.StatusCode != argExpectedStatus {
+	if argResponse.StatusCode != argExpectedStatus {
 		var errorDocument struct {
 			Error struct {
 				Code    string `json:"code"`
@@ -158,12 +172,12 @@ func (client *Client) doJSON(
 			return fmt.Errorf(
 				"request %s: unexpected HTTP status %s",
 				argOperation,
-				response.Status,
+				argResponse.Status,
 			)
 		}
 
 		return &APIError{
-			StatusCode: response.StatusCode,
+			StatusCode: argResponse.StatusCode,
 			Code:       errorDocument.Error.Code,
 			Message:    errorDocument.Error.Message,
 		}
