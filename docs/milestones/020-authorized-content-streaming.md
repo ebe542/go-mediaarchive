@@ -197,8 +197,8 @@ remain in the same commit as the behavior they specify.
 ## Acceptance criteria
 
 - [x] Streaming, authorization, range, and security contracts are documented.
-- [ ] Filesystem reads validate keys, reject links, and remain seekable.
-- [ ] Active reads and staged deletion are coordinated within one process.
+- [x] Filesystem reads validate keys, reject links, and remain seekable.
+- [x] Active reads and staged deletion are coordinated within one process.
 - [ ] The application authorizes `read` before location or filesystem access.
 - [ ] Unknown, unauthorized, and unavailable content share a masked result.
 - [ ] `GET` streams complete and single-range content without full buffering.

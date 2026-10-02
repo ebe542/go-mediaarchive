@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"io"
+	"time"
 )
 
 var (
@@ -43,6 +44,22 @@ type Stored struct {
 	Checksum   [sha256.Size]byte
 }
 
+// ReadSeekCloser combines the operations needed to stream complete content or
+// selected byte ranges without exposing a filesystem path.
+type ReadSeekCloser interface {
+	io.Reader
+	io.Seeker
+	io.Closer
+}
+
+// Opened describes an opened managed-content object. The caller must close
+// Reader so the storage adapter can release all associated resources.
+type Opened struct {
+	Reader       ReadSeekCloser
+	Size         int64
+	LastModified time.Time
+}
+
 // Store persists and removes managed media content.
 type Store interface {
 	Put(
@@ -52,6 +69,11 @@ type Store interface {
 		argMaximumSize int64,
 	) (Stored, error)
 	Delete(argContext context.Context, argStorageKey string) error
+}
+
+// ReadStore opens managed content through an opaque storage key.
+type ReadStore interface {
+	Open(ctx context.Context, storageKey string) (Opened, error)
 }
 
 // StagedDeletion represents content hidden from its published key but not yet

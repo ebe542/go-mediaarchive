@@ -22,11 +22,13 @@ const copyBufferSize = 32 * 1024
 
 // ContentStore keeps files below one private, server-controlled root.
 type ContentStore struct {
-	root string
+	root  string
+	locks *keyLockRegistry
 }
 
 // Verify at compile time that ContentStore implements the content contract.
 var _ content.Store = (*ContentStore)(nil)
+var _ content.ReadStore = (*ContentStore)(nil)
 var _ content.DeletionStore = (*ContentStore)(nil)
 
 type stagedDeletion struct {
@@ -34,6 +36,7 @@ type stagedDeletion struct {
 	originalPath string
 	stagedPath   string
 	finished     bool
+	release      func()
 }
 
 // NewContentStore prepares a private root for managed content.
@@ -53,7 +56,10 @@ func NewContentStore(argRoot string) (*ContentStore, error) {
 		return nil, fmt.Errorf("validate content root: %w", err)
 	}
 
-	return &ContentStore{root: root}, nil
+	return &ContentStore{
+		root:  root,
+		locks: newKeyLockRegistry(),
+	}, nil
 }
 
 // Put streams content into a temporary file before publishing it under a key
@@ -81,6 +87,12 @@ func (store *ContentStore) Put(
 	}
 
 	storageKey := storageKeyForMedia(argMediaID)
+	release := store.locks.acquireWrite(storageKey)
+	defer release()
+	if err := argContext.Err(); err != nil {
+		return content.Stored{}, err
+	}
+
 	shardPath := filepath.Join(store.root, argMediaID[:2])
 	if err := prepareShardDirectory(shardPath); err != nil {
 		return content.Stored{}, err
@@ -149,6 +161,84 @@ func (store *ContentStore) Put(
 	}, nil
 }
 
+// Open returns a seekable read-only handle while preventing deletion of the
+// same object until the caller closes that handle.
+func (store *ContentStore) Open(
+	ctx context.Context,
+	storageKey string,
+) (content.Opened, error) {
+	mediaID, err := mediaIDFromStorageKey(storageKey)
+	if err != nil {
+		return content.Opened{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return content.Opened{}, err
+	}
+
+	release := store.locks.acquireRead(storageKey)
+	opened := false
+	defer func() {
+		if !opened {
+			release()
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return content.Opened{}, err
+	}
+
+	if err := requirePrivateDirectory(store.root); err != nil {
+		return content.Opened{}, fmt.Errorf("validate content root: %w", err)
+	}
+	shardPath := filepath.Join(store.root, mediaID[:2])
+	if err := requirePrivateDirectory(shardPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return content.Opened{}, content.ErrNotFound
+		}
+
+		return content.Opened{}, fmt.Errorf("validate content directory: %w", err)
+	}
+
+	contentPath := filepath.Join(store.root, filepath.FromSlash(storageKey))
+	beforeOpen, err := os.Lstat(contentPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return content.Opened{}, content.ErrNotFound
+	}
+	if err != nil {
+		return content.Opened{}, fmt.Errorf("inspect content for reading: %w", err)
+	}
+	if beforeOpen.Mode()&os.ModeSymlink != 0 || !beforeOpen.Mode().IsRegular() {
+		return content.Opened{}, errors.New("managed content is not a regular file")
+	}
+
+	file, err := os.Open(contentPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return content.Opened{}, content.ErrNotFound
+	}
+	if err != nil {
+		return content.Opened{}, fmt.Errorf("open content for reading: %w", err)
+	}
+	fileInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return content.Opened{}, fmt.Errorf("inspect opened content: %w", err)
+	}
+	if !fileInfo.Mode().IsRegular() || !os.SameFile(beforeOpen, fileInfo) {
+		_ = file.Close()
+		return content.Opened{}, errors.New("managed content changed while opening")
+	}
+
+	opened = true
+
+	return content.Opened{
+		Reader: &lockedFile{
+			file:    file,
+			release: release,
+		},
+		Size:         fileInfo.Size(),
+		LastModified: fileInfo.ModTime(),
+	}, nil
+}
+
 // Delete removes one regular managed file. Missing content is reported so
 // application compensation can distinguish an already absent object.
 func (store *ContentStore) Delete(
@@ -162,6 +252,12 @@ func (store *ContentStore) Delete(
 	if err := argContext.Err(); err != nil {
 		return err
 	}
+	release := store.locks.acquireWrite(argStorageKey)
+	defer release()
+	if err := argContext.Err(); err != nil {
+		return err
+	}
+
 	if err := requirePrivateDirectory(store.root); err != nil {
 		return fmt.Errorf("validate content root: %w", err)
 	}
@@ -209,6 +305,17 @@ func (store *ContentStore) StageDelete(
 	if err := argContext.Err(); err != nil {
 		return nil, err
 	}
+	release := store.locks.acquireWrite(argStorageKey)
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			release()
+		}
+	}()
+	if err := argContext.Err(); err != nil {
+		return nil, err
+	}
+
 	if err := requirePrivateDirectory(store.root); err != nil {
 		return nil, fmt.Errorf("validate content root: %w", err)
 	}
@@ -244,9 +351,12 @@ func (store *ContentStore) StageDelete(
 		return nil, fmt.Errorf("stage content deletion: %w", err)
 	}
 
+	succeeded = true
+
 	return &stagedDeletion{
 		originalPath: originalPath,
 		stagedPath:   stagedPath,
+		release:      release,
 	}, nil
 }
 
@@ -263,6 +373,7 @@ func (deletion *stagedDeletion) Commit(argContext context.Context) error {
 		return fmt.Errorf("commit content deletion: %w", err)
 	}
 	deletion.finished = true
+	deletion.release()
 
 	return nil
 }
@@ -285,8 +396,50 @@ func (deletion *stagedDeletion) Rollback(argContext context.Context) error {
 		return fmt.Errorf("roll back content deletion: %w", err)
 	}
 	deletion.finished = true
+	deletion.release()
 
 	return nil
+}
+
+type lockedFile struct {
+	mutex   sync.Mutex
+	file    *os.File
+	release func()
+	closed  bool
+}
+
+func (file *lockedFile) Read(buffer []byte) (int, error) {
+	file.mutex.Lock()
+	defer file.mutex.Unlock()
+	if file.closed {
+		return 0, os.ErrClosed
+	}
+
+	return file.file.Read(buffer)
+}
+
+func (file *lockedFile) Seek(offset int64, whence int) (int64, error) {
+	file.mutex.Lock()
+	defer file.mutex.Unlock()
+	if file.closed {
+		return 0, os.ErrClosed
+	}
+
+	return file.file.Seek(offset, whence)
+}
+
+func (file *lockedFile) Close() error {
+	file.mutex.Lock()
+	defer file.mutex.Unlock()
+	if file.closed {
+		return os.ErrClosed
+	}
+
+	err := file.file.Close()
+	file.closed = true
+	file.release()
+
+	return err
 }
 
 func copyBounded(
