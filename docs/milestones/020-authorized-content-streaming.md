@@ -199,8 +199,8 @@ remain in the same commit as the behavior they specify.
 - [x] Streaming, authorization, range, and security contracts are documented.
 - [x] Filesystem reads validate keys, reject links, and remain seekable.
 - [x] Active reads and staged deletion are coordinated within one process.
-- [ ] The application authorizes `read` before location or filesystem access.
-- [ ] Unknown, unauthorized, and unavailable content share a masked result.
+- [x] The application authorizes `read` before location or filesystem access.
+- [x] Unknown, unauthorized, and unavailable content share a masked result.
 - [ ] `GET` streams complete and single-range content without full buffering.
 - [ ] `HEAD` returns matching headers without response content.
 - [ ] Content responses use safe inline, cache, MIME, and integrity headers.
