@@ -79,6 +79,8 @@ type handlerConfiguration struct {
 	mediaUploadResolver        SessionResolver
 	mediaUploads               MediaUploadService
 	maximumUploadSize          int64
+	mediaContentResolver       SessionResolver
+	mediaContent               MediaContentService
 }
 
 // Option configures optional API capabilities.

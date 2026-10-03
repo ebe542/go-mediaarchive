@@ -201,10 +201,10 @@ remain in the same commit as the behavior they specify.
 - [x] Active reads and staged deletion are coordinated within one process.
 - [x] The application authorizes `read` before location or filesystem access.
 - [x] Unknown, unauthorized, and unavailable content share a masked result.
-- [ ] `GET` streams complete and single-range content without full buffering.
-- [ ] `HEAD` returns matching headers without response content.
-- [ ] Content responses use safe inline, cache, MIME, and integrity headers.
-- [ ] Range failures retain the JSON error format and disclose no internals.
+- [x] `GET` streams complete and single-range content without full buffering.
+- [x] `HEAD` returns matching headers without response content.
+- [x] Content responses use safe inline, cache, MIME, and integrity headers.
+- [x] Range failures retain the JSON error format and disclose no internals.
 - [ ] The executable server wires the real content-reading service.
 - [ ] The typed client streams into an `io.Writer` and validates headers.
 - [ ] Standard project checks pass.

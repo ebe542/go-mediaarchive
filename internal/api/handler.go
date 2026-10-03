@@ -212,6 +212,19 @@ func NewHandler(options ...Option) http.Handler {
 		)
 	}
 
+	if configuration.mediaContentResolver != nil &&
+		configuration.mediaContent != nil {
+		contentHandler := &mediaContentHandler{
+			content: configuration.mediaContent,
+		}
+		authenticated := RequireAuthentication(
+			configuration.mediaContentResolver,
+			http.HandlerFunc(contentHandler.serve),
+		)
+		mux.Handle("GET /api/v1/media/{id}/content", authenticated)
+		mux.Handle("HEAD /api/v1/media/{id}/content", authenticated)
+	}
+
 	if configuration.mediaGrantResolver != nil &&
 		configuration.mediaGrants != nil {
 		grantHandler := &mediaGrantHandler{grants: configuration.mediaGrants}
