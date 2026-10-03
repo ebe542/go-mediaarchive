@@ -206,7 +206,7 @@ remain in the same commit as the behavior they specify.
 - [x] Content responses use safe inline, cache, MIME, and integrity headers.
 - [x] Range failures retain the JSON error format and disclose no internals.
 - [x] The executable server wires the real content-reading service.
-- [ ] The typed client streams into an `io.Writer` and validates headers.
+- [x] The typed client streams into an `io.Writer` and validates headers.
 - [ ] Standard project checks pass.
 - [ ] Local quality gate checks pass.
 
