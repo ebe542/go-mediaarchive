@@ -315,6 +315,7 @@ func newApplicationHandler(
 
 type managedContentStore interface {
 	content.Store
+	content.ReadStore
 	content.DeletionStore
 }
 
@@ -437,6 +438,12 @@ func newApplicationHandlerWithContent(
 	}
 	if contentStore != nil {
 		locationRepository := sqlitestore.NewContentLocationRepository(database)
+		contentReadService := appmedia.NewContentReadService(
+			mediaRepository,
+			grantRepository,
+			locationRepository,
+			contentStore,
+		)
 		mediaMetadataService = appmedia.NewManagedService(
 			mediaService,
 			locationRepository,
@@ -455,6 +462,10 @@ func newApplicationHandlerWithContent(
 		}
 		options = append(
 			options,
+			api.WithMediaContentAPI(
+				sessionService,
+				contentReadService,
+			),
 			api.WithMediaUploadAPI(
 				sessionService,
 				uploadService,

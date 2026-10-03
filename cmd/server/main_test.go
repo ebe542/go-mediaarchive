@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ebe542/go-mediaarchive/internal/api"
+	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/credential"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/media"
@@ -300,6 +302,207 @@ func TestApplicationHandlerRegistersManagedUploadRoute(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("expected upload route status 401, got %d", response.Code)
+	}
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		request := httptest.NewRequest(
+			method,
+			"/api/v1/media/123e4567-e89b-12d3-a456-426614174000/content",
+			nil,
+		)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf(
+				"expected %s content route status 401, got %d",
+				method,
+				response.Code,
+			)
+		}
+	}
+}
+
+func TestApplicationHandlerStreamsManagedContent(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlitestore.Open(ctx, filepath.Join(t.TempDir(), "mediaarchive.db"))
+	if err != nil {
+		t.Fatalf("open SQLite database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	now := time.Now().UTC()
+	owner, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"content_owner",
+		"Content Owner",
+		identity.RoleEditor,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create owner fixture: %v", err)
+	}
+	viewer, err := identity.NewUser(
+		"223e4567-e89b-12d3-a456-426614174000",
+		"content_viewer",
+		"Content Viewer",
+		identity.RoleViewer,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create viewer fixture: %v", err)
+	}
+	users := sqlitestore.NewUserRepository(database)
+	if err := users.Create(ctx, owner); err != nil {
+		t.Fatalf("store owner fixture: %v", err)
+	}
+	if err := users.Create(ctx, viewer); err != nil {
+		t.Fatalf("store viewer fixture: %v", err)
+	}
+
+	contentStore, err := filesystemstore.NewContentStore(filepath.Join(t.TempDir(), "content"))
+	if err != nil {
+		t.Fatalf("create content store: %v", err)
+	}
+	mediaID := "323e4567-e89b-12d3-a456-426614174000"
+	contentBytes := []byte("synthetic licensed PDF content")
+	stored, err := contentStore.Put(
+		ctx,
+		mediaID,
+		bytes.NewReader(contentBytes),
+		int64(len(contentBytes)),
+	)
+	if err != nil {
+		t.Fatalf("store content fixture: %v", err)
+	}
+	item, err := media.NewItem(
+		mediaID,
+		"Streaming Integration",
+		[]string{"Example Author"},
+		"streaming-integration.pdf",
+		media.TypeBook,
+		"application/pdf",
+		stored.Size,
+		stored.Checksum[:],
+		owner.ID,
+		now,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create media fixture: %v", err)
+	}
+	location, err := content.NewLocation(mediaID, stored.StorageKey, now)
+	if err != nil {
+		t.Fatalf("create location fixture: %v", err)
+	}
+	if err := sqlitestore.NewMediaRepository(database).CreateManaged(
+		ctx,
+		item,
+		location,
+	); err != nil {
+		t.Fatalf("store managed media fixture: %v", err)
+	}
+
+	sessions := sqlitestore.NewSessionRepository(database)
+	ownerToken := "owner-content-session"
+	viewerToken := "viewer-content-session"
+	for _, fixture := range []struct {
+		userID string
+		token  string
+	}{
+		{owner.ID, ownerToken},
+		{viewer.ID, viewerToken},
+	} {
+		storedSession, err := session.New(
+			session.HashToken(fixture.token),
+			fixture.userID,
+			now,
+			sessionAbsoluteLifetime,
+		)
+		if err != nil {
+			t.Fatalf("create session fixture: %v", err)
+		}
+		if err := sessions.Create(ctx, storedSession); err != nil {
+			t.Fatalf("store session fixture: %v", err)
+		}
+	}
+
+	handler, err := newApplicationHandlerWithContent(
+		database,
+		defaultEnrollmentLifetime,
+		contentStore,
+		1024,
+	)
+	if err != nil {
+		t.Fatalf("create application handler: %v", err)
+	}
+
+	ownerRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/media/"+mediaID+"/content",
+		nil,
+	)
+	ownerRequest.Header.Set("Authorization", "Bearer "+ownerToken)
+	ownerResponse := httptest.NewRecorder()
+	handler.ServeHTTP(ownerResponse, ownerRequest)
+	if ownerResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"expected owner content status 200, got %d: %s",
+			ownerResponse.Code,
+			ownerResponse.Body.String(),
+		)
+	}
+	responseContent, err := io.ReadAll(ownerResponse.Body)
+	if err != nil {
+		t.Fatalf("read content response: %v", err)
+	}
+	if !bytes.Equal(responseContent, contentBytes) {
+		t.Fatalf("expected %q, got %q", contentBytes, responseContent)
+	}
+
+	viewerRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/media/"+mediaID+"/content",
+		nil,
+	)
+	viewerRequest.Header.Set("Authorization", "Bearer "+viewerToken)
+	viewerResponse := httptest.NewRecorder()
+	handler.ServeHTTP(viewerResponse, viewerRequest)
+	if viewerResponse.Code != http.StatusNotFound {
+		t.Fatalf(
+			"expected masked viewer status 404, got %d: %s",
+			viewerResponse.Code,
+			viewerResponse.Body.String(),
+		)
+	}
+}
+
+func TestApplicationHandlerOmitsContentRouteWithoutStore(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlitestore.Open(ctx, filepath.Join(t.TempDir(), "mediaarchive.db"))
+	if err != nil {
+		t.Fatalf("open SQLite database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+	handler, err := newApplicationHandler(database, defaultEnrollmentLifetime)
+	if err != nil {
+		t.Fatalf("create application handler: %v", err)
+	}
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/media/123e4567-e89b-12d3-a456-426614174000/content",
+		nil,
+	)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected unregistered content route status 404, got %d", response.Code)
 	}
 }
 
