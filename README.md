@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 19 is complete. The project currently provides:
+Milestone 20 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -46,6 +46,10 @@ Milestone 19 is complete. The project currently provides:
 - server-derived media size and SHA-256 integrity metadata;
 - coordinated deletion of managed files and their SQLite records;
 - a typed client operation that streams multipart uploads;
+- authorized inline content streaming with complete and single-range responses;
+- safe content headers, masked availability errors, and no administrator bypass;
+- a typed client operation that validates content headers before streaming into
+  an `io.Writer`;
 - one-time initial password enrollment and authenticated password changes;
 - a cross-platform Go project tool for quality gates and release builds.
 

@@ -384,6 +384,8 @@ directly with the same HTTPS JSON API and implement equivalent session handling.
 | Create media metadata | `POST /api/v1/media` | Active editor or administrator |
 | Upload managed media | `POST /api/v1/media/uploads` | Active editor or administrator |
 | Read media metadata | `GET /api/v1/media/{id}` | Owner or explicit `discover` permission |
+| Inspect managed content | `HEAD /api/v1/media/{id}/content` | Owner or explicit `read` permission |
+| Stream managed content | `GET /api/v1/media/{id}/content` | Owner or explicit `read` permission |
 | Replace media metadata | `PUT /api/v1/media/{id}` | Owner or explicit `update` permission |
 | Delete media | `DELETE /api/v1/media/{id}` | Owner or explicit `delete` permission |
 | Replace media grant | `PUT /api/v1/media/{id}/grants/{userId}` | Owner or explicit `share` permission |
@@ -415,6 +417,65 @@ curl --fail-with-body --silent --show-error \
 
 The server derives the original filename, byte size, and SHA-256 checksum from
 the file part. It never accepts a client-supplied storage path.
+
+### Inspect and stream managed content
+
+Inspect the representation headers without transferring content bytes:
+
+```bash
+export MEDIAARCHIVE_TOKEN='<access-token>' && \
+export MEDIAARCHIVE_MEDIA_ID='<media-id>' && \
+curl --fail-with-body --silent --show-error --head \
+  --header "Authorization: Bearer $MEDIAARCHIVE_TOKEN" \
+  "https://archive.example.test:8443/api/v1/media/$MEDIAARCHIVE_MEDIA_ID/content"
+```
+
+Request one bounded byte range and retain the response headers separately from
+the selected content bytes:
+
+```bash
+export MEDIAARCHIVE_TOKEN='<access-token>' && \
+export MEDIAARCHIVE_MEDIA_ID='<media-id>' && \
+curl --fail-with-body --silent --show-error \
+  --header "Authorization: Bearer $MEDIAARCHIVE_TOKEN" \
+  --range 0-65535 \
+  --dump-header content-range.headers \
+  --output content-range.bin \
+  "https://archive.example.test:8443/api/v1/media/$MEDIAARCHIVE_MEDIA_ID/content"
+```
+
+A request without `Range` returns `200 OK`. A satisfiable single range returns
+`206 Partial Content`. Malformed, multiple, or unsatisfiable ranges return a
+bounded JSON error with `416 Range Not Satisfiable`. Unknown media, missing
+managed content, and media the caller may not read all use the same masked
+`404 Not Found` response.
+
+Successful content responses include an inline filename, a strong SHA-256
+ETag, `Last-Modified`, `Accept-Ranges: bytes`, MIME-sniffing protection, and
+private no-store cache policy. They never expose a storage key or server path.
+
+The typed Go client validates these headers before writing any content bytes:
+
+```go
+metadata, err := archiveClient.StreamMediaContent(
+    ctx,
+    accessToken,
+    mediaID,
+    viewerWriter,
+    client.CompleteContent(),
+)
+```
+
+Use `client.BoundedRange(start, end)`, `client.OpenEndedRange(start)`, or
+`client.SuffixRange(length)` when a viewer needs only part of a representation.
+The destination is an application-provided `io.Writer`; the client neither
+creates files nor retries a partially failed transfer automatically.
+
+The `read` permission necessarily permits the server to transfer content bytes.
+An authorized recipient can save those bytes or reconstruct a file from ranges.
+The distinction between `read` and the future explicit `download` operation is
+therefore an application, user-interface, and audit policy rather than DRM.
+The interactive consoles do not persist media content in this milestone.
 
 ## Development checks
 

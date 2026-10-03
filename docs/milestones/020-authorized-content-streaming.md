@@ -147,15 +147,15 @@ repository and filesystem failures remain internal operational errors.
 
 ## Typed client
 
-The typed client accepts an `io.Writer` and streams the response into it. It
-returns validated response metadata including content type, filename, full or
-selected length, ETag, last-modified time, and any returned byte range.
+`StreamMediaContent` accepts an `io.Writer` and streams the response into it. It
+returns validated `MediaContentMetadata` including content type, filename, full
+or selected length, ETag, last-modified time, and any returned byte range.
 
-The caller may request one optional byte range. The client validates response
-status and headers before copying. API errors remain bounded JSON responses. A
-network or destination-writer failure may leave partial output; the client does
-not retry automatically because an arbitrary `io.Writer` cannot be rewound
-safely.
+The caller selects `CompleteContent`, `BoundedRange`, `OpenEndedRange`, or
+`SuffixRange`. The client validates response status and headers before copying.
+API errors remain bounded JSON responses. A network or destination-writer
+failure may leave partial output; the client does not retry automatically
+because an arbitrary `io.Writer` cannot be rewound safely.
 
 This operation is an API primitive for viewers and graphical clients. The
 interactive CLI does not write content to a persistent file in this milestone,
@@ -207,8 +207,8 @@ remain in the same commit as the behavior they specify.
 - [x] Range failures retain the JSON error format and disclose no internals.
 - [x] The executable server wires the real content-reading service.
 - [x] The typed client streams into an `io.Writer` and validates headers.
-- [ ] Standard project checks pass.
-- [ ] Local quality gate checks pass.
+- [x] Standard project checks pass.
+- [x] Local quality gate checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-020` tag after all milestone commits are complete.
