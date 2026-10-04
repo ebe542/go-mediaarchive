@@ -25,6 +25,7 @@ verifiable increments.
 | `milestone-018` | [Media REST API](018-media-rest-api.md) | Complete |
 | `milestone-019` | [Secure managed content storage](019-secure-managed-content-storage.md) | Complete |
 | `milestone-020` | [Authorized content streaming](020-authorized-content-streaming.md) | Complete |
+| `milestone-021` | [Security audit logging](021-security-audit-logging.md) | Planned |
 
 ## Versioning rule
 
