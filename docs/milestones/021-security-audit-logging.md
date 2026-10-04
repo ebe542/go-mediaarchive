@@ -236,10 +236,10 @@ stay in the same commit as the behavior they specify.
 
 ## Acceptance criteria
 
-- [ ] Audit event fields, types, outcomes, and exclusions are documented.
-- [ ] Audit events validate bounded allowlisted data and UTC timestamps.
-- [ ] SQLite audit rows reject application updates and deletions.
-- [ ] Audit history survives user and media deletion.
+- [x] Audit event fields, types, outcomes, and exclusions are documented.
+- [x] Audit events validate bounded allowlisted data and UTC timestamps.
+- [x] SQLite audit rows reject application updates and deletions.
+- [x] Audit history survives user and media deletion.
 - [ ] Required audit failures prevent security-sensitive success.
 - [ ] Authentication, user, and password operations create safe events.
 - [ ] Media, grant, upload, and deletion operations create safe events.
