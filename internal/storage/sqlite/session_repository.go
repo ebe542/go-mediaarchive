@@ -253,3 +253,44 @@ func (repository *SessionRepository) Revoke(
 
 	return nil
 }
+
+// RevokeWithAudit atomically records the first revocation and its audit event.
+func (repository *SessionRepository) RevokeWithAudit(
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
+	now time.Time,
+	event audit.Event,
+) (bool, error) {
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin audited session revocation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	result, err := transaction.ExecContext(
+		ctx,
+		`UPDATE sessions
+		SET revoked_at = ?
+		WHERE token_hash = ? AND revoked_at IS NULL`,
+		now.UTC().Format(time.RFC3339Nano),
+		tokenHash[:],
+	)
+	if err != nil {
+		return false, fmt.Errorf("revoke audited session: %w", err)
+	}
+	affectedRows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read audited session revocation count: %w", err)
+	}
+	if affectedRows == 0 {
+		return false, nil
+	}
+	if err := insertAuditEvent(ctx, transaction, event); err != nil {
+		return false, fmt.Errorf("insert session revocation audit event: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return false, fmt.Errorf("commit audited session revocation: %w", err)
+	}
+
+	return true, nil
+}

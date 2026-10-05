@@ -837,6 +837,95 @@ func TestNewApplicationHandlerRejectsUnknownLogin(t *testing.T) {
 	}
 }
 
+func TestApplicationHandlerAuditsSessionRevocation(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlitestore.Open(
+		ctx,
+		filepath.Join(t.TempDir(), "mediaarchive.db"),
+	)
+	if err != nil {
+		t.Fatalf("open SQLite database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	now := time.Now().UTC()
+	user, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"logout_user",
+		"Logout User",
+		identity.RoleViewer,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create user fixture: %v", err)
+	}
+	if err := sqlitestore.NewUserRepository(database).Create(ctx, user); err != nil {
+		t.Fatalf("store user fixture: %v", err)
+	}
+	accessToken := "logout-integration-token"
+	storedSession, err := session.New(
+		session.HashToken(accessToken),
+		user.ID,
+		now,
+		sessionAbsoluteLifetime,
+	)
+	if err != nil {
+		t.Fatalf("create session fixture: %v", err)
+	}
+	if err := sqlitestore.NewSessionRepository(database).Create(ctx, storedSession); err != nil {
+		t.Fatalf("store session fixture: %v", err)
+	}
+	handler, err := newApplicationHandler(database, defaultEnrollmentLifetime)
+	if err != nil {
+		t.Fatalf("create application handler: %v", err)
+	}
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		request := httptest.NewRequest(
+			http.MethodDelete,
+			"/api/v1/auth/sessions/current",
+			nil,
+		)
+		request.Header.Set("Authorization", "Bearer "+accessToken)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNoContent {
+			t.Fatalf(
+				"expected revocation attempt %d status 204, got %d: %s",
+				attempt,
+				response.Code,
+				response.Body.String(),
+			)
+		}
+	}
+
+	var eventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events WHERE event_type = ?`,
+		audit.TypeSessionRevoked,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("read session revocation audit event: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected one session revocation event, got %d", eventCount)
+	}
+	var actorID string
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT actor_id FROM audit_events WHERE event_type = ?`,
+		audit.TypeSessionRevoked,
+	).Scan(&actorID); err != nil {
+		t.Fatalf("read session revocation actor: %v", err)
+	}
+	if actorID != user.ID {
+		t.Fatalf("expected revocation actor %q, got %q", user.ID, actorID)
+	}
+}
+
 func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 	t *testing.T,
 ) {

@@ -41,17 +41,42 @@ func (generator *deterministicTokenGenerator) Generate() (
 }
 
 type recordingSessionRepository struct {
-	createdSession session.Session
-	createdEvent   audit.Event
-	createError    error
-	storedSession  session.Session
-	findError      error
-	touchedHash    [sha256.Size]byte
-	touchedAt      time.Time
-	revokedHash    [sha256.Size]byte
-	revokedAt      time.Time
-	revokeCalls    int
-	touchCalls     int
+	createdSession  session.Session
+	createdEvent    audit.Event
+	createError     error
+	storedSession   session.Session
+	findError       error
+	touchedHash     [sha256.Size]byte
+	touchedAt       time.Time
+	revokedHash     [sha256.Size]byte
+	revokedAt       time.Time
+	revocationEvent audit.Event
+	revoked         bool
+	revokeError     error
+	revokeCalls     int
+	touchCalls      int
+}
+
+func (repository *recordingSessionRepository) RevokeWithAudit(
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
+	now time.Time,
+	event audit.Event,
+) (bool, error) {
+	repository.revokeCalls++
+	if repository.revokeError != nil {
+		return false, repository.revokeError
+	}
+	if repository.revoked {
+		return false, nil
+	}
+
+	repository.revoked = true
+	repository.revokedHash = tokenHash
+	repository.revokedAt = now
+	repository.revocationEvent = event
+
+	return true, nil
 }
 
 func (repository *recordingSessionRepository) CreateWithAudit(
@@ -352,12 +377,27 @@ func TestServiceRevokesSessionIdempotently(t *testing.T) {
 	now := time.Date(2026, time.August, 19, 10, 30, 0, 0, time.UTC)
 	token := "opaque-session-token"
 	tokenHash := session.HashToken(token)
+	user := identity.User{
+		ID:       "123e4567-e89b-12d3-a456-426614174000",
+		Username: "archive_admin",
+		Role:     identity.RoleAdmin,
+		Active:   true,
+	}
+	storedSession, err := session.New(
+		tokenHash,
+		user.ID,
+		now.Add(-time.Hour),
+		8*time.Hour,
+	)
+	if err != nil {
+		t.Fatalf("create session fixture: %v", err)
+	}
 
-	repository := &recordingSessionRepository{}
+	repository := &recordingSessionRepository{storedSession: storedSession}
 
 	service := NewService(
 		&recordingAuthenticator{},
-		&recordingUserFinder{},
+		&recordingUserFinder{user: user},
 		repository,
 		&recordingAuditAppender{},
 		auditEventID,
@@ -400,6 +440,74 @@ func TestServiceRevokesSessionIdempotently(t *testing.T) {
 			now,
 			repository.revokedAt,
 		)
+	}
+	if repository.revocationEvent.Type != audit.TypeSessionRevoked ||
+		repository.revocationEvent.Outcome != audit.OutcomeSuccess ||
+		repository.revocationEvent.ActorID != user.ID ||
+		repository.revocationEvent.ActorUsername != user.Username ||
+		repository.revocationEvent.ActorRole != string(user.Role) ||
+		repository.revocationEvent.TargetType != audit.TargetSession {
+		t.Fatalf("unexpected session revocation event: %+v", repository.revocationEvent)
+	}
+}
+
+func TestServiceTreatsUnknownSessionRevocationAsNoOp(t *testing.T) {
+	repository := &recordingSessionRepository{findError: session.ErrNotFound}
+	service := NewService(
+		&recordingAuthenticator{},
+		&recordingUserFinder{},
+		repository,
+		&recordingAuditAppender{},
+		auditEventID,
+		&deterministicTokenGenerator{},
+		time.Now,
+		8*time.Hour,
+		30*time.Minute,
+	)
+
+	if err := service.Revoke(context.Background(), "unknown-token"); err != nil {
+		t.Fatalf("revoke unknown session: %v", err)
+	}
+	if repository.revokeCalls != 0 {
+		t.Fatalf("expected no revocation write, got %d", repository.revokeCalls)
+	}
+}
+
+func TestServiceFailsClosedWhenRevocationAuditCannotPersist(t *testing.T) {
+	now := time.Date(2026, time.October, 5, 10, 0, 0, 0, time.UTC)
+	tokenHash := session.HashToken("audited-revocation-token")
+	user := identity.User{
+		ID:       "123e4567-e89b-12d3-a456-426614174000",
+		Username: "archive_admin",
+		Role:     identity.RoleAdmin,
+		Active:   true,
+	}
+	storedSession, err := session.New(tokenHash, user.ID, now.Add(-time.Hour), 8*time.Hour)
+	if err != nil {
+		t.Fatalf("create session fixture: %v", err)
+	}
+	auditFailure := errors.New("synthetic revocation audit failure")
+	repository := &recordingSessionRepository{
+		storedSession: storedSession,
+		revokeError:   auditFailure,
+	}
+	service := NewService(
+		&recordingAuthenticator{},
+		&recordingUserFinder{user: user},
+		repository,
+		&recordingAuditAppender{},
+		auditEventID,
+		&deterministicTokenGenerator{},
+		func() time.Time { return now },
+		8*time.Hour,
+		30*time.Minute,
+	)
+
+	if err := service.Revoke(
+		context.Background(),
+		"audited-revocation-token",
+	); !errors.Is(err, auditFailure) {
+		t.Fatalf("expected audit failure, got %v", err)
 	}
 }
 

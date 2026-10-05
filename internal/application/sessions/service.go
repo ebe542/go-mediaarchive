@@ -49,6 +49,13 @@ type Repository interface {
 		storedSession session.Session,
 		event audit.Event,
 	) error
+
+	RevokeWithAudit(
+		ctx context.Context,
+		tokenHash [sha256.Size]byte,
+		now time.Time,
+		event audit.Event,
+	) (bool, error)
 }
 
 // EventIDGenerator creates canonical audit event IDs.
@@ -275,13 +282,41 @@ func (service *Service) Revoke(
 	tokenHash := session.HashToken(accessToken)
 	currentTime := service.currentTime().UTC()
 
-	if err := service.repository.Revoke(
+	storedSession, err := service.repository.FindByTokenHash(ctx, tokenHash)
+	if errors.Is(err, session.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("retrieve session for revocation: %w", err)
+	}
+
+	user, err := service.userFinder.FindByID(ctx, storedSession.UserID)
+	if err != nil {
+		return fmt.Errorf("retrieve session user for revocation: %w", err)
+	}
+
+	event, err := audit.NewEvent(audit.Event{
+		ID:            service.eventIDGenerator(),
+		OccurredAt:    currentTime,
+		Type:          audit.TypeSessionRevoked,
+		Outcome:       audit.OutcomeSuccess,
+		ActorID:       user.ID,
+		ActorUsername: user.Username,
+		ActorRole:     string(user.Role),
+		TargetType:    audit.TargetSession,
+	})
+	if err != nil {
+		return fmt.Errorf("create session revocation audit event: %w", err)
+	}
+
+	if _, err := service.repository.RevokeWithAudit(
 		ctx,
 		tokenHash,
 		currentTime,
+		event,
 	); err != nil {
 		return fmt.Errorf(
-			"revoke server-side session: %w",
+			"revoke audited server-side session: %w",
 			err,
 		)
 	}

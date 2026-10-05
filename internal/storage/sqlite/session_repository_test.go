@@ -218,6 +218,92 @@ func TestSessionRepositoryRollsBackAuditAfterSessionFailure(t *testing.T) {
 	}
 }
 
+func TestSessionRepositoryRevokesWithOneAuditEvent(t *testing.T) {
+	ctx, database := openMediaSchemaDatabase(t)
+	insertMediaSchemaUser(t, ctx, database, schemaOwnerID, "session_owner")
+	repository := sqlitestore.NewSessionRepository(database)
+	storedSession := auditedSessionFixture(t)
+	if err := repository.Create(ctx, storedSession); err != nil {
+		t.Fatalf("create session fixture: %v", err)
+	}
+	event := sessionRevocationEvent()
+	revokedAt := event.OccurredAt
+
+	changed, err := repository.RevokeWithAudit(
+		ctx,
+		storedSession.TokenHash,
+		revokedAt,
+		event,
+	)
+	if err != nil {
+		t.Fatalf("revoke audited session: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected first revocation to change the session")
+	}
+	changed, err = repository.RevokeWithAudit(
+		ctx,
+		storedSession.TokenHash,
+		revokedAt.Add(time.Minute),
+		sessionRevocationEvent(),
+	)
+	if err != nil {
+		t.Fatalf("repeat audited session revocation: %v", err)
+	}
+	if changed {
+		t.Fatal("expected repeated revocation to be a no-op")
+	}
+
+	stored, err := repository.FindByTokenHash(ctx, storedSession.TokenHash)
+	if err != nil {
+		t.Fatalf("find revoked session: %v", err)
+	}
+	if stored.RevokedAt != revokedAt {
+		t.Fatalf("expected revocation time %v, got %v", revokedAt, stored.RevokedAt)
+	}
+	var eventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events WHERE event_type = ?`,
+		audit.TypeSessionRevoked,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("count session revocation events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected one session revocation event, got %d", eventCount)
+	}
+}
+
+func TestSessionRepositoryRollsBackRevocationAfterAuditFailure(t *testing.T) {
+	ctx, database := openMediaSchemaDatabase(t)
+	insertMediaSchemaUser(t, ctx, database, schemaOwnerID, "session_owner")
+	repository := sqlitestore.NewSessionRepository(database)
+	storedSession := auditedSessionFixture(t)
+	if err := repository.Create(ctx, storedSession); err != nil {
+		t.Fatalf("create session fixture: %v", err)
+	}
+	event := sessionRevocationEvent()
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("append conflicting audit fixture: %v", err)
+	}
+
+	if _, err := repository.RevokeWithAudit(
+		ctx,
+		storedSession.TokenHash,
+		event.OccurredAt,
+		event,
+	); err == nil {
+		t.Fatal("expected audited session revocation to fail")
+	}
+	stored, err := repository.FindByTokenHash(ctx, storedSession.TokenHash)
+	if err != nil {
+		t.Fatalf("find session after failed revocation: %v", err)
+	}
+	if !stored.RevokedAt.IsZero() {
+		t.Fatalf("expected revocation rollback, got %v", stored.RevokedAt)
+	}
+}
+
 func auditedSessionFixture(t *testing.T) session.Session {
 	t.Helper()
 
@@ -245,4 +331,13 @@ func sessionCreationEvent() audit.Event {
 		ActorRole:     "viewer",
 		TargetType:    audit.TargetSession,
 	}
+}
+
+func sessionRevocationEvent() audit.Event {
+	event := sessionCreationEvent()
+	event.ID = "a23e4567-e89b-12d3-a456-426614174000"
+	event.OccurredAt = time.Date(2026, time.October, 5, 10, 0, 0, 0, time.UTC)
+	event.Type = audit.TypeSessionRevoked
+
+	return event
 }
