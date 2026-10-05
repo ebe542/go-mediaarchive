@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/session"
 )
 
@@ -29,9 +30,42 @@ func NewSessionRepository(database *sql.DB) *SessionRepository {
 // Create persists a new server-side session.
 func (repository *SessionRepository) Create(
 	ctx context.Context,
-	session session.Session,
+	storedSession session.Session,
 ) error {
-	_, err := repository.database.ExecContext(
+	return insertSession(ctx, repository.database, storedSession)
+}
+
+// CreateWithAudit atomically persists a session and its required audit event.
+func (repository *SessionRepository) CreateWithAudit(
+	ctx context.Context,
+	storedSession session.Session,
+	event audit.Event,
+) error {
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin audited session creation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	if err := insertSession(ctx, transaction, storedSession); err != nil {
+		return err
+	}
+	if err := insertAuditEvent(ctx, transaction, event); err != nil {
+		return fmt.Errorf("insert session creation audit event: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit audited session creation: %w", err)
+	}
+
+	return nil
+}
+
+func insertSession(
+	ctx context.Context,
+	executor statementExecutor,
+	storedSession session.Session,
+) error {
+	_, err := executor.ExecContext(
 		ctx,
 		`
 			INSERT INTO sessions (
@@ -44,11 +78,11 @@ func (repository *SessionRepository) Create(
 			)
 			VALUES (?, ?, ?, ?, ?, ?)
 		`,
-		session.TokenHash[:],
-		session.UserID,
-		session.CreatedAt.Format(time.RFC3339Nano),
-		session.LastSeenAt.Format(time.RFC3339Nano),
-		session.ExpiresAt.Format(time.RFC3339Nano),
+		storedSession.TokenHash[:],
+		storedSession.UserID,
+		storedSession.CreatedAt.Format(time.RFC3339Nano),
+		storedSession.LastSeenAt.Format(time.RFC3339Nano),
+		storedSession.ExpiresAt.Format(time.RFC3339Nano),
 		nil,
 	)
 	if err != nil {

@@ -355,11 +355,14 @@ func newApplicationHandlerWithContent(
 	)
 
 	sessionRepository := sqlitestore.NewSessionRepository(database)
+	auditRepository := sqlitestore.NewAuditRepository(database)
 
 	sessionService := appsessions.NewService(
 		authenticator,
 		userRepository,
 		sessionRepository,
+		auditRepository,
+		uuid.NewString,
 		session.NewDefaultTokenGenerator(),
 		time.Now,
 		sessionAbsoluteLifetime,

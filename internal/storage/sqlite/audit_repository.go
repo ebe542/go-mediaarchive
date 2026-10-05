@@ -24,6 +24,14 @@ func NewAuditRepository(database *sql.DB) *AuditRepository {
 
 // Append validates and persists one immutable audit event.
 func (repository *AuditRepository) Append(ctx context.Context, candidate audit.Event) error {
+	return insertAuditEvent(ctx, repository.database, candidate)
+}
+
+func insertAuditEvent(
+	ctx context.Context,
+	executor statementExecutor,
+	candidate audit.Event,
+) error {
 	event, err := audit.NewEvent(candidate)
 	if err != nil {
 		return fmt.Errorf("validate audit event: %w", err)
@@ -58,7 +66,7 @@ func (repository *AuditRepository) Append(ctx context.Context, candidate audit.E
 		rangeTotal = event.Range.Total
 	}
 
-	_, err = repository.database.ExecContext(
+	_, err = executor.ExecContext(
 		ctx,
 		`INSERT INTO audit_events (
 			id, occurred_at, event_type, outcome,

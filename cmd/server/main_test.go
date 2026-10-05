@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ebe542/go-mediaarchive/internal/api"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/credential"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
@@ -477,6 +478,7 @@ func TestApplicationHandlerStreamsManagedContent(t *testing.T) {
 			viewerResponse.Body.String(),
 		)
 	}
+
 }
 
 func TestApplicationHandlerOmitsContentRouteWithoutStore(t *testing.T) {
@@ -806,6 +808,33 @@ func TestNewApplicationHandlerRejectsUnknownLogin(t *testing.T) {
 			response.Body.String(),
 		)
 	}
+
+	var eventType string
+	var outcome string
+	var targetName string
+	var reason string
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT event_type, outcome, target_name, reason FROM audit_events`,
+	).Scan(&eventType, &outcome, &targetName, &reason); err != nil {
+		t.Fatalf("read denied login audit event: %v", err)
+	}
+	if eventType != string(audit.TypeSessionCreateDenied) ||
+		outcome != string(audit.OutcomeDenied) ||
+		targetName != "unknown_user" ||
+		reason != string(audit.ReasonInvalidCredentials) {
+		t.Fatalf("unexpected denied login audit values")
+	}
+	var sessionCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM sessions`,
+	).Scan(&sessionCount); err != nil {
+		t.Fatalf("count sessions after denied login: %v", err)
+	}
+	if sessionCount != 0 {
+		t.Fatalf("expected no session after denied login, got %d", sessionCount)
+	}
 }
 
 func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
@@ -925,6 +954,33 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 
 	if bytes.Equal(storedTokenHash, []byte(body.AccessToken)) {
 		t.Fatal("expected raw access token not to be stored")
+	}
+
+	var auditType string
+	var auditOutcome string
+	var auditActorID string
+	var auditUsername string
+	var auditRole string
+	err = database.QueryRowContext(
+		ctx,
+		`SELECT event_type, outcome, actor_id, actor_username, actor_role
+		FROM audit_events`,
+	).Scan(
+		&auditType,
+		&auditOutcome,
+		&auditActorID,
+		&auditUsername,
+		&auditRole,
+	)
+	if err != nil {
+		t.Fatalf("read successful login audit event: %v", err)
+	}
+	if auditType != string(audit.TypeSessionCreated) ||
+		auditOutcome != string(audit.OutcomeSuccess) ||
+		auditActorID != user.ID ||
+		auditUsername != user.Username ||
+		auditRole != string(user.Role) {
+		t.Fatalf("unexpected successful login audit values")
 	}
 
 	currentUserRequest := httptest.NewRequest(

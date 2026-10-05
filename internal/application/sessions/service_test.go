@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/application/authentication"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/session"
 )
@@ -40,6 +42,8 @@ func (generator *deterministicTokenGenerator) Generate() (
 
 type recordingSessionRepository struct {
 	createdSession session.Session
+	createdEvent   audit.Event
+	createError    error
 	storedSession  session.Session
 	findError      error
 	touchedHash    [sha256.Size]byte
@@ -50,6 +54,17 @@ type recordingSessionRepository struct {
 	touchCalls     int
 }
 
+func (repository *recordingSessionRepository) CreateWithAudit(
+	ctx context.Context,
+	storedSession session.Session,
+	event audit.Event,
+) error {
+	repository.createdSession = storedSession
+	repository.createdEvent = event
+
+	return repository.createError
+}
+
 func (repository *recordingSessionRepository) Create(
 	ctx context.Context,
 	session session.Session,
@@ -57,6 +72,24 @@ func (repository *recordingSessionRepository) Create(
 	repository.createdSession = session
 
 	return nil
+}
+
+type recordingAuditAppender struct {
+	event audit.Event
+	err   error
+}
+
+func (appender *recordingAuditAppender) Append(
+	ctx context.Context,
+	event audit.Event,
+) error {
+	appender.event = event
+
+	return appender.err
+}
+
+func auditEventID() string {
+	return "823e4567-e89b-12d3-a456-426614174000"
 }
 
 func (repository *recordingSessionRepository) FindByTokenHash(
@@ -129,6 +162,8 @@ func TestServiceCreatesAuthenticatedSession(t *testing.T) {
 			user: user,
 		},
 		repository,
+		&recordingAuditAppender{},
+		auditEventID,
 		tokenGenerator,
 		func() time.Time {
 			return now
@@ -167,6 +202,80 @@ func TestServiceCreatesAuthenticatedSession(t *testing.T) {
 			repository.createdSession.UserID,
 		)
 	}
+	if repository.createdEvent.Type != audit.TypeSessionCreated ||
+		repository.createdEvent.Outcome != audit.OutcomeSuccess ||
+		repository.createdEvent.ActorID != user.ID ||
+		repository.createdEvent.ActorUsername != user.Username ||
+		repository.createdEvent.ActorRole != string(user.Role) ||
+		repository.createdEvent.TargetType != audit.TargetSession {
+		t.Fatalf("unexpected session creation audit event: %+v", repository.createdEvent)
+	}
+}
+
+func TestServiceAuditsDeniedSessionCreation(t *testing.T) {
+	now := time.Date(2026, time.October, 4, 12, 0, 0, 0, time.UTC)
+	appender := &recordingAuditAppender{}
+	repository := &recordingSessionRepository{}
+	service := NewService(
+		&recordingAuthenticator{err: authentication.ErrInvalidCredentials},
+		&recordingUserFinder{},
+		repository,
+		appender,
+		auditEventID,
+		&deterministicTokenGenerator{},
+		func() time.Time { return now },
+		8*time.Hour,
+		30*time.Minute,
+	)
+
+	_, err := service.Create(
+		context.Background(),
+		"  Archive_User  ",
+		[]byte("incorrect password"),
+	)
+	if !errors.Is(err, authentication.ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+	if appender.event.Type != audit.TypeSessionCreateDenied ||
+		appender.event.Outcome != audit.OutcomeDenied ||
+		appender.event.TargetType != audit.TargetUser ||
+		appender.event.TargetName != "archive_user" ||
+		appender.event.Reason != audit.ReasonInvalidCredentials ||
+		appender.event.ActorID != "" {
+		t.Fatalf("unexpected denied session audit event: %+v", appender.event)
+	}
+	if repository.createdSession != (session.Session{}) {
+		t.Fatal("expected no session after denied authentication")
+	}
+}
+
+func TestServiceFailsClosedWhenDeniedAuditCannotPersist(t *testing.T) {
+	auditFailure := errors.New("synthetic audit failure")
+	service := NewService(
+		&recordingAuthenticator{err: authentication.ErrInvalidCredentials},
+		&recordingUserFinder{},
+		&recordingSessionRepository{},
+		&recordingAuditAppender{err: auditFailure},
+		auditEventID,
+		&deterministicTokenGenerator{},
+		func() time.Time {
+			return time.Date(2026, time.October, 4, 12, 0, 0, 0, time.UTC)
+		},
+		8*time.Hour,
+		30*time.Minute,
+	)
+
+	_, err := service.Create(
+		context.Background(),
+		"malformed username!",
+		[]byte("incorrect password"),
+	)
+	if !errors.Is(err, auditFailure) {
+		t.Fatalf("expected audit failure, got %v", err)
+	}
+	if errors.Is(err, authentication.ErrInvalidCredentials) {
+		t.Fatal("expected audit failure to replace the public credential denial")
+	}
 }
 func TestServiceResolvesActiveSession(t *testing.T) {
 	now := time.Date(2026, time.August, 19, 10, 20, 0, 0, time.UTC)
@@ -201,6 +310,8 @@ func TestServiceResolvesActiveSession(t *testing.T) {
 		&recordingAuthenticator{},
 		userFinder,
 		repository,
+		&recordingAuditAppender{},
+		auditEventID,
 		&deterministicTokenGenerator{},
 		func() time.Time {
 			return now
@@ -248,6 +359,8 @@ func TestServiceRevokesSessionIdempotently(t *testing.T) {
 		&recordingAuthenticator{},
 		&recordingUserFinder{},
 		repository,
+		&recordingAuditAppender{},
+		auditEventID,
 		&deterministicTokenGenerator{},
 		func() time.Time {
 			return now
@@ -383,6 +496,8 @@ func TestServiceRejectsUnusableSessionsGenerically(t *testing.T) {
 				&recordingAuthenticator{},
 				userFinder,
 				repository,
+				&recordingAuditAppender{},
+				auditEventID,
 				&deterministicTokenGenerator{},
 				func() time.Time {
 					return now
