@@ -19,7 +19,7 @@ func TestListUsersAppliesDefaultLimitWithoutNextCursor(t *testing.T) {
 	repository := &recordingUserRepository{
 		listedUsers: []identity.User{listedUser},
 	}
-	service := users.NewService(repository, func() string { return "" }, time.Now)
+	service := newUserService(repository, func() string { return "" }, time.Now)
 
 	page, err := service.ListUsers(
 		context.Background(),
@@ -59,7 +59,7 @@ func TestListUsersUsesLookaheadToCreateNextCursor(t *testing.T) {
 	repository := &recordingUserRepository{
 		listedUsers: []identity.User{firstUser, lookaheadUser},
 	}
-	service := users.NewService(repository, func() string { return "" }, time.Now)
+	service := newUserService(repository, func() string { return "" }, time.Now)
 
 	page, err := service.ListUsers(
 		context.Background(),
@@ -97,7 +97,7 @@ func TestListUsersPassesValidatedCursor(t *testing.T) {
 		t.Fatalf("create cursor: %v", err)
 	}
 	repository := &recordingUserRepository{}
-	service := users.NewService(repository, func() string { return "" }, time.Now)
+	service := newUserService(repository, func() string { return "" }, time.Now)
 
 	_, err = service.ListUsers(
 		context.Background(),
@@ -161,11 +161,10 @@ func TestListUsersRejectsInvalidLimitsAndCursors(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			repository := &recordingUserRepository{}
-			service := users.NewService(
+			service := newUserService(
 				repository,
 				func() string { return "" },
-				time.Now,
-			)
+				time.Now)
 
 			_, err := service.ListUsers(context.Background(), testCase.input)
 			if !errors.Is(err, testCase.expectedErr) {

@@ -35,9 +35,11 @@ type recordingUserWriter struct {
 
 func (writer *recordingUserWriter) CreateUser(
 	ctx context.Context,
+	actor identity.User,
 	input appusers.CreateUserInput,
 ) (identity.User, error) {
 	writer.createCalls++
+	writer.actorID = actor.ID
 	writer.createInput = input
 
 	return writer.createdUser, writer.createError
@@ -45,12 +47,12 @@ func (writer *recordingUserWriter) CreateUser(
 
 func (writer *recordingUserWriter) UpdateUser(
 	ctx context.Context,
-	actorID string,
+	actor identity.User,
 	id string,
 	input appusers.UpdateUserInput,
 ) (identity.User, error) {
 	writer.updateCalls++
-	writer.actorID = actorID
+	writer.actorID = actor.ID
 	writer.targetID = id
 	writer.updateInput = input
 
@@ -59,12 +61,12 @@ func (writer *recordingUserWriter) UpdateUser(
 
 func (writer *recordingUserWriter) SetUserActive(
 	ctx context.Context,
-	actorID string,
+	actor identity.User,
 	id string,
 	active bool,
 ) (identity.User, error) {
 	writer.activeCalls++
-	writer.actorID = actorID
+	writer.actorID = actor.ID
 	writer.targetID = id
 	writer.active = active
 
@@ -119,8 +121,9 @@ func TestCreateUserEndpointCreatesCredentiallessIdentity(t *testing.T) {
 		Active:      true,
 	}
 	writer := &recordingUserWriter{createdUser: createdUser}
+	resolver := administratorResolver()
 	handler := api.NewHandler(
-		api.WithUserManagementAPI(administratorResolver(), writer),
+		api.WithUserManagementAPI(resolver, writer),
 	)
 
 	request := authenticatedJSONRequest(
@@ -136,6 +139,9 @@ func TestCreateUserEndpointCreatesCredentiallessIdentity(t *testing.T) {
 	}
 	if writer.createCalls != 1 {
 		t.Fatalf("expected one create call, got %d", writer.createCalls)
+	}
+	if writer.actorID != resolver.user.ID {
+		t.Fatalf("expected actor %q, got %q", resolver.user.ID, writer.actorID)
 	}
 	expectedInput := appusers.CreateUserInput{
 		Username:    "archive_editor",

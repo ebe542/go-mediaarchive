@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
 
@@ -75,6 +76,17 @@ type UserPageRepository interface {
 type Repository interface {
 	identity.UserRepository
 	UserPageRepository
+
+	CreateWithAudit(
+		ctx context.Context,
+		user identity.User,
+		event audit.Event,
+	) error
+	UpdatePreservingLastAdministratorWithAudit(
+		ctx context.Context,
+		user identity.User,
+		event audit.Event,
+	) error
 }
 
 // ListUsers retrieves a validated keyset-paginated directory page.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	appusers "github.com/ebe542/go-mediaarchive/internal/application/users"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
 
@@ -102,7 +103,40 @@ func (repository *UserRepository) Create(
 	ctx context.Context,
 	user identity.User,
 ) error {
-	_, err := repository.database.ExecContext(
+	return insertUser(ctx, repository.database, user)
+}
+
+// CreateWithAudit atomically persists a user and its required audit event.
+func (repository *UserRepository) CreateWithAudit(
+	ctx context.Context,
+	user identity.User,
+	event audit.Event,
+) error {
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin audited user creation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	if err := insertUser(ctx, transaction, user); err != nil {
+		return err
+	}
+	if err := insertAuditEvent(ctx, transaction, event); err != nil {
+		return fmt.Errorf("insert user creation audit event: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit audited user creation: %w", err)
+	}
+
+	return nil
+}
+
+func insertUser(
+	ctx context.Context,
+	executor statementExecutor,
+	user identity.User,
+) error {
+	_, err := executor.ExecContext(
 		ctx,
 		`
 			INSERT INTO users (
@@ -153,6 +187,24 @@ func (repository *UserRepository) UpdatePreservingLastAdministrator(
 	ctx context.Context,
 	user identity.User,
 ) error {
+	return repository.updatePreservingLastAdministrator(ctx, user, nil)
+}
+
+// UpdatePreservingLastAdministratorWithAudit atomically protects the last
+// active administrator while updating a user and appending its audit event.
+func (repository *UserRepository) UpdatePreservingLastAdministratorWithAudit(
+	ctx context.Context,
+	user identity.User,
+	event audit.Event,
+) error {
+	return repository.updatePreservingLastAdministrator(ctx, user, &event)
+}
+
+func (repository *UserRepository) updatePreservingLastAdministrator(
+	ctx context.Context,
+	user identity.User,
+	event *audit.Event,
+) error {
 	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin protected user update: %w", err)
@@ -188,6 +240,11 @@ func (repository *UserRepository) UpdatePreservingLastAdministrator(
 
 	if err := updateUser(ctx, transaction, user); err != nil {
 		return err
+	}
+	if event != nil {
+		if err := insertAuditEvent(ctx, transaction, *event); err != nil {
+			return fmt.Errorf("insert user update audit event: %w", err)
+		}
 	}
 
 	if err := transaction.Commit(); err != nil {

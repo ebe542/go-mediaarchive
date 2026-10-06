@@ -340,10 +340,13 @@ func newApplicationHandlerWithContent(
 	}
 
 	userRepository := sqlitestore.NewUserRepository(database)
+	auditRepository := sqlitestore.NewAuditRepository(database)
 	userService := appusers.NewService(
 		userRepository,
 		uuid.NewString,
 		time.Now,
+		auditRepository,
+		uuid.NewString,
 	)
 	credentialRepository := sqlitestore.NewPasswordCredentialRepository(database)
 
@@ -355,7 +358,6 @@ func newApplicationHandlerWithContent(
 	)
 
 	sessionRepository := sqlitestore.NewSessionRepository(database)
-	auditRepository := sqlitestore.NewAuditRepository(database)
 
 	sessionService := appsessions.NewService(
 		authenticator,

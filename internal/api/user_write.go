@@ -13,17 +13,18 @@ import (
 type UserWriter interface {
 	CreateUser(
 		ctx context.Context,
+		actor identity.User,
 		input appusers.CreateUserInput,
 	) (identity.User, error)
 	UpdateUser(
 		ctx context.Context,
-		actorID string,
+		actor identity.User,
 		id string,
 		input appusers.UpdateUserInput,
 	) (identity.User, error)
 	SetUserActive(
 		ctx context.Context,
-		actorID string,
+		actor identity.User,
 		id string,
 		active bool,
 	) (identity.User, error)
@@ -59,6 +60,18 @@ func (handler *userWriteHandler) createUser(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
+	actor, exists := AuthenticatedUser(request.Context())
+	if !exists {
+		writeJSONError(
+			response,
+			http.StatusInternalServerError,
+			"internal_error",
+			"Internal server error.",
+		)
+
+		return
+	}
+
 	var requestBody userDetailsRequest
 	if err := decodeJSONRequest(
 		response,
@@ -72,6 +85,7 @@ func (handler *userWriteHandler) createUser(
 
 	createdUser, err := handler.users.CreateUser(
 		request.Context(),
+		actor,
 		appusers.CreateUserInput{
 			Username:    requestBody.Username,
 			DisplayName: requestBody.DisplayName,
@@ -124,7 +138,7 @@ func (handler *userWriteHandler) updateUser(
 
 	updatedUser, err := handler.users.UpdateUser(
 		request.Context(),
-		actor.ID,
+		actor,
 		request.PathValue("id"),
 		appusers.UpdateUserInput{
 			Username:    requestBody.Username,
@@ -172,7 +186,7 @@ func (handler *userWriteHandler) setUserActive(
 
 	updatedUser, err := handler.users.SetUserActive(
 		request.Context(),
-		actor.ID,
+		actor,
 		request.PathValue("id"),
 		*requestBody.Active,
 	)

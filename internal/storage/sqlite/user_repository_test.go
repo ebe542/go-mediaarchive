@@ -11,6 +11,7 @@ import (
 	"time"
 
 	appusers "github.com/ebe542/go-mediaarchive/internal/application/users"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
@@ -173,6 +174,156 @@ func TestUserRepositoryCreatesAndFindsUserByID(t *testing.T) {
 			storedUser,
 		)
 	}
+}
+
+func TestUserRepositoryCreatesUserAndAuditAtomically(t *testing.T) {
+	t.Parallel()
+
+	ctx, database := openMediaSchemaDatabase(t)
+	repository := sqlitestore.NewUserRepository(database)
+	now := time.Date(2026, time.October, 5, 10, 0, 0, 0, time.UTC)
+	user, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174010",
+		"audited_user",
+		"Audited User",
+		identity.RoleEditor,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create user fixture: %v", err)
+	}
+	event := userAuditEvent(t, user, audit.TypeUserCreated, now)
+
+	if err := repository.CreateWithAudit(ctx, user, event); err != nil {
+		t.Fatalf("create user with audit: %v", err)
+	}
+
+	storedUser, err := repository.FindByID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("find created user: %v", err)
+	}
+	if storedUser != user {
+		t.Fatalf("expected stored user %#v, got %#v", user, storedUser)
+	}
+	var eventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events WHERE id = ?`,
+		event.ID,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("count audit events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected one audit event, got %d", eventCount)
+	}
+}
+
+func TestUserRepositoryRollsBackUserAfterAuditFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx, database := openMediaSchemaDatabase(t)
+	repository := sqlitestore.NewUserRepository(database)
+	now := time.Date(2026, time.October, 5, 11, 0, 0, 0, time.UTC)
+	user, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174011",
+		"rolled_back_user",
+		"Rolled Back User",
+		identity.RoleViewer,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create user fixture: %v", err)
+	}
+	event := userAuditEvent(t, user, audit.TypeUserCreated, now)
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("store conflicting audit event: %v", err)
+	}
+
+	err = repository.CreateWithAudit(ctx, user, event)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected ErrEventConflict, got %v", err)
+	}
+	_, err = repository.FindByID(ctx, user.ID)
+	if !errors.Is(err, identity.ErrUserNotFound) {
+		t.Fatalf("expected rolled-back user to be absent, got %v", err)
+	}
+}
+
+func TestUserRepositoryRollsBackUpdateAfterAuditFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx, database := openMediaSchemaDatabase(t)
+	repository := sqlitestore.NewUserRepository(database)
+	now := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
+	user, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174012",
+		"unchanged_user",
+		"Original Name",
+		identity.RoleViewer,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create user fixture: %v", err)
+	}
+	if err := repository.Create(ctx, user); err != nil {
+		t.Fatalf("store user fixture: %v", err)
+	}
+	updatedUser, err := user.UpdateDetails(
+		user.Username,
+		"Updated Name",
+		user.Role,
+		now.Add(time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("create updated user fixture: %v", err)
+	}
+	event := userAuditEvent(t, updatedUser, audit.TypeUserUpdated, now.Add(time.Hour))
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("store conflicting audit event: %v", err)
+	}
+
+	err = repository.UpdatePreservingLastAdministratorWithAudit(
+		ctx,
+		updatedUser,
+		event,
+	)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected ErrEventConflict, got %v", err)
+	}
+	storedUser, err := repository.FindByID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("find user after rolled-back update: %v", err)
+	}
+	if storedUser != user {
+		t.Fatalf("expected unchanged user %#v, got %#v", user, storedUser)
+	}
+}
+
+func userAuditEvent(
+	t *testing.T,
+	target identity.User,
+	eventType audit.Type,
+	occurredAt time.Time,
+) audit.Event {
+	t.Helper()
+
+	event, err := audit.NewEvent(audit.Event{
+		ID:            "823e4567-e89b-12d3-a456-426614174000",
+		OccurredAt:    occurredAt,
+		Type:          eventType,
+		Outcome:       audit.OutcomeSuccess,
+		ActorID:       "723e4567-e89b-12d3-a456-426614174000",
+		ActorUsername: "audit_admin",
+		ActorRole:     string(identity.RoleAdmin),
+		TargetType:    audit.TargetUser,
+		TargetID:      target.ID,
+		TargetName:    target.Username,
+	})
+	if err != nil {
+		t.Fatalf("create audit event fixture: %v", err)
+	}
+
+	return event
 }
 
 func TestUserRepositoryListsUsersWithStableKeysetPagination(t *testing.T) {

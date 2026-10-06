@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ebe542/go-mediaarchive/internal/application/users"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
 
@@ -28,6 +29,65 @@ type recordingUserRepository struct {
 	listError         error
 	listedCursor      *users.Cursor
 	listedLimit       int
+	createdEvent      audit.Event
+	updatedEvent      audit.Event
+}
+
+func (repository *recordingUserRepository) CreateWithAudit(
+	ctx context.Context,
+	user identity.User,
+	event audit.Event,
+) error {
+	repository.createdEvent = event
+
+	return repository.Create(ctx, user)
+}
+
+func (repository *recordingUserRepository) UpdatePreservingLastAdministratorWithAudit(
+	ctx context.Context,
+	user identity.User,
+	event audit.Event,
+) error {
+	repository.updatedEvent = event
+
+	return repository.UpdatePreservingLastAdministrator(ctx, user)
+}
+
+type recordingAuditAppender struct {
+	event audit.Event
+	err   error
+}
+
+func (appender *recordingAuditAppender) Append(
+	_ context.Context,
+	event audit.Event,
+) error {
+	appender.event = event
+
+	return appender.err
+}
+
+func newUserService(
+	repository users.Repository,
+	idGenerator users.IDGenerator,
+	clock users.Clock,
+) *users.Service {
+	return users.NewService(
+		repository,
+		idGenerator,
+		clock,
+		&recordingAuditAppender{},
+		func() string { return "823e4567-e89b-12d3-a456-426614174000" },
+	)
+}
+
+func testAdministrator() identity.User {
+	return identity.User{
+		ID:       "723e4567-e89b-12d3-a456-426614174000",
+		Username: "audit_admin",
+		Role:     identity.RoleAdmin,
+		Active:   true,
+	}
 }
 
 func (repository *recordingUserRepository) DeletePreservingLastAdministrator(
@@ -114,18 +174,18 @@ func TestServiceCreatesUserWithGeneratedValues(t *testing.T) {
 		time.FixedZone("test", 2*60*60),
 	)
 
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string {
 			return generatedID
 		},
 		func() time.Time {
 			return currentTime
-		},
-	)
+		})
 
 	createdUser, err := service.CreateUser(
 		context.Background(),
+		testAdministrator(),
 		users.CreateUserInput{
 			Username:    "  Service_User ",
 			DisplayName: " Service User ",
@@ -161,6 +221,13 @@ func TestServiceCreatesUserWithGeneratedValues(t *testing.T) {
 			repository.createdUser,
 		)
 	}
+	if repository.createdEvent.Type != audit.TypeUserCreated ||
+		repository.createdEvent.Outcome != audit.OutcomeSuccess ||
+		repository.createdEvent.ActorID != testAdministrator().ID ||
+		repository.createdEvent.TargetID != expectedUser.ID ||
+		repository.createdEvent.TargetName != expectedUser.Username {
+		t.Fatalf("unexpected user creation audit event: %+v", repository.createdEvent)
+	}
 }
 
 func TestServiceFindsUserByID(t *testing.T) {
@@ -180,15 +247,14 @@ func TestServiceFindsUserByID(t *testing.T) {
 		foundUser: expectedUser,
 	}
 
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string {
 			return ""
 		},
 		func() time.Time {
 			return time.Time{}
-		},
-	)
+		})
 
 	storedUser, err := service.UserByID(
 		context.Background(),
@@ -232,15 +298,14 @@ func TestServiceFindsUserByNormalizedUsername(t *testing.T) {
 		foundUser: expectedUser,
 	}
 
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string {
 			return ""
 		},
 		func() time.Time {
 			return time.Time{}
-		},
-	)
+		})
 
 	storedUser, err := service.UserByUsername(
 		context.Background(),
@@ -296,19 +361,18 @@ func TestServiceUpdatesUserAndPreservesImmutableValues(t *testing.T) {
 		foundUser: existingUser,
 	}
 
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string {
 			return ""
 		},
 		func() time.Time {
 			return updatedAt
-		},
-	)
+		})
 
 	updatedUser, err := service.UpdateUser(
 		context.Background(),
-		"another-administrator",
+		testAdministrator(),
 		existingUser.ID,
 		users.UpdateUserInput{
 			Username:    " Updated_User ",
@@ -353,6 +417,12 @@ func TestServiceUpdatesUserAndPreservesImmutableValues(t *testing.T) {
 			repository.updatedUser,
 		)
 	}
+	if repository.updatedEvent.Type != audit.TypeUserUpdated ||
+		repository.updatedEvent.Outcome != audit.OutcomeSuccess ||
+		repository.updatedEvent.TargetID != expectedUser.ID ||
+		repository.updatedEvent.TargetName != expectedUser.Username {
+		t.Fatalf("unexpected user update audit event: %+v", repository.updatedEvent)
+	}
 }
 
 func TestServiceSetsUserActiveState(t *testing.T) {
@@ -384,19 +454,18 @@ func TestServiceSetsUserActiveState(t *testing.T) {
 		foundUser: existingUser,
 	}
 
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string {
 			return ""
 		},
 		func() time.Time {
 			return updatedAt
-		},
-	)
+		})
 
 	deactivatedUser, err := service.SetUserActive(
 		context.Background(),
-		"another-administrator",
+		testAdministrator(),
 		existingUser.ID,
 		false,
 	)
@@ -423,6 +492,11 @@ func TestServiceSetsUserActiveState(t *testing.T) {
 			repository.updatedUser,
 		)
 	}
+	if repository.updatedEvent.Type != audit.TypeUserDeactivated ||
+		repository.updatedEvent.Outcome != audit.OutcomeSuccess ||
+		repository.updatedEvent.TargetID != expectedUser.ID {
+		t.Fatalf("unexpected user deactivation audit event: %+v", repository.updatedEvent)
+	}
 }
 
 func TestServicePreservesRepositoryConflict(t *testing.T) {
@@ -432,7 +506,7 @@ func TestServicePreservesRepositoryConflict(t *testing.T) {
 		createError: identity.ErrUserConflict,
 	}
 
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string {
 			return "0198b947-3ec7-7fa0-a024-bf64ed55c667"
@@ -448,11 +522,11 @@ func TestServicePreservesRepositoryConflict(t *testing.T) {
 				0,
 				time.UTC,
 			)
-		},
-	)
+		})
 
 	_, err := service.CreateUser(
 		context.Background(),
+		testAdministrator(),
 		users.CreateUserInput{
 			Username:    "conflict_user",
 			DisplayName: "Conflict User",
@@ -469,7 +543,7 @@ func TestServiceRejectsInvalidGeneratedIDBeforePersistence(t *testing.T) {
 
 	repository := &recordingUserRepository{}
 
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string {
 			return "not-a-uuid"
@@ -485,11 +559,11 @@ func TestServiceRejectsInvalidGeneratedIDBeforePersistence(t *testing.T) {
 				0,
 				time.UTC,
 			)
-		},
-	)
+		})
 
 	_, err := service.CreateUser(
 		context.Background(),
+		testAdministrator(),
 		users.CreateUserInput{
 			Username:    "valid_user",
 			DisplayName: "Valid User",
@@ -521,15 +595,14 @@ func TestServiceRejectsAdministratorSelfDemotion(t *testing.T) {
 		UpdatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
 	}
 	repository := &recordingUserRepository{foundUser: administrator}
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) },
-	)
+		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) })
 
 	_, err := service.UpdateUser(
 		context.Background(),
-		administrator.ID,
+		administrator,
 		administrator.ID,
 		users.UpdateUserInput{
 			Username:    administrator.Username,
@@ -561,15 +634,14 @@ func TestServiceRejectsAdministratorSelfDeactivation(t *testing.T) {
 		UpdatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
 	}
 	repository := &recordingUserRepository{foundUser: administrator}
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) },
-	)
+		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) })
 
 	_, err := service.SetUserActive(
 		context.Background(),
-		administrator.ID,
+		administrator,
 		administrator.ID,
 		false,
 	)
@@ -581,6 +653,86 @@ func TestServiceRejectsAdministratorSelfDeactivation(t *testing.T) {
 			"expected no protected update, got %d",
 			repository.protectedUpdates,
 		)
+	}
+}
+
+func TestServiceAuditsDeniedAdministratorSelfLockout(t *testing.T) {
+	t.Parallel()
+
+	administrator := identity.User{
+		ID:          "0198b947-3ec7-7fa0-a024-bf64ed55c667",
+		Username:    "archive_admin",
+		DisplayName: "Archive Administrator",
+		Role:        identity.RoleAdmin,
+		Active:      true,
+		CreatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+		UpdatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+	}
+	repository := &recordingUserRepository{foundUser: administrator}
+	appender := &recordingAuditAppender{}
+	service := users.NewService(
+		repository,
+		func() string { return "" },
+		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) },
+		appender,
+		func() string { return "823e4567-e89b-12d3-a456-426614174000" },
+	)
+
+	_, err := service.UpdateUser(
+		context.Background(),
+		administrator,
+		administrator.ID,
+		users.UpdateUserInput{
+			Username:    administrator.Username,
+			DisplayName: administrator.DisplayName,
+			Role:        identity.RoleEditor,
+		},
+	)
+	if !errors.Is(err, users.ErrSelfLockout) {
+		t.Fatalf("expected ErrSelfLockout, got %v", err)
+	}
+	if appender.event.Type != audit.TypeUserUpdated ||
+		appender.event.Outcome != audit.OutcomeDenied ||
+		appender.event.Reason != audit.ReasonSelfLockout ||
+		appender.event.ActorID != administrator.ID ||
+		appender.event.TargetID != administrator.ID {
+		t.Fatalf("unexpected denied user audit event: %#v", appender.event)
+	}
+}
+
+func TestServiceFailsClosedWhenDeniedUserAuditFails(t *testing.T) {
+	t.Parallel()
+
+	administrator := identity.User{
+		ID:          "0198b947-3ec7-7fa0-a024-bf64ed55c667",
+		Username:    "archive_admin",
+		DisplayName: "Archive Administrator",
+		Role:        identity.RoleAdmin,
+		Active:      true,
+		CreatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+		UpdatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
+	}
+	repository := &recordingUserRepository{foundUser: administrator}
+	auditError := errors.New("audit storage unavailable")
+	service := users.NewService(
+		repository,
+		func() string { return "" },
+		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) },
+		&recordingAuditAppender{err: auditError},
+		func() string { return "823e4567-e89b-12d3-a456-426614174000" },
+	)
+
+	_, err := service.SetUserActive(
+		context.Background(),
+		administrator,
+		administrator.ID,
+		false,
+	)
+	if !errors.Is(err, auditError) {
+		t.Fatalf("expected audit error, got %v", err)
+	}
+	if errors.Is(err, users.ErrSelfLockout) {
+		t.Fatalf("expected audit failure to replace operation error, got %v", err)
 	}
 }
 
@@ -597,15 +749,14 @@ func TestServiceKeepsActivationUpdateIdempotent(t *testing.T) {
 		UpdatedAt:   time.Date(2026, time.August, 18, 14, 0, 0, 0, time.UTC),
 	}
 	repository := &recordingUserRepository{foundUser: existingUser}
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return existingUser.UpdatedAt.Add(time.Hour) },
-	)
+		func() time.Time { return existingUser.UpdatedAt.Add(time.Hour) })
 
 	unchangedUser, err := service.SetUserActive(
 		context.Background(),
-		"another-administrator",
+		testAdministrator(),
 		existingUser.ID,
 		true,
 	)
@@ -639,15 +790,14 @@ func TestServicePreservesLastAdministratorProtection(t *testing.T) {
 		foundUser:   administrator,
 		updateError: identity.ErrLastAdministrator,
 	}
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) },
-	)
+		func() time.Time { return administrator.UpdatedAt.Add(time.Hour) })
 
 	_, err := service.SetUserActive(
 		context.Background(),
-		"another-administrator",
+		testAdministrator(),
 		administrator.ID,
 		false,
 	)
@@ -658,11 +808,11 @@ func TestServicePreservesLastAdministratorProtection(t *testing.T) {
 
 func TestServiceDeletesAnotherUser(t *testing.T) {
 	repository := &recordingUserRepository{}
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return time.Time{} },
-	)
+		func() time.Time { return time.Time{} })
+
 	targetID := "123e4567-e89b-12d3-a456-426614174000"
 
 	if err := service.DeleteUser(
@@ -684,11 +834,11 @@ func TestServiceDeletesAnotherUser(t *testing.T) {
 
 func TestServiceRejectsSelfDeletion(t *testing.T) {
 	repository := &recordingUserRepository{}
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return time.Time{} },
-	)
+		func() time.Time { return time.Time{} })
+
 	actorID := "123e4567-e89b-12d3-a456-426614174000"
 
 	err := service.DeleteUser(context.Background(), actorID, actorID)
@@ -702,11 +852,10 @@ func TestServiceRejectsSelfDeletion(t *testing.T) {
 
 func TestServiceRejectsInvalidDeletionID(t *testing.T) {
 	repository := &recordingUserRepository{}
-	service := users.NewService(
+	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return time.Time{} },
-	)
+		func() time.Time { return time.Time{} })
 
 	err := service.DeleteUser(
 		context.Background(),
@@ -734,11 +883,10 @@ func TestServicePreservesDeletionRepositoryErrors(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			repository := &recordingUserRepository{deleteError: testCase.err}
-			service := users.NewService(
+			service := newUserService(
 				repository,
 				func() string { return "" },
-				func() time.Time { return time.Time{} },
-			)
+				func() time.Time { return time.Time{} })
 
 			err := service.DeleteUser(
 				context.Background(),

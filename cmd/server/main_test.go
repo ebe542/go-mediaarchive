@@ -1172,6 +1172,24 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 		)
 	}
 
+	var userCreationEventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events
+		 WHERE event_type = ? AND actor_id = ? AND target_id = ?`,
+		audit.TypeUserCreated,
+		user.ID,
+		createdUserBody.ID,
+	).Scan(&userCreationEventCount); err != nil {
+		t.Fatalf("count user creation audit events: %v", err)
+	}
+	if userCreationEventCount != 1 {
+		t.Fatalf(
+			"expected one user creation audit event, got %d",
+			userCreationEventCount,
+		)
+	}
+
 	listUsersRequest := httptest.NewRequest(
 		http.MethodGet,
 		"/api/v1/users?limit=1",
