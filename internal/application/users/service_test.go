@@ -23,6 +23,7 @@ type recordingUserRepository struct {
 	createCalls       int
 	protectedUpdates  int
 	deletedID         string
+	deletedEvent      audit.Event
 	deleteError       error
 	deleteCalls       int
 	listedUsers       []identity.User
@@ -96,6 +97,26 @@ func (repository *recordingUserRepository) DeletePreservingLastAdministrator(
 ) error {
 	repository.deleteCalls++
 	repository.deletedID = id
+
+	return repository.deleteError
+}
+
+func (repository *recordingUserRepository) DeletePreservingLastAdministratorWithAudit(
+	_ context.Context,
+	id string,
+	eventFactory users.UserDeletionEventFactory,
+) error {
+	repository.deleteCalls++
+	repository.deletedID = id
+	if errors.Is(repository.deleteError, identity.ErrUserNotFound) {
+		return repository.deleteError
+	}
+
+	event, err := eventFactory(repository.foundUser)
+	if err != nil {
+		return err
+	}
+	repository.deletedEvent = event
 
 	return repository.deleteError
 }
@@ -807,41 +828,57 @@ func TestServicePreservesLastAdministratorProtection(t *testing.T) {
 }
 
 func TestServiceDeletesAnotherUser(t *testing.T) {
-	repository := &recordingUserRepository{}
+	now := time.Date(2026, time.October, 6, 9, 0, 0, 0, time.UTC)
+	target, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"deletion_target",
+		"Deletion Target",
+		identity.RoleViewer,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create deletion target: %v", err)
+	}
+	repository := &recordingUserRepository{foundUser: target}
 	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return time.Time{} })
-
-	targetID := "123e4567-e89b-12d3-a456-426614174000"
+		func() time.Time { return now })
 
 	if err := service.DeleteUser(
 		context.Background(),
-		"123e4567-e89b-12d3-a456-426614174001",
-		targetID,
+		testAdministrator(),
+		target.ID,
 	); err != nil {
 		t.Fatalf("delete user: %v", err)
 	}
-	if repository.deleteCalls != 1 || repository.deletedID != targetID {
+	if repository.deleteCalls != 1 || repository.deletedID != target.ID {
 		t.Errorf(
 			"expected deletion of %q, got calls=%d ID=%q",
-			targetID,
+			target.ID,
 			repository.deleteCalls,
 			repository.deletedID,
 		)
+	}
+	if repository.deletedEvent.Type != audit.TypeUserDeleted ||
+		repository.deletedEvent.Outcome != audit.OutcomeSuccess ||
+		repository.deletedEvent.ActorID != testAdministrator().ID ||
+		repository.deletedEvent.TargetID != target.ID ||
+		repository.deletedEvent.TargetName != target.Username {
+		t.Fatalf("unexpected user deletion audit event: %#v", repository.deletedEvent)
 	}
 }
 
 func TestServiceRejectsSelfDeletion(t *testing.T) {
 	repository := &recordingUserRepository{}
+	now := time.Date(2026, time.October, 6, 9, 30, 0, 0, time.UTC)
 	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return time.Time{} })
+		func() time.Time { return now })
+	actor := testAdministrator()
 
-	actorID := "123e4567-e89b-12d3-a456-426614174000"
-
-	err := service.DeleteUser(context.Background(), actorID, actorID)
+	err := service.DeleteUser(context.Background(), actor, actor.ID)
 	if !errors.Is(err, users.ErrSelfDeletion) {
 		t.Fatalf("expected ErrSelfDeletion, got %v", err)
 	}
@@ -852,14 +889,15 @@ func TestServiceRejectsSelfDeletion(t *testing.T) {
 
 func TestServiceRejectsInvalidDeletionID(t *testing.T) {
 	repository := &recordingUserRepository{}
+	now := time.Date(2026, time.October, 6, 10, 0, 0, 0, time.UTC)
 	service := newUserService(
 		repository,
 		func() string { return "" },
-		func() time.Time { return time.Time{} })
+		func() time.Time { return now })
 
 	err := service.DeleteUser(
 		context.Background(),
-		"123e4567-e89b-12d3-a456-426614174001",
+		testAdministrator(),
 		"not-a-user-id",
 	)
 	if !errors.Is(err, identity.ErrInvalidUserID) {
@@ -882,20 +920,161 @@ func TestServicePreservesDeletionRepositoryErrors(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			repository := &recordingUserRepository{deleteError: testCase.err}
+			now := time.Date(2026, time.October, 6, 10, 30, 0, 0, time.UTC)
+			target, err := identity.NewUser(
+				"123e4567-e89b-12d3-a456-426614174000",
+				"deletion_target",
+				"Deletion Target",
+				identity.RoleViewer,
+				now,
+			)
+			if err != nil {
+				t.Fatalf("create deletion target: %v", err)
+			}
+			repository := &recordingUserRepository{
+				foundUser:   target,
+				deleteError: testCase.err,
+			}
 			service := newUserService(
 				repository,
 				func() string { return "" },
-				func() time.Time { return time.Time{} })
+				func() time.Time { return now })
 
-			err := service.DeleteUser(
+			err = service.DeleteUser(
 				context.Background(),
-				"123e4567-e89b-12d3-a456-426614174001",
-				"123e4567-e89b-12d3-a456-426614174000",
+				testAdministrator(),
+				target.ID,
 			)
 			if !errors.Is(err, testCase.err) {
 				t.Fatalf("expected %v, got %v", testCase.err, err)
 			}
 		})
+	}
+}
+
+func TestServiceAuditsDeniedUserDeletion(t *testing.T) {
+	now := time.Date(2026, time.October, 6, 11, 0, 0, 0, time.UTC)
+	target, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"deletion_target",
+		"Deletion Target",
+		identity.RoleViewer,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create deletion target: %v", err)
+	}
+
+	testCases := map[string]struct {
+		id             string
+		deleteError    error
+		expectedError  error
+		expectedReason audit.Reason
+		expectedTarget string
+	}{
+		"invalid ID": {
+			id:             "not-a-user-id",
+			expectedError:  identity.ErrInvalidUserID,
+			expectedReason: audit.ReasonInvalidInput,
+		},
+		"unknown user": {
+			id:             target.ID,
+			deleteError:    identity.ErrUserNotFound,
+			expectedError:  identity.ErrUserNotFound,
+			expectedReason: audit.ReasonUnknownTarget,
+			expectedTarget: target.ID,
+		},
+		"last administrator": {
+			id:             target.ID,
+			deleteError:    identity.ErrLastAdministrator,
+			expectedError:  identity.ErrLastAdministrator,
+			expectedReason: audit.ReasonLastAdministrator,
+			expectedTarget: target.ID,
+		},
+		"owned media": {
+			id:             target.ID,
+			deleteError:    identity.ErrUserOwnsMedia,
+			expectedError:  identity.ErrUserOwnsMedia,
+			expectedReason: audit.ReasonUserOwnsMedia,
+			expectedTarget: target.ID,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			repository := &recordingUserRepository{
+				foundUser:   target,
+				deleteError: testCase.deleteError,
+			}
+			appender := &recordingAuditAppender{}
+			service := users.NewService(
+				repository,
+				func() string { return "" },
+				func() time.Time { return now },
+				appender,
+				func() string { return "823e4567-e89b-12d3-a456-426614174000" },
+			)
+
+			err := service.DeleteUser(
+				context.Background(),
+				testAdministrator(),
+				testCase.id,
+			)
+			if !errors.Is(err, testCase.expectedError) {
+				t.Fatalf("expected %v, got %v", testCase.expectedError, err)
+			}
+			if appender.event.Type != audit.TypeUserDeleted ||
+				appender.event.Outcome != audit.OutcomeDenied ||
+				appender.event.Reason != testCase.expectedReason ||
+				appender.event.TargetID != testCase.expectedTarget {
+				t.Fatalf("unexpected denied deletion event: %#v", appender.event)
+			}
+		})
+	}
+}
+
+func TestServiceAuditsDeniedSelfDeletion(t *testing.T) {
+	now := time.Date(2026, time.October, 6, 11, 30, 0, 0, time.UTC)
+	actor := testAdministrator()
+	appender := &recordingAuditAppender{}
+	service := users.NewService(
+		&recordingUserRepository{},
+		func() string { return "" },
+		func() time.Time { return now },
+		appender,
+		func() string { return "823e4567-e89b-12d3-a456-426614174000" },
+	)
+
+	err := service.DeleteUser(context.Background(), actor, actor.ID)
+	if !errors.Is(err, users.ErrSelfDeletion) {
+		t.Fatalf("expected ErrSelfDeletion, got %v", err)
+	}
+	if appender.event.Type != audit.TypeUserDeleted ||
+		appender.event.Outcome != audit.OutcomeDenied ||
+		appender.event.Reason != audit.ReasonSelfDeletion ||
+		appender.event.ActorID != actor.ID ||
+		appender.event.TargetID != actor.ID {
+		t.Fatalf("unexpected denied self-deletion event: %#v", appender.event)
+	}
+}
+
+func TestServiceFailsClosedWhenDeletionAuditFails(t *testing.T) {
+	now := time.Date(2026, time.October, 6, 12, 0, 0, 0, time.UTC)
+	actor := testAdministrator()
+	auditError := errors.New("audit storage unavailable")
+	service := users.NewService(
+		&recordingUserRepository{},
+		func() string { return "" },
+		func() time.Time { return now },
+		&recordingAuditAppender{err: auditError},
+		func() string { return "823e4567-e89b-12d3-a456-426614174000" },
+	)
+
+	err := service.DeleteUser(context.Background(), actor, actor.ID)
+	if !errors.Is(err, auditError) {
+		t.Fatalf("expected audit error, got %v", err)
+	}
+	if errors.Is(err, users.ErrSelfDeletion) {
+		t.Fatalf("expected audit failure to replace operation error, got %v", err)
 	}
 }

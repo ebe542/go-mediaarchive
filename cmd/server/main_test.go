@@ -1455,4 +1455,25 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 	if deletedUserCount != 0 {
 		t.Fatalf("expected deleted user to be absent, got %d records", deletedUserCount)
 	}
+
+	var userDeletionEventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events
+		 WHERE event_type = ? AND actor_id = ? AND target_id = ?
+		 AND target_name = ? AND outcome = ?`,
+		audit.TypeUserDeleted,
+		user.ID,
+		createdUserBody.ID,
+		createdUserBody.Username,
+		audit.OutcomeSuccess,
+	).Scan(&userDeletionEventCount); err != nil {
+		t.Fatalf("count user deletion audit events: %v", err)
+	}
+	if userDeletionEventCount != 1 {
+		t.Fatalf(
+			"expected one user deletion audit event, got %d",
+			userDeletionEventCount,
+		)
+	}
 }

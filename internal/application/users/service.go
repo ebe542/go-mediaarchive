@@ -465,22 +465,65 @@ func userChangeDenialReason(inputError error) audit.Reason {
 // DeleteUser permanently removes another user and their authentication data.
 func (service *Service) DeleteUser(
 	ctx context.Context,
-	actorID string,
+	actor identity.User,
 	id string,
 ) error {
+	now := service.currentTime()
 	if err := identity.ValidateUserID(id); err != nil {
-		return err
+		return service.recordDeniedChange(
+			ctx, actor, audit.TypeUserDeleted, safeUserTarget(id, ""),
+			audit.ReasonInvalidInput, now, err,
+		)
 	}
-	if actorID == id {
-		return ErrSelfDeletion
+	if actor.ID == id {
+		return service.recordDeniedChange(
+			ctx, actor, audit.TypeUserDeleted, actor,
+			audit.ReasonSelfDeletion, now, ErrSelfDeletion,
+		)
 	}
 
-	if err := service.repository.DeletePreservingLastAdministrator(
+	target := safeUserTarget(id, "")
+	err := service.repository.DeletePreservingLastAdministratorWithAudit(
 		ctx,
 		id,
-	); err != nil {
-		return fmt.Errorf("delete user identity: %w", err)
+		func(selectedUser identity.User) (audit.Event, error) {
+			target = selectedUser
+
+			return service.newUserEvent(
+				actor,
+				selectedUser,
+				audit.TypeUserDeleted,
+				audit.OutcomeSuccess,
+				"",
+				now,
+			)
+		},
+	)
+	if err != nil {
+		operationErr := fmt.Errorf("delete user identity: %w", err)
+		reason := userDeletionDenialReason(err)
+		if reason != "" {
+			return service.recordDeniedChange(
+				ctx, actor, audit.TypeUserDeleted, target,
+				reason, now, operationErr,
+			)
+		}
+
+		return operationErr
 	}
 
 	return nil
+}
+
+func userDeletionDenialReason(inputError error) audit.Reason {
+	switch {
+	case errors.Is(inputError, identity.ErrUserNotFound):
+		return audit.ReasonUnknownTarget
+	case errors.Is(inputError, identity.ErrLastAdministrator):
+		return audit.ReasonLastAdministrator
+	case errors.Is(inputError, identity.ErrUserOwnsMedia):
+		return audit.ReasonUserOwnsMedia
+	default:
+		return ""
+	}
 }

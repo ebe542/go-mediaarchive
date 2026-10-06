@@ -112,7 +112,9 @@ const (
 	ReasonInvalidInput           Reason = "invalid_input"
 	ReasonResourceConflict       Reason = "resource_conflict"
 	ReasonSelfLockout            Reason = "self_lockout"
+	ReasonSelfDeletion           Reason = "self_deletion"
 	ReasonLastAdministrator      Reason = "last_administrator"
+	ReasonUserOwnsMedia          Reason = "user_owns_media"
 	ReasonOperationFailure       Reason = "operation_failure"
 )
 
@@ -124,7 +126,8 @@ func (reason Reason) Valid() bool {
 		ReasonUnknownTarget, ReasonMissingPermission,
 		ReasonMissingContentLocation, ReasonMissingManagedFile,
 		ReasonInvalidRange, ReasonInvalidInput, ReasonResourceConflict,
-		ReasonSelfLockout, ReasonLastAdministrator, ReasonOperationFailure:
+		ReasonSelfLockout, ReasonSelfDeletion, ReasonLastAdministrator,
+		ReasonUserOwnsMedia, ReasonOperationFailure:
 		return true
 	default:
 		return false

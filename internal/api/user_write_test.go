@@ -75,11 +75,11 @@ func (writer *recordingUserWriter) SetUserActive(
 
 func (writer *recordingUserWriter) DeleteUser(
 	ctx context.Context,
-	actorID string,
+	actor identity.User,
 	id string,
 ) error {
 	writer.deleteCalls++
-	writer.actorID = actorID
+	writer.actorID = actor.ID
 	writer.targetID = id
 
 	return writer.deleteError

@@ -83,7 +83,18 @@ func TestUserRepositoryDeletesUserAuthenticationRecords(t *testing.T) {
 		t.Fatalf("insert enrollment fixture: %v", err)
 	}
 
-	if err := repository.DeletePreservingLastAdministrator(ctx, user.ID); err != nil {
+	deletionEvent := userAuditEvent(t, user, audit.TypeUserDeleted, now.Add(time.Hour))
+	if err := repository.DeletePreservingLastAdministratorWithAudit(
+		ctx,
+		user.ID,
+		func(selectedUser identity.User) (audit.Event, error) {
+			if selectedUser != user {
+				t.Fatalf("expected deletion snapshot %#v, got %#v", user, selectedUser)
+			}
+
+			return deletionEvent, nil
+		},
+	); err != nil {
 		t.Fatalf("delete user: %v", err)
 	}
 	for _, table := range []string{
@@ -103,6 +114,17 @@ func TestUserRepositoryDeletesUserAuthenticationRecords(t *testing.T) {
 		if count != 0 {
 			t.Errorf("expected no %s records, got %d", table, count)
 		}
+	}
+	var deletionEventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events WHERE id = ?`,
+		deletionEvent.ID,
+	).Scan(&deletionEventCount); err != nil {
+		t.Fatalf("count deletion audit events: %v", err)
+	}
+	if deletionEventCount != 1 {
+		t.Fatalf("expected one deletion audit event, got %d", deletionEventCount)
 	}
 }
 
@@ -296,6 +318,49 @@ func TestUserRepositoryRollsBackUpdateAfterAuditFailure(t *testing.T) {
 	}
 	if storedUser != user {
 		t.Fatalf("expected unchanged user %#v, got %#v", user, storedUser)
+	}
+}
+
+func TestUserRepositoryRollsBackDeletionAfterAuditFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx, database := openMediaSchemaDatabase(t)
+	repository := sqlitestore.NewUserRepository(database)
+	now := time.Date(2026, time.October, 6, 12, 30, 0, 0, time.UTC)
+	user, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174013",
+		"preserved_user",
+		"Preserved User",
+		identity.RoleViewer,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create user fixture: %v", err)
+	}
+	if err := repository.Create(ctx, user); err != nil {
+		t.Fatalf("store user fixture: %v", err)
+	}
+	event := userAuditEvent(t, user, audit.TypeUserDeleted, now.Add(time.Hour))
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("store conflicting audit event: %v", err)
+	}
+
+	err = repository.DeletePreservingLastAdministratorWithAudit(
+		ctx,
+		user.ID,
+		func(selectedUser identity.User) (audit.Event, error) {
+			return event, nil
+		},
+	)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected ErrEventConflict, got %v", err)
+	}
+	storedUser, err := repository.FindByID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("find user after rolled-back deletion: %v", err)
+	}
+	if storedUser != user {
+		t.Fatalf("expected preserved user %#v, got %#v", user, storedUser)
 	}
 }
 

@@ -30,7 +30,7 @@ type UserWriter interface {
 	) (identity.User, error)
 	DeleteUser(
 		ctx context.Context,
-		actorID string,
+		actor identity.User,
 		id string,
 	) error
 }
@@ -217,7 +217,7 @@ func (handler *userWriteHandler) deleteUser(
 
 	if err := handler.users.DeleteUser(
 		request.Context(),
-		actor.ID,
+		actor,
 		request.PathValue("id"),
 	); err != nil {
 		writeUserApplicationError(response, err)

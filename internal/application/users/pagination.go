@@ -87,7 +87,16 @@ type Repository interface {
 		user identity.User,
 		event audit.Event,
 	) error
+	DeletePreservingLastAdministratorWithAudit(
+		ctx context.Context,
+		id string,
+		eventFactory UserDeletionEventFactory,
+	) error
 }
+
+// UserDeletionEventFactory snapshots the transactionally selected user in an
+// audit event before the identity is deleted.
+type UserDeletionEventFactory func(identity.User) (audit.Event, error)
 
 // ListUsers retrieves a validated keyset-paginated directory page.
 func (service *Service) ListUsers(

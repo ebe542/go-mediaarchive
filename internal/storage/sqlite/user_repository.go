@@ -260,6 +260,24 @@ func (repository *UserRepository) DeletePreservingLastAdministrator(
 	ctx context.Context,
 	id string,
 ) error {
+	return repository.deletePreservingLastAdministrator(ctx, id, nil)
+}
+
+// DeletePreservingLastAdministratorWithAudit atomically deletes a user and
+// related authentication data while preserving its immutable audit snapshot.
+func (repository *UserRepository) DeletePreservingLastAdministratorWithAudit(
+	ctx context.Context,
+	id string,
+	eventFactory appusers.UserDeletionEventFactory,
+) error {
+	return repository.deletePreservingLastAdministrator(ctx, id, eventFactory)
+}
+
+func (repository *UserRepository) deletePreservingLastAdministrator(
+	ctx context.Context,
+	id string,
+	eventFactory appusers.UserDeletionEventFactory,
+) error {
 	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin protected user deletion: %w", err)
@@ -269,6 +287,13 @@ func (repository *UserRepository) DeletePreservingLastAdministrator(
 	existingUser, err := findUserByID(ctx, transaction, id)
 	if err != nil {
 		return err
+	}
+	var event audit.Event
+	if eventFactory != nil {
+		event, err = eventFactory(existingUser)
+		if err != nil {
+			return fmt.Errorf("create user deletion audit event: %w", err)
+		}
 	}
 	if existingUser.Active && existingUser.Role == identity.RoleAdmin {
 		var activeAdministratorCount int
@@ -331,6 +356,11 @@ func (repository *UserRepository) DeletePreservingLastAdministrator(
 		id,
 	); err != nil {
 		return fmt.Errorf("delete user: %w", err)
+	}
+	if eventFactory != nil {
+		if err := insertAuditEvent(ctx, transaction, event); err != nil {
+			return fmt.Errorf("insert user deletion audit event: %w", err)
+		}
 	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit protected user deletion: %w", err)
