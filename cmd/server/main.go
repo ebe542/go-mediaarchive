@@ -384,6 +384,8 @@ func newApplicationHandlerWithContent(
 		passwordHasher,
 		time.Now,
 		enrollmentLifetime,
+		auditRepository,
+		uuid.NewString,
 	)
 	passwordEnrollmentLimiter := apppasswords.NewIPAttemptLimiter(
 		enrollmentIPLimit,

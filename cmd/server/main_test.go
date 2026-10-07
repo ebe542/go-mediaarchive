@@ -1260,6 +1260,27 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 		t.Fatal("expected one-time password enrollment token")
 	}
 
+	var enrollmentIssueEventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events
+		 WHERE event_type = ? AND outcome = ?
+		 AND actor_id = ? AND target_id = ? AND target_name = ?`,
+		audit.TypePasswordEnrollmentIssued,
+		audit.OutcomeSuccess,
+		user.ID,
+		createdUserBody.ID,
+		createdUserBody.Username,
+	).Scan(&enrollmentIssueEventCount); err != nil {
+		t.Fatalf("count password enrollment issue events: %v", err)
+	}
+	if enrollmentIssueEventCount != 1 {
+		t.Fatalf(
+			"expected one password enrollment issue event, got %d",
+			enrollmentIssueEventCount,
+		)
+	}
+
 	completeEnrollmentRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/auth/password-enrollments",

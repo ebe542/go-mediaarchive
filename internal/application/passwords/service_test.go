@@ -8,10 +8,54 @@ import (
 	"time"
 
 	passwords "github.com/ebe542/go-mediaarchive/internal/application/passwords"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/credential"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/password"
 )
+
+type recordingAuditAppender struct {
+	event audit.Event
+	err   error
+}
+
+func (appender *recordingAuditAppender) Append(
+	_ context.Context,
+	event audit.Event,
+) error {
+	appender.event = event
+
+	return appender.err
+}
+
+func newPasswordService(
+	users passwords.UserFinder,
+	enrollments passwords.EnrollmentStore,
+	tokens passwords.EnrollmentTokenGenerator,
+	hasher passwords.PasswordHasher,
+	clock passwords.Clock,
+	lifetime time.Duration,
+) *passwords.Service {
+	return passwords.NewService(
+		users,
+		enrollments,
+		tokens,
+		hasher,
+		clock,
+		lifetime,
+		&recordingAuditAppender{},
+		func() string { return "823e4567-e89b-12d3-a456-426614174000" },
+	)
+}
+
+func enrollmentAdministrator() identity.User {
+	return identity.User{
+		ID:       "723e4567-e89b-12d3-a456-426614174000",
+		Username: "audit_admin",
+		Role:     identity.RoleAdmin,
+		Active:   true,
+	}
+}
 
 func TestServiceIssuesPasswordEnrollment(t *testing.T) {
 	now := time.Date(2026, time.August, 28, 10, 0, 0, 0, time.UTC)
@@ -20,16 +64,19 @@ func TestServiceIssuesPasswordEnrollment(t *testing.T) {
 	tokenHash := credential.HashEnrollmentToken(token)
 	store := &recordingEnrollmentStore{}
 
-	service := passwords.NewService(
+	service := newPasswordService(
 		&recordingEnrollmentUserFinder{user: user},
 		store,
 		&fixedEnrollmentTokenGenerator{token: token, tokenHash: tokenHash},
 		&recordingPasswordHasher{},
 		func() time.Time { return now },
-		24*time.Hour,
-	)
+		24*time.Hour)
 
-	issued, err := service.IssueEnrollment(context.Background(), user.ID)
+	issued, err := service.IssueEnrollment(
+		context.Background(),
+		enrollmentAdministrator(),
+		user.ID,
+	)
 	if err != nil {
 		t.Fatalf("issue password enrollment: %v", err)
 	}
@@ -43,6 +90,14 @@ func TestServiceIssuesPasswordEnrollment(t *testing.T) {
 		store.savedEnrollment.TokenHash != tokenHash {
 		t.Fatalf("unexpected stored enrollment %#v", store.savedEnrollment)
 	}
+	if store.savedEvent.Type != audit.TypePasswordEnrollmentIssued ||
+		store.savedEvent.Outcome != audit.OutcomeSuccess ||
+		store.savedEvent.ActorID != enrollmentAdministrator().ID ||
+		store.savedEvent.TargetID != user.ID ||
+		store.savedEvent.TargetName != user.Username ||
+		store.savedEvent.Reason != "" {
+		t.Fatalf("unexpected enrollment issue audit event: %#v", store.savedEvent)
+	}
 }
 
 func TestServiceDoesNotGenerateTokenForMissingUser(t *testing.T) {
@@ -50,17 +105,17 @@ func TestServiceDoesNotGenerateTokenForMissingUser(t *testing.T) {
 	tokens := &fixedEnrollmentTokenGenerator{
 		err: errors.New("token generator must not be called"),
 	}
-	service := passwords.NewService(
+	service := newPasswordService(
 		&recordingEnrollmentUserFinder{err: expectedError},
 		&recordingEnrollmentStore{},
 		tokens,
 		&recordingPasswordHasher{},
 		time.Now,
-		24*time.Hour,
-	)
+		24*time.Hour)
 
 	_, err := service.IssueEnrollment(
 		context.Background(),
+		enrollmentAdministrator(),
 		"123e4567-e89b-12d3-a456-426614174000",
 	)
 	if !errors.Is(err, expectedError) {
@@ -77,7 +132,7 @@ func TestServicePropagatesExistingCredentialWhenIssuing(t *testing.T) {
 	store := &recordingEnrollmentStore{
 		saveErr: credential.ErrPasswordCredentialExists,
 	}
-	service := passwords.NewService(
+	service := newPasswordService(
 		&recordingEnrollmentUserFinder{user: user},
 		store,
 		&fixedEnrollmentTokenGenerator{
@@ -86,12 +141,113 @@ func TestServicePropagatesExistingCredentialWhenIssuing(t *testing.T) {
 		},
 		&recordingPasswordHasher{},
 		func() time.Time { return now },
-		24*time.Hour,
-	)
+		24*time.Hour)
 
-	_, err := service.IssueEnrollment(context.Background(), user.ID)
+	_, err := service.IssueEnrollment(
+		context.Background(),
+		enrollmentAdministrator(),
+		user.ID,
+	)
 	if !errors.Is(err, credential.ErrPasswordCredentialExists) {
 		t.Fatalf("expected ErrPasswordCredentialExists, got %v", err)
+	}
+}
+
+func TestServiceAuditsDeniedEnrollmentIssue(t *testing.T) {
+	now := time.Date(2026, time.October, 6, 13, 0, 0, 0, time.UTC)
+	user := enrollmentUserFixture(t, now)
+	testCases := map[string]struct {
+		userID         string
+		findError      error
+		saveError      error
+		expectedError  error
+		expectedReason audit.Reason
+		expectedTarget string
+	}{
+		"invalid user ID": {
+			userID:         "not-a-user-id",
+			findError:      identity.ErrInvalidUserID,
+			expectedError:  identity.ErrInvalidUserID,
+			expectedReason: audit.ReasonInvalidInput,
+		},
+		"unknown user": {
+			userID:         user.ID,
+			findError:      identity.ErrUserNotFound,
+			expectedError:  identity.ErrUserNotFound,
+			expectedReason: audit.ReasonUnknownTarget,
+			expectedTarget: user.ID,
+		},
+		"existing credential": {
+			userID:         user.ID,
+			saveError:      credential.ErrPasswordCredentialExists,
+			expectedError:  credential.ErrPasswordCredentialExists,
+			expectedReason: audit.ReasonResourceConflict,
+			expectedTarget: user.ID,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			appender := &recordingAuditAppender{}
+			service := passwords.NewService(
+				&recordingEnrollmentUserFinder{
+					user: user,
+					err:  testCase.findError,
+				},
+				&recordingEnrollmentStore{saveErr: testCase.saveError},
+				&fixedEnrollmentTokenGenerator{
+					token:     "issued-enrollment-token",
+					tokenHash: credential.HashEnrollmentToken("issued-enrollment-token"),
+				},
+				&recordingPasswordHasher{},
+				func() time.Time { return now },
+				24*time.Hour,
+				appender,
+				func() string { return "823e4567-e89b-12d3-a456-426614174000" },
+			)
+
+			_, err := service.IssueEnrollment(
+				context.Background(),
+				enrollmentAdministrator(),
+				testCase.userID,
+			)
+			if !errors.Is(err, testCase.expectedError) {
+				t.Fatalf("expected %v, got %v", testCase.expectedError, err)
+			}
+			if appender.event.Type != audit.TypePasswordEnrollmentIssued ||
+				appender.event.Outcome != audit.OutcomeDenied ||
+				appender.event.Reason != testCase.expectedReason ||
+				appender.event.TargetID != testCase.expectedTarget {
+				t.Fatalf("unexpected denied enrollment issue event: %#v", appender.event)
+			}
+		})
+	}
+}
+
+func TestServiceFailsClosedWhenEnrollmentIssueDenialAuditFails(t *testing.T) {
+	now := time.Date(2026, time.October, 6, 13, 30, 0, 0, time.UTC)
+	auditError := errors.New("audit storage unavailable")
+	service := passwords.NewService(
+		&recordingEnrollmentUserFinder{err: identity.ErrUserNotFound},
+		&recordingEnrollmentStore{},
+		&fixedEnrollmentTokenGenerator{},
+		&recordingPasswordHasher{},
+		func() time.Time { return now },
+		24*time.Hour,
+		&recordingAuditAppender{err: auditError},
+		func() string { return "823e4567-e89b-12d3-a456-426614174000" },
+	)
+
+	_, err := service.IssueEnrollment(
+		context.Background(),
+		enrollmentAdministrator(),
+		"123e4567-e89b-12d3-a456-426614174000",
+	)
+	if !errors.Is(err, auditError) {
+		t.Fatalf("expected audit error, got %v", err)
+	}
+	if errors.Is(err, identity.ErrUserNotFound) {
+		t.Fatalf("expected audit failure to replace operation error, got %v", err)
 	}
 }
 
@@ -103,7 +259,7 @@ func TestServiceAllowsInactiveUserToReceiveEnrollment(t *testing.T) {
 		t.Fatalf("deactivate user fixture: %v", err)
 	}
 	store := &recordingEnrollmentStore{}
-	service := passwords.NewService(
+	service := newPasswordService(
 		&recordingEnrollmentUserFinder{user: inactiveUser},
 		store,
 		&fixedEnrollmentTokenGenerator{
@@ -112,11 +268,11 @@ func TestServiceAllowsInactiveUserToReceiveEnrollment(t *testing.T) {
 		},
 		&recordingPasswordHasher{},
 		func() time.Time { return now.Add(time.Minute) },
-		24*time.Hour,
-	)
+		24*time.Hour)
 
 	if _, err := service.IssueEnrollment(
 		context.Background(),
+		enrollmentAdministrator(),
 		inactiveUser.ID,
 	); err != nil {
 		t.Fatalf("issue inactive user enrollment: %v", err)
@@ -143,14 +299,13 @@ func TestServiceCompletesPasswordEnrollment(t *testing.T) {
 	}
 	store := &recordingEnrollmentStore{foundEnrollment: enrollment}
 	hasher := &recordingPasswordHasher{encodedHash: encodedHash}
-	service := passwords.NewService(
+	service := newPasswordService(
 		&recordingEnrollmentUserFinder{},
 		store,
 		&fixedEnrollmentTokenGenerator{},
 		hasher,
 		func() time.Time { return now },
-		24*time.Hour,
-	)
+		24*time.Hour)
 
 	if err := service.CompleteEnrollment(
 		context.Background(),
@@ -225,7 +380,7 @@ func TestServiceReturnsGenericErrorForUnusableEnrollment(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			service := passwords.NewService(
+			service := newPasswordService(
 				&recordingEnrollmentUserFinder{},
 				testCase.store,
 				&fixedEnrollmentTokenGenerator{},
@@ -233,8 +388,7 @@ func TestServiceReturnsGenericErrorForUnusableEnrollment(t *testing.T) {
 					encodedHash: "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA",
 				},
 				func() time.Time { return now },
-				24*time.Hour,
-			)
+				24*time.Hour)
 
 			err := service.CompleteEnrollment(
 				context.Background(),
@@ -262,14 +416,13 @@ func TestServiceRejectsInvalidEnrolledPasswordBeforeHashing(t *testing.T) {
 	}
 	hasher := &recordingPasswordHasher{}
 	store := &recordingEnrollmentStore{foundEnrollment: enrollment}
-	service := passwords.NewService(
+	service := newPasswordService(
 		&recordingEnrollmentUserFinder{},
 		store,
 		&fixedEnrollmentTokenGenerator{},
 		hasher,
 		func() time.Time { return now },
-		24*time.Hour,
-	)
+		24*time.Hour)
 
 	err = service.CompleteEnrollment(
 		context.Background(),
@@ -349,6 +502,7 @@ func (hasher *recordingPasswordHasher) Hash(password []byte) (string, error) {
 
 type recordingEnrollmentStore struct {
 	savedEnrollment   credential.PasswordEnrollment
+	savedEvent        audit.Event
 	foundEnrollment   credential.PasswordEnrollment
 	createdCredential credential.PasswordCredential
 	consumedHash      [sha256.Size]byte
@@ -356,6 +510,16 @@ type recordingEnrollmentStore struct {
 	findErr           error
 	consumeErr        error
 	consumeCalled     bool
+}
+
+func (store *recordingEnrollmentStore) SaveForCredentiallessUserWithAudit(
+	ctx context.Context,
+	enrollment credential.PasswordEnrollment,
+	event audit.Event,
+) error {
+	store.savedEvent = event
+
+	return store.SaveForCredentiallessUser(ctx, enrollment)
 }
 
 func (store *recordingEnrollmentStore) SaveForCredentiallessUser(

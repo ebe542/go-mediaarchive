@@ -17,6 +17,7 @@ import (
 type PasswordEnrollmentService interface {
 	IssueEnrollment(
 		ctx context.Context,
+		actor identity.User,
 		userID string,
 	) (apppasswords.IssuedEnrollment, error)
 
@@ -60,8 +61,21 @@ func (handler *passwordEnrollmentHandler) issue(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
+	actor, exists := AuthenticatedUser(request.Context())
+	if !exists {
+		writeJSONError(
+			response,
+			http.StatusInternalServerError,
+			"internal_error",
+			"Internal server error.",
+		)
+
+		return
+	}
+
 	issued, err := handler.service.IssueEnrollment(
 		request.Context(),
+		actor,
 		request.PathValue("id"),
 	)
 	if err != nil {

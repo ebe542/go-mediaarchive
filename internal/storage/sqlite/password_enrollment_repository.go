@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/credential"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
@@ -34,6 +35,24 @@ func NewPasswordEnrollmentRepository(
 func (repository *PasswordEnrollmentRepository) SaveForCredentiallessUser(
 	ctx context.Context,
 	enrollment credential.PasswordEnrollment,
+) error {
+	return repository.saveForCredentiallessUser(ctx, enrollment, nil)
+}
+
+// SaveForCredentiallessUserWithAudit atomically saves an enrollment and its
+// required security audit event.
+func (repository *PasswordEnrollmentRepository) SaveForCredentiallessUserWithAudit(
+	ctx context.Context,
+	enrollment credential.PasswordEnrollment,
+	event audit.Event,
+) error {
+	return repository.saveForCredentiallessUser(ctx, enrollment, &event)
+}
+
+func (repository *PasswordEnrollmentRepository) saveForCredentiallessUser(
+	ctx context.Context,
+	enrollment credential.PasswordEnrollment,
+	event *audit.Event,
 ) error {
 	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
@@ -87,6 +106,11 @@ func (repository *PasswordEnrollmentRepository) SaveForCredentiallessUser(
 	)
 	if err != nil {
 		return fmt.Errorf("save password enrollment: %w", err)
+	}
+	if event != nil {
+		if err := insertAuditEvent(ctx, transaction, *event); err != nil {
+			return fmt.Errorf("insert password enrollment issue audit event: %w", err)
+		}
 	}
 
 	if err := transaction.Commit(); err != nil {

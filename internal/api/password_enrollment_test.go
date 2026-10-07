@@ -19,6 +19,8 @@ import (
 type recordingPasswordEnrollmentService struct {
 	issued            apppasswords.IssuedEnrollment
 	issueError        error
+	issueActor        identity.User
+	issueTargetID     string
 	completedToken    string
 	completedPassword []byte
 	completeError     error
@@ -26,8 +28,12 @@ type recordingPasswordEnrollmentService struct {
 
 func (service *recordingPasswordEnrollmentService) IssueEnrollment(
 	_ context.Context,
-	_ string,
+	actor identity.User,
+	userID string,
 ) (apppasswords.IssuedEnrollment, error) {
+	service.issueActor = actor
+	service.issueTargetID = userID
+
 	return service.issued, service.issueError
 }
 
@@ -101,6 +107,12 @@ func TestPasswordEnrollmentIssueRequiresAdministrator(t *testing.T) {
 
 	for _, testCase := range roles {
 		t.Run(testCase.name, func(t *testing.T) {
+			actor := identity.User{
+				ID:       "723e4567-e89b-12d3-a456-426614174000",
+				Username: "archive_admin",
+				Role:     testCase.role,
+				Active:   true,
+			}
 			service := &recordingPasswordEnrollmentService{
 				issued: apppasswords.IssuedEnrollment{
 					Token:     "one-time-secret",
@@ -109,7 +121,7 @@ func TestPasswordEnrollmentIssueRequiresAdministrator(t *testing.T) {
 			}
 			handler := passwordEnrollmentTestHandler(
 				passwordEnrollmentSessionResolver{
-					user: identity.User{Role: testCase.role},
+					user: actor,
 				},
 				service,
 				&recordingPasswordEnrollmentLimiter{allowed: true},
@@ -136,6 +148,11 @@ func TestPasswordEnrollmentIssueRequiresAdministrator(t *testing.T) {
 			if testCase.role == identity.RoleAdmin &&
 				response.Header().Get("Cache-Control") != "no-store" {
 				t.Fatal("expected enrollment token response not to be cached")
+			}
+			if testCase.role == identity.RoleAdmin &&
+				(service.issueActor != actor ||
+					service.issueTargetID != "123e4567-e89b-12d3-a456-426614174000") {
+				t.Fatal("expected authenticated actor and target to reach enrollment service")
 			}
 		})
 	}
