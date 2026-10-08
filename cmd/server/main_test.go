@@ -1340,6 +1340,26 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 		)
 	}
 
+	var enrollmentCompletionEventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events
+		 WHERE event_type = ? AND outcome = ? AND actor_id IS NULL
+		 AND target_id = ? AND target_name = ?`,
+		audit.TypePasswordEnrollmentCompleted,
+		audit.OutcomeSuccess,
+		createdUserBody.ID,
+		createdUserBody.Username,
+	).Scan(&enrollmentCompletionEventCount); err != nil {
+		t.Fatalf("count password enrollment completion events: %v", err)
+	}
+	if enrollmentCompletionEventCount != 1 {
+		t.Fatalf(
+			"expected one password enrollment completion event, got %d",
+			enrollmentCompletionEventCount,
+		)
+	}
+
 	loginCreatedUserRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/auth/sessions",

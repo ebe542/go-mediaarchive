@@ -26,6 +26,7 @@ type PasswordEnrollmentService interface {
 		token string,
 		password []byte,
 	) error
+	RecordLimitedEnrollmentCompletion(ctx context.Context) error
 }
 
 // PasswordEnrollmentAttemptLimiter limits public attempts by source IP.
@@ -127,6 +128,18 @@ func (handler *passwordEnrollmentHandler) complete(
 
 	currentTime := handler.clock().UTC()
 	if !handler.limiter.Allow(sourceIP, currentTime) {
+		if err := handler.service.RecordLimitedEnrollmentCompletion(
+			request.Context(),
+		); err != nil {
+			writeJSONError(
+				response,
+				http.StatusInternalServerError,
+				"internal_error",
+				"Internal server error.",
+			)
+
+			return
+		}
 		writeJSONError(
 			response,
 			http.StatusTooManyRequests,

@@ -317,11 +317,13 @@ func TestPasswordEnrollmentRepositoryCreatesCredentialAndConsumesEnrollment(
 	if err != nil {
 		t.Fatalf("create password credential fixture: %v", err)
 	}
-	if err := repository.CreateCredentialAndConsume(
+	event := enrollmentCompletionAuditEvent(t, userID, now.Add(time.Minute))
+	if err := repository.CreateCredentialAndConsumeWithAudit(
 		ctx,
 		enrollment.TokenHash,
 		passwordCredential,
 		now.Add(time.Minute),
+		event,
 	); err != nil {
 		t.Fatalf("complete enrollment: %v", err)
 	}
@@ -340,6 +342,97 @@ func TestPasswordEnrollmentRepositoryCreatesCredentialAndConsumesEnrollment(
 	if !errors.Is(err, credential.ErrPasswordEnrollmentNotFound) {
 		t.Fatalf("expected consumed enrollment to be absent, got %v", err)
 	}
+	var eventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events WHERE id = ?`,
+		event.ID,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("count enrollment completion events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected one enrollment completion event, got %d", eventCount)
+	}
+}
+
+func TestPasswordEnrollmentRepositoryRollsBackCompletionAfterAuditFailure(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	ctx := context.Background()
+	database := openEnrollmentTestDatabase(t, ctx)
+	now := time.Date(2026, time.October, 7, 11, 0, 0, 0, time.UTC)
+	userID := "123e4567-e89b-12d3-a456-426614174000"
+	createEnrollmentUserFixture(t, ctx, database, userID, now)
+	repository := sqlitestore.NewPasswordEnrollmentRepository(database)
+	enrollment, err := credential.NewPasswordEnrollment(
+		userID,
+		sha256.Sum256([]byte("preserved-completion-token")),
+		now,
+		24*time.Hour,
+	)
+	if err != nil {
+		t.Fatalf("create enrollment fixture: %v", err)
+	}
+	if err := repository.SaveForCredentiallessUser(ctx, enrollment); err != nil {
+		t.Fatalf("save enrollment fixture: %v", err)
+	}
+	passwordCredential, err := credential.NewPasswordCredential(
+		userID,
+		"$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA",
+		now.Add(time.Minute),
+	)
+	if err != nil {
+		t.Fatalf("create password credential fixture: %v", err)
+	}
+	event := enrollmentCompletionAuditEvent(t, userID, now.Add(time.Minute))
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("store conflicting audit event: %v", err)
+	}
+
+	err = repository.CreateCredentialAndConsumeWithAudit(
+		ctx,
+		enrollment.TokenHash,
+		passwordCredential,
+		now.Add(time.Minute),
+		event,
+	)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected ErrEventConflict, got %v", err)
+	}
+	if _, err := repository.FindByTokenHash(ctx, enrollment.TokenHash); err != nil {
+		t.Fatalf("expected enrollment to remain usable: %v", err)
+	}
+	_, err = sqlitestore.NewPasswordCredentialRepository(
+		database,
+	).FindByUserID(ctx, userID)
+	if !errors.Is(err, credential.ErrPasswordCredentialNotFound) {
+		t.Fatalf("expected credential creation to roll back, got %v", err)
+	}
+}
+
+func enrollmentCompletionAuditEvent(
+	t *testing.T,
+	userID string,
+	now time.Time,
+) audit.Event {
+	t.Helper()
+
+	event, err := audit.NewEvent(audit.Event{
+		ID:         "923e4567-e89b-12d3-a456-426614174000",
+		OccurredAt: now,
+		Type:       audit.TypePasswordEnrollmentCompleted,
+		Outcome:    audit.OutcomeSuccess,
+		TargetType: audit.TargetUser,
+		TargetID:   userID,
+		TargetName: "enrollment_user",
+	})
+	if err != nil {
+		t.Fatalf("create enrollment completion event: %v", err)
+	}
+
+	return event
 }
 
 func TestPasswordEnrollmentRepositoryPreservesExpiredEnrollment(t *testing.T) {

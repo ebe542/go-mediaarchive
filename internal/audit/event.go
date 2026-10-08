@@ -110,11 +110,13 @@ const (
 	ReasonMissingManagedFile     Reason = "missing_managed_file"
 	ReasonInvalidRange           Reason = "invalid_range"
 	ReasonInvalidInput           Reason = "invalid_input"
+	ReasonInvalidEnrollment      Reason = "invalid_enrollment"
 	ReasonResourceConflict       Reason = "resource_conflict"
 	ReasonSelfLockout            Reason = "self_lockout"
 	ReasonSelfDeletion           Reason = "self_deletion"
 	ReasonLastAdministrator      Reason = "last_administrator"
 	ReasonUserOwnsMedia          Reason = "user_owns_media"
+	ReasonRateLimited            Reason = "rate_limited"
 	ReasonOperationFailure       Reason = "operation_failure"
 )
 
@@ -125,9 +127,10 @@ func (reason Reason) Valid() bool {
 		ReasonMissingAuthentication, ReasonInsufficientRole,
 		ReasonUnknownTarget, ReasonMissingPermission,
 		ReasonMissingContentLocation, ReasonMissingManagedFile,
-		ReasonInvalidRange, ReasonInvalidInput, ReasonResourceConflict,
+		ReasonInvalidRange, ReasonInvalidInput, ReasonInvalidEnrollment,
+		ReasonResourceConflict,
 		ReasonSelfLockout, ReasonSelfDeletion, ReasonLastAdministrator,
-		ReasonUserOwnsMedia, ReasonOperationFailure:
+		ReasonUserOwnsMedia, ReasonRateLimited, ReasonOperationFailure:
 		return true
 	default:
 		return false

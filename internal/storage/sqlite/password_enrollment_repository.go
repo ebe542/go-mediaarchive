@@ -192,6 +192,40 @@ func (repository *PasswordEnrollmentRepository) CreateCredentialAndConsume(
 	passwordCredential credential.PasswordCredential,
 	now time.Time,
 ) error {
+	return repository.createCredentialAndConsume(
+		ctx,
+		tokenHash,
+		passwordCredential,
+		now,
+		nil,
+	)
+}
+
+// CreateCredentialAndConsumeWithAudit atomically creates the initial password,
+// consumes its enrollment, and appends the required audit event.
+func (repository *PasswordEnrollmentRepository) CreateCredentialAndConsumeWithAudit(
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
+	passwordCredential credential.PasswordCredential,
+	now time.Time,
+	event audit.Event,
+) error {
+	return repository.createCredentialAndConsume(
+		ctx,
+		tokenHash,
+		passwordCredential,
+		now,
+		&event,
+	)
+}
+
+func (repository *PasswordEnrollmentRepository) createCredentialAndConsume(
+	ctx context.Context,
+	tokenHash [sha256.Size]byte,
+	passwordCredential credential.PasswordCredential,
+	now time.Time,
+	event *audit.Event,
+) error {
 	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin password enrollment consumption: %w", err)
@@ -274,6 +308,11 @@ func (repository *PasswordEnrollmentRepository) CreateCredentialAndConsume(
 	}
 	if affectedRows != 1 {
 		return credential.ErrPasswordEnrollmentNotFound
+	}
+	if event != nil {
+		if err := insertAuditEvent(ctx, transaction, *event); err != nil {
+			return fmt.Errorf("insert enrollment completion audit event: %w", err)
+		}
 	}
 
 	if err := transaction.Commit(); err != nil {

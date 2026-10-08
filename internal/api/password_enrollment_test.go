@@ -24,6 +24,8 @@ type recordingPasswordEnrollmentService struct {
 	completedToken    string
 	completedPassword []byte
 	completeError     error
+	limitedCalls      int
+	limitedError      error
 }
 
 func (service *recordingPasswordEnrollmentService) IssueEnrollment(
@@ -46,6 +48,14 @@ func (service *recordingPasswordEnrollmentService) CompleteEnrollment(
 	service.completedPassword = append([]byte(nil), password...)
 
 	return service.completeError
+}
+
+func (service *recordingPasswordEnrollmentService) RecordLimitedEnrollmentCompletion(
+	_ context.Context,
+) error {
+	service.limitedCalls++
+
+	return service.limitedError
 }
 
 type recordingPasswordEnrollmentLimiter struct {
@@ -299,9 +309,39 @@ func TestPasswordEnrollmentCompletionRejectsLimitedSource(t *testing.T) {
 		http.StatusTooManyRequests,
 		"too_many_requests",
 	)
-	if service.completedToken != "" {
-		t.Fatal("expected limited request not to reach the application service")
+	if service.completedToken != "" || service.limitedCalls != 1 {
+		t.Fatal("expected only limited-attempt auditing to reach the service")
 	}
+}
+
+func TestPasswordEnrollmentCompletionFailsClosedForLimitedAudit(t *testing.T) {
+	service := &recordingPasswordEnrollmentService{
+		limitedError: errors.New("audit storage unavailable"),
+	}
+	handler := passwordEnrollmentTestHandler(
+		passwordEnrollmentSessionResolver{},
+		service,
+		&recordingPasswordEnrollmentLimiter{allowed: false},
+	)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/password-enrollments",
+		strings.NewReader(
+			`{"token":"unexamined-token","password":"synthetic passphrase"}`,
+		),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.RemoteAddr = "192.0.2.10:54321"
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	assertPasswordEnrollmentError(
+		t,
+		response,
+		http.StatusInternalServerError,
+		"internal_error",
+	)
 }
 
 func passwordEnrollmentTestHandler(

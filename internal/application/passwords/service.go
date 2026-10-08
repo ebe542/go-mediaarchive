@@ -50,6 +50,13 @@ type EnrollmentStore interface {
 		enrollment credential.PasswordEnrollment,
 		event audit.Event,
 	) error
+	CreateCredentialAndConsumeWithAudit(
+		ctx context.Context,
+		tokenHash [sha256.Size]byte,
+		credential credential.PasswordCredential,
+		now time.Time,
+		event audit.Event,
+	) error
 }
 
 // IssuedEnrollment contains the one-time secret returned to an administrator.
@@ -271,25 +278,46 @@ func (service *Service) CompleteEnrollment(
 	token string,
 	passwordValue []byte,
 ) error {
+	now := service.currentTime()
 	tokenHash := credential.HashEnrollmentToken(token)
 	enrollment, err := service.enrollments.FindByTokenHash(
 		ctx,
 		tokenHash,
 	)
 	if errors.Is(err, credential.ErrPasswordEnrollmentNotFound) {
-		return ErrInvalidEnrollment
+		return service.recordEnrollmentCompletionDenial(
+			ctx,
+			identity.User{},
+			audit.ReasonInvalidEnrollment,
+			now,
+			ErrInvalidEnrollment,
+		)
 	}
 	if err != nil {
 		return fmt.Errorf("retrieve password enrollment: %w", err)
 	}
 
-	currentTime := service.currentTime()
-	if !enrollment.IsValidAt(currentTime) {
-		return ErrInvalidEnrollment
+	target := safeEnrollmentTarget(enrollment.UserID)
+	if !enrollment.IsValidAt(now) {
+		return service.recordEnrollmentCompletionDenial(
+			ctx,
+			target,
+			audit.ReasonInvalidEnrollment,
+			now,
+			ErrInvalidEnrollment,
+		)
 	}
 
 	if err := password.Validate(passwordValue); err != nil {
-		return fmt.Errorf("validate enrolled password: %w", err)
+		operationErr := fmt.Errorf("validate enrolled password: %w", err)
+
+		return service.recordEnrollmentCompletionDenial(
+			ctx,
+			target,
+			audit.ReasonInvalidInput,
+			now,
+			operationErr,
+		)
 	}
 
 	encodedHash, err := service.hasher.Hash(passwordValue)
@@ -300,23 +328,104 @@ func (service *Service) CompleteEnrollment(
 	passwordCredential, err := credential.NewPasswordCredential(
 		enrollment.UserID,
 		encodedHash,
-		currentTime,
+		now,
 	)
 	if err != nil {
 		return fmt.Errorf("create enrolled password credential: %w", err)
 	}
 
-	if err := service.enrollments.CreateCredentialAndConsume(
+	user, err := service.users.FindByID(ctx, enrollment.UserID)
+	if err != nil {
+		return fmt.Errorf("retrieve enrolled password user: %w", err)
+	}
+	event, err := service.newEnrollmentCompletionEvent(
+		user,
+		audit.OutcomeSuccess,
+		"",
+		now,
+	)
+	if err != nil {
+		return err
+	}
+
+	if err := service.enrollments.CreateCredentialAndConsumeWithAudit(
 		ctx,
 		tokenHash,
 		passwordCredential,
-		currentTime,
+		now,
+		event,
 	); errors.Is(err, credential.ErrPasswordEnrollmentNotFound) ||
 		errors.Is(err, credential.ErrPasswordCredentialExists) {
-		return ErrInvalidEnrollment
+		return service.recordEnrollmentCompletionDenial(
+			ctx,
+			user,
+			audit.ReasonInvalidEnrollment,
+			now,
+			ErrInvalidEnrollment,
+		)
 	} else if err != nil {
 		return fmt.Errorf("complete password enrollment: %w", err)
 	}
 
 	return nil
+}
+
+// RecordLimitedEnrollmentCompletion records a rate-limited anonymous attempt.
+func (service *Service) RecordLimitedEnrollmentCompletion(ctx context.Context) error {
+	return service.recordEnrollmentCompletionDenial(
+		ctx,
+		identity.User{},
+		audit.ReasonRateLimited,
+		service.currentTime(),
+		nil,
+	)
+}
+
+func (service *Service) recordEnrollmentCompletionDenial(
+	ctx context.Context,
+	target identity.User,
+	reason audit.Reason,
+	now time.Time,
+	operationErr error,
+) error {
+	event, err := service.newEnrollmentCompletionEvent(
+		target,
+		audit.OutcomeDenied,
+		reason,
+		now,
+	)
+	if err != nil {
+		return err
+	}
+	if err := service.audit.Append(ctx, event); err != nil {
+		return fmt.Errorf("record denied password enrollment completion: %w", err)
+	}
+
+	return operationErr
+}
+
+func (service *Service) newEnrollmentCompletionEvent(
+	target identity.User,
+	outcome audit.Outcome,
+	reason audit.Reason,
+	now time.Time,
+) (audit.Event, error) {
+	event, err := audit.NewEvent(audit.Event{
+		ID:         service.eventIDs(),
+		OccurredAt: now.UTC(),
+		Type:       audit.TypePasswordEnrollmentCompleted,
+		Outcome:    outcome,
+		TargetType: audit.TargetUser,
+		TargetID:   target.ID,
+		TargetName: target.Username,
+		Reason:     reason,
+	})
+	if err != nil {
+		return audit.Event{}, fmt.Errorf(
+			"create password enrollment completion audit event: %w",
+			err,
+		)
+	}
+
+	return event, nil
 }
