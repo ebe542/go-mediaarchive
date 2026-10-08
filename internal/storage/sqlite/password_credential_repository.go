@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/credential"
 )
 
@@ -99,6 +100,32 @@ func (repository *PasswordCredentialRepository) ChangePasswordAndRevokeSessions(
 	ctx context.Context,
 	passwordCredential credential.PasswordCredential,
 ) error {
+	return repository.changePasswordAndRevokeSessions(
+		ctx,
+		passwordCredential,
+		nil,
+	)
+}
+
+// ChangePasswordAndRevokeSessionsWithAudit atomically replaces a password,
+// revokes its user's sessions, and records the successful change.
+func (repository *PasswordCredentialRepository) ChangePasswordAndRevokeSessionsWithAudit(
+	ctx context.Context,
+	passwordCredential credential.PasswordCredential,
+	event audit.Event,
+) error {
+	return repository.changePasswordAndRevokeSessions(
+		ctx,
+		passwordCredential,
+		&event,
+	)
+}
+
+func (repository *PasswordCredentialRepository) changePasswordAndRevokeSessions(
+	ctx context.Context,
+	passwordCredential credential.PasswordCredential,
+	event *audit.Event,
+) error {
 	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin password change: %w", err)
@@ -140,6 +167,11 @@ func (repository *PasswordCredentialRepository) ChangePasswordAndRevokeSessions(
 	)
 	if err != nil {
 		return fmt.Errorf("revoke password change sessions: %w", err)
+	}
+	if event != nil {
+		if err := insertAuditEvent(ctx, transaction, *event); err != nil {
+			return fmt.Errorf("record password change: %w", err)
+		}
 	}
 
 	if err := transaction.Commit(); err != nil {

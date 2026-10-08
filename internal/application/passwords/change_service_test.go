@@ -6,15 +6,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/credential"
+	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/password"
 )
 
 type recordingPasswordChangeRepository struct {
-	credential  credential.PasswordCredential
-	findError   error
-	changed     credential.PasswordCredential
-	changeError error
+	credential   credential.PasswordCredential
+	findError    error
+	changed      credential.PasswordCredential
+	changedEvent audit.Event
+	changeError  error
 }
 
 func (repository *recordingPasswordChangeRepository) FindByUserID(
@@ -31,6 +34,31 @@ func (repository *recordingPasswordChangeRepository) ChangePasswordAndRevokeSess
 	repository.changed = credential
 
 	return repository.changeError
+}
+
+func (repository *recordingPasswordChangeRepository) ChangePasswordAndRevokeSessionsWithAudit(
+	_ context.Context,
+	passwordCredential credential.PasswordCredential,
+	event audit.Event,
+) error {
+	repository.changed = passwordCredential
+	repository.changedEvent = event
+
+	return repository.changeError
+}
+
+type passwordChangeAuditAppender struct {
+	event audit.Event
+	err   error
+}
+
+func (appender *passwordChangeAuditAppender) Append(
+	_ context.Context,
+	event audit.Event,
+) error {
+	appender.event = event
+
+	return appender.err
 }
 
 type recordingPasswordVerifierHasher struct {
@@ -69,13 +97,17 @@ func TestChangeServiceReplacesPasswordAndRevokesSessions(t *testing.T) {
 		matches: true,
 		hash:    "$argon2id$new-hash",
 	}
-	service := NewChangeService(repository, hasher, func() time.Time {
-		return changedAt
-	})
+	service := newPasswordChangeService(
+		repository,
+		hasher,
+		&passwordChangeAuditAppender{},
+		func() time.Time { return changedAt },
+	)
+	actor := passwordChangeActor(t, createdAt)
 
 	err := service.ChangePassword(
 		context.Background(),
-		repository.credential.UserID,
+		actor,
 		[]byte("current synthetic passphrase"),
 		[]byte("new synthetic passphrase"),
 	)
@@ -94,6 +126,13 @@ func TestChangeServiceReplacesPasswordAndRevokesSessions(t *testing.T) {
 		repository.changed.UpdatedAt != changedAt {
 		t.Fatalf("unexpected changed credential: %+v", repository.changed)
 	}
+	if repository.changedEvent.Type != audit.TypePasswordChanged ||
+		repository.changedEvent.Outcome != audit.OutcomeSuccess ||
+		repository.changedEvent.ActorID != actor.ID ||
+		repository.changedEvent.TargetID != actor.ID ||
+		repository.changedEvent.TargetName != actor.Username {
+		t.Fatalf("unexpected password change audit event: %+v", repository.changedEvent)
+	}
 }
 
 func TestChangeServiceRejectsInvalidCurrentPassword(t *testing.T) {
@@ -104,11 +143,13 @@ func TestChangeServiceRejectsInvalidCurrentPassword(t *testing.T) {
 		),
 	}
 	hasher := &recordingPasswordVerifierHasher{matches: false}
-	service := NewChangeService(repository, hasher, time.Now)
+	appender := &passwordChangeAuditAppender{}
+	service := newPasswordChangeService(repository, hasher, appender, time.Now)
+	actor := passwordChangeActor(t, repository.credential.CreatedAt)
 
 	err := service.ChangePassword(
 		context.Background(),
-		repository.credential.UserID,
+		actor,
 		[]byte("incorrect synthetic passphrase"),
 		[]byte("new synthetic passphrase"),
 	)
@@ -118,26 +159,33 @@ func TestChangeServiceRejectsInvalidCurrentPassword(t *testing.T) {
 	if repository.changed.UserID != "" || len(hasher.hashedValue) != 0 {
 		t.Fatal("expected rejected password not to be persisted or hashed")
 	}
+	if appender.event.Outcome != audit.OutcomeDenied ||
+		appender.event.Reason != audit.ReasonInvalidCredentials {
+		t.Fatalf("unexpected password change denial: %+v", appender.event)
+	}
 }
 
 func TestChangeServiceRejectsInvalidOrUnchangedNewPassword(t *testing.T) {
 	testCases := []struct {
-		name        string
-		current     string
-		newPassword string
-		expectedErr error
+		name           string
+		current        string
+		newPassword    string
+		expectedErr    error
+		expectedReason audit.Reason
 	}{
 		{
-			name:        "invalid new password",
-			current:     "current synthetic passphrase",
-			newPassword: "short",
-			expectedErr: password.ErrInvalidPassword,
+			name:           "invalid new password",
+			current:        "current synthetic passphrase",
+			newPassword:    "short",
+			expectedErr:    password.ErrInvalidPassword,
+			expectedReason: audit.ReasonInvalidInput,
 		},
 		{
-			name:        "unchanged password",
-			current:     "same synthetic passphrase",
-			newPassword: "same synthetic passphrase",
-			expectedErr: ErrPasswordUnchanged,
+			name:           "unchanged password",
+			current:        "same synthetic passphrase",
+			newPassword:    "same synthetic passphrase",
+			expectedErr:    ErrPasswordUnchanged,
+			expectedReason: audit.ReasonResourceConflict,
 		},
 	}
 
@@ -150,11 +198,13 @@ func TestChangeServiceRejectsInvalidOrUnchangedNewPassword(t *testing.T) {
 				),
 			}
 			hasher := &recordingPasswordVerifierHasher{matches: true}
-			service := NewChangeService(repository, hasher, time.Now)
+			appender := &passwordChangeAuditAppender{}
+			service := newPasswordChangeService(repository, hasher, appender, time.Now)
+			actor := passwordChangeActor(t, repository.credential.CreatedAt)
 
 			err := service.ChangePassword(
 				context.Background(),
-				repository.credential.UserID,
+				actor,
 				[]byte(testCase.current),
 				[]byte(testCase.newPassword),
 			)
@@ -164,8 +214,71 @@ func TestChangeServiceRejectsInvalidOrUnchangedNewPassword(t *testing.T) {
 			if repository.changed.UserID != "" || len(hasher.hashedValue) != 0 {
 				t.Fatal("expected invalid new password not to be persisted or hashed")
 			}
+			if appender.event.Outcome != audit.OutcomeDenied ||
+				appender.event.Reason != testCase.expectedReason {
+				t.Fatalf("unexpected password change denial: %+v", appender.event)
+			}
 		})
 	}
+}
+
+func TestChangeServiceFailsClosedWhenDenialCannotBeAudited(t *testing.T) {
+	auditError := errors.New("synthetic audit failure")
+	createdAt := time.Date(2026, time.August, 28, 9, 0, 0, 0, time.UTC)
+	repository := &recordingPasswordChangeRepository{
+		credential: passwordChangeCredential(t, createdAt),
+	}
+	service := newPasswordChangeService(
+		repository,
+		&recordingPasswordVerifierHasher{matches: false},
+		&passwordChangeAuditAppender{err: auditError},
+		time.Now,
+	)
+
+	err := service.ChangePassword(
+		context.Background(),
+		passwordChangeActor(t, createdAt),
+		[]byte("incorrect synthetic passphrase"),
+		[]byte("new synthetic passphrase"),
+	)
+	if !errors.Is(err, auditError) {
+		t.Fatalf("expected audit failure, got %v", err)
+	}
+	if errors.Is(err, ErrInvalidCurrentPassword) {
+		t.Fatalf("expected audit failure to hide the denial, got %v", err)
+	}
+}
+
+func newPasswordChangeService(
+	repository PasswordChangeRepository,
+	hasher PasswordVerifierHasher,
+	appender audit.Appender,
+	clock Clock,
+) *ChangeService {
+	return NewChangeService(
+		repository,
+		hasher,
+		appender,
+		func() string { return "a23e4567-e89b-12d3-a456-426614174000" },
+		clock,
+	)
+}
+
+func passwordChangeActor(t *testing.T, createdAt time.Time) identity.User {
+	t.Helper()
+
+	user, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"password_change_user",
+		"Password Change User",
+		identity.RoleViewer,
+		createdAt,
+	)
+	if err != nil {
+		t.Fatalf("create password change actor: %v", err)
+	}
+
+	return user
 }
 
 func passwordChangeCredential(

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	apppasswords "github.com/ebe542/go-mediaarchive/internal/application/passwords"
+	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/password"
 )
 
@@ -13,7 +14,7 @@ import (
 type PasswordChangeService interface {
 	ChangePassword(
 		ctx context.Context,
-		userID string,
+		actor identity.User,
 		currentPassword []byte,
 		newPassword []byte,
 	) error
@@ -73,7 +74,7 @@ func (handler *passwordChangeHandler) changeCurrentUserPassword(
 
 	err := handler.service.ChangePassword(
 		request.Context(),
-		user.ID,
+		user,
 		currentPassword,
 		newPassword,
 	)

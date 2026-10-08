@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/credential"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/session"
@@ -99,9 +100,11 @@ func TestPasswordChangeUpdatesCredentialAndRevokesEverySession(t *testing.T) {
 		t.Fatalf("create updated credential: %v", err)
 	}
 
-	if err := repository.ChangePasswordAndRevokeSessions(
+	event := passwordChangeAuditEvent(t, storedCredential.UserID, changedAt)
+	if err := repository.ChangePasswordAndRevokeSessionsWithAudit(
 		ctx,
 		updatedCredential,
+		event,
 	); err != nil {
 		t.Fatalf("change password and revoke sessions: %v", err)
 	}
@@ -147,6 +150,69 @@ func TestPasswordChangeUpdatesCredentialAndRevokesEverySession(t *testing.T) {
 			"expected two sessions revoked at password change, got %d",
 			matchingRevocations,
 		)
+	}
+
+	var auditEvents int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events WHERE id = ? AND event_type = ?`,
+		event.ID,
+		audit.TypePasswordChanged,
+	).Scan(&auditEvents); err != nil {
+		t.Fatalf("count password change audit events: %v", err)
+	}
+	if auditEvents != 1 {
+		t.Fatalf("expected one password change audit event, got %d", auditEvents)
+	}
+}
+
+func TestPasswordChangeRollsBackWhenAuditInsertionFails(t *testing.T) {
+	ctx := context.Background()
+	database, repository, storedCredential := passwordChangeRepositoryFixture(
+		t,
+		ctx,
+	)
+	changedAt := storedCredential.CreatedAt.Add(time.Hour)
+	event := passwordChangeAuditEvent(t, storedCredential.UserID, changedAt)
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("store conflicting audit event: %v", err)
+	}
+
+	updatedCredential, err := storedCredential.WithPasswordHash(
+		"$argon2id$must-be-rolled-back",
+		changedAt,
+	)
+	if err != nil {
+		t.Fatalf("create updated credential: %v", err)
+	}
+
+	err = repository.ChangePasswordAndRevokeSessionsWithAudit(
+		ctx,
+		updatedCredential,
+		event,
+	)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected ErrEventConflict, got %v", err)
+	}
+
+	actualCredential, err := repository.FindByUserID(ctx, storedCredential.UserID)
+	if err != nil {
+		t.Fatalf("find rolled-back credential: %v", err)
+	}
+	if actualCredential != storedCredential {
+		t.Fatalf("expected original credential %+v, got %+v", storedCredential, actualCredential)
+	}
+
+	var activeSessions int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM sessions WHERE user_id = ? AND revoked_at IS NULL`,
+		storedCredential.UserID,
+	).Scan(&activeSessions); err != nil {
+		t.Fatalf("count active sessions: %v", err)
+	}
+	if activeSessions != 2 {
+		t.Fatalf("expected two active sessions after rollback, got %d", activeSessions)
 	}
 }
 
@@ -275,6 +341,32 @@ func passwordChangeRepositoryFixture(
 	}
 
 	return database, sqlitestore.NewPasswordCredentialRepository(database), storedCredential
+}
+
+func passwordChangeAuditEvent(
+	t *testing.T,
+	userID string,
+	changedAt time.Time,
+) audit.Event {
+	t.Helper()
+
+	event, err := audit.NewEvent(audit.Event{
+		ID:            "a23e4567-e89b-12d3-a456-426614174000",
+		OccurredAt:    changedAt,
+		Type:          audit.TypePasswordChanged,
+		Outcome:       audit.OutcomeSuccess,
+		ActorID:       userID,
+		ActorUsername: "password_change_user",
+		ActorRole:     string(identity.RoleViewer),
+		TargetType:    audit.TargetUser,
+		TargetID:      userID,
+		TargetName:    "password_change_user",
+	})
+	if err != nil {
+		t.Fatalf("create password change audit event: %v", err)
+	}
+
+	return event
 }
 
 func TestPasswordCredentialRepositoryReturnsNotFoundForUserWithoutCredential(

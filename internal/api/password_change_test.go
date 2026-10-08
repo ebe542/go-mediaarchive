@@ -15,7 +15,7 @@ import (
 )
 
 type recordingPasswordChangeService struct {
-	userID          string
+	actor           identity.User
 	currentPassword []byte
 	newPassword     []byte
 	err             error
@@ -23,11 +23,11 @@ type recordingPasswordChangeService struct {
 
 func (service *recordingPasswordChangeService) ChangePassword(
 	_ context.Context,
-	userID string,
+	actor identity.User,
 	currentPassword []byte,
 	newPassword []byte,
 ) error {
-	service.userID = userID
+	service.actor = actor
 	service.currentPassword = append([]byte(nil), currentPassword...)
 	service.newPassword = append([]byte(nil), newPassword...)
 
@@ -58,7 +58,9 @@ func TestPasswordChangeUsesAuthenticatedUserAndExactPasswords(t *testing.T) {
 			response.Body.String(),
 		)
 	}
-	if service.userID != "123e4567-e89b-12d3-a456-426614174000" ||
+	if service.actor.ID != "123e4567-e89b-12d3-a456-426614174000" ||
+		service.actor.Username != "password_change_user" ||
+		service.actor.Role != identity.RoleViewer ||
 		string(service.currentPassword) != "current synthetic passphrase" ||
 		string(service.newPassword) != "new synthetic passphrase" {
 		t.Fatalf("unexpected password change input: %+v", service)
@@ -153,8 +155,10 @@ func passwordChangeTestHandler(
 		api.WithPasswordChangeAPI(
 			passwordEnrollmentSessionResolver{
 				user: identity.User{
-					ID:   "123e4567-e89b-12d3-a456-426614174000",
-					Role: identity.RoleViewer,
+					ID:       "123e4567-e89b-12d3-a456-426614174000",
+					Username: "password_change_user",
+					Role:     identity.RoleViewer,
+					Active:   true,
 				},
 			},
 			service,

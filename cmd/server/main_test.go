@@ -1414,6 +1414,28 @@ func TestApplicationHandlerAuthenticatesAndResolvesCurrentUser(
 		)
 	}
 
+	var passwordChangeEventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events
+		 WHERE event_type = ? AND actor_id = ? AND actor_username = ?
+		 AND target_id = ? AND target_name = ? AND outcome = ?`,
+		audit.TypePasswordChanged,
+		createdUserBody.ID,
+		createdUserBody.Username,
+		createdUserBody.ID,
+		createdUserBody.Username,
+		audit.OutcomeSuccess,
+	).Scan(&passwordChangeEventCount); err != nil {
+		t.Fatalf("count password change audit events: %v", err)
+	}
+	if passwordChangeEventCount != 1 {
+		t.Fatalf(
+			"expected one password change audit event, got %d",
+			passwordChangeEventCount,
+		)
+	}
+
 	revokedSessionRequest := httptest.NewRequest(
 		http.MethodGet,
 		"/api/v1/users/me",

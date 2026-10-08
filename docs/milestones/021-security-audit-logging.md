@@ -241,7 +241,7 @@ stay in the same commit as the behavior they specify.
 - [x] SQLite audit rows reject application updates and deletions.
 - [x] Audit history survives user and media deletion.
 - [ ] Required audit failures prevent security-sensitive success.
-- [ ] Authentication, user, and password operations create safe events.
+- [x] Authentication, user, and password operations create safe events.
 - [ ] Media, grant, upload, and deletion operations create safe events.
 - [ ] Each content request records authorization, range, and outcome safely.
 - [ ] Public authorization and availability masking remains unchanged.

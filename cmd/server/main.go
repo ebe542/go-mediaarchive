@@ -394,6 +394,8 @@ func newApplicationHandlerWithContent(
 	passwordChangeService := apppasswords.NewChangeService(
 		credentialRepository,
 		passwordHasher,
+		auditRepository,
+		uuid.NewString,
 		time.Now,
 	)
 	mediaRepository := sqlitestore.NewMediaRepository(database)
