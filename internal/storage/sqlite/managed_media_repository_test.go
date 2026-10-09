@@ -1,10 +1,14 @@
 package sqlite_test
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/content"
+	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/media"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
@@ -19,7 +23,13 @@ func TestMediaRepositoryCreatesManagedMediaAtomically(t *testing.T) {
 	}
 	repository := sqlitestore.NewMediaRepository(database)
 
-	if err := repository.CreateManaged(ctx, item, location); err != nil {
+	event := managedUploadAuditEvent(t, item)
+	if err := repository.CreateManagedWithAudit(
+		ctx,
+		item,
+		location,
+		event,
+	); err != nil {
 		t.Fatalf("create managed media: %v", err)
 	}
 	storedItem, err := repository.FindByID(ctx, item.ID)
@@ -34,6 +44,43 @@ func TestMediaRepositoryCreatesManagedMediaAtomically(t *testing.T) {
 	if storedLocation != location {
 		t.Fatalf("expected location %+v, got %+v", location, storedLocation)
 	}
+	var eventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events WHERE id = ? AND event_type = ?`,
+		event.ID,
+		audit.TypeMediaUploaded,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("count upload audit events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected one upload audit event, got %d", eventCount)
+	}
+}
+
+func TestMediaRepositoryRollsBackManagedMediaOnAuditConflict(t *testing.T) {
+	ctx, database := openMediaSchemaDatabase(t)
+	insertMediaSchemaUser(t, ctx, database, schemaOwnerID, "media_owner")
+	item := mediaRepositoryItem(t, []string{"First Author"})
+	location, err := content.NewLocation(item.ID, "32/"+item.ID, item.CreatedAt)
+	if err != nil {
+		t.Fatalf("create content location: %v", err)
+	}
+	event := managedUploadAuditEvent(t, item)
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("store conflicting audit event: %v", err)
+	}
+
+	err = sqlitestore.NewMediaRepository(database).CreateManagedWithAudit(
+		ctx,
+		item,
+		location,
+		event,
+	)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected ErrEventConflict, got %v", err)
+	}
+	assertNoManagedMediaRows(t, ctx, database, item.ID)
 }
 
 func TestMediaRepositoryRollsBackManagedMediaOnLocationConflict(t *testing.T) {
@@ -164,4 +211,49 @@ func mediaRepositoryItemWithID(test *testing.T, id string) media.Item {
 	}
 
 	return created
+}
+
+func managedUploadAuditEvent(t *testing.T, item media.Item) audit.Event {
+	t.Helper()
+
+	event, err := audit.NewEvent(audit.Event{
+		ID:            "923e4567-e89b-12d3-a456-426614174000",
+		OccurredAt:    item.CreatedAt,
+		Type:          audit.TypeMediaUploaded,
+		Outcome:       audit.OutcomeSuccess,
+		ActorID:       item.OwnerID,
+		ActorUsername: "media_owner",
+		ActorRole:     string(identity.RoleEditor),
+		TargetType:    audit.TargetMedia,
+		TargetID:      item.ID,
+		TargetName:    item.Title,
+	})
+	if err != nil {
+		t.Fatalf("create managed upload audit event: %v", err)
+	}
+
+	return event
+}
+
+func assertNoManagedMediaRows(
+	t *testing.T,
+	ctx context.Context,
+	database *sql.DB,
+	mediaID string,
+) {
+	t.Helper()
+
+	for _, table := range []string{"media_contents", "media_authors", "media_items"} {
+		var count int
+		query := "SELECT COUNT(*) FROM " + table + " WHERE media_id = ?"
+		if table == "media_items" {
+			query = "SELECT COUNT(*) FROM media_items WHERE id = ?"
+		}
+		if err := database.QueryRowContext(ctx, query, mediaID).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Fatalf("expected no %s rows, got %d", table, count)
+		}
+	}
 }

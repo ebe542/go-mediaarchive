@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/media"
 )
@@ -65,6 +66,25 @@ func (repository *MediaRepository) CreateManaged(
 	candidateItem media.Item,
 	candidateLocation content.Location,
 ) error {
+	return repository.createManaged(ctx, candidateItem, candidateLocation, nil)
+}
+
+// CreateManagedWithAudit atomically persists managed media and its upload event.
+func (repository *MediaRepository) CreateManagedWithAudit(
+	ctx context.Context,
+	candidateItem media.Item,
+	candidateLocation content.Location,
+	event audit.Event,
+) error {
+	return repository.createManaged(ctx, candidateItem, candidateLocation, &event)
+}
+
+func (repository *MediaRepository) createManaged(
+	ctx context.Context,
+	candidateItem media.Item,
+	candidateLocation content.Location,
+	event *audit.Event,
+) error {
 	item, err := validateMediaItem(candidateItem)
 	if err != nil {
 		return fmt.Errorf("validate managed media for creation: %w", err)
@@ -103,6 +123,11 @@ func (repository *MediaRepository) CreateManaged(
 		}
 
 		return fmt.Errorf("insert managed content location: %w", err)
+	}
+	if event != nil {
+		if err := insertAuditEvent(ctx, transaction, *event); err != nil {
+			return fmt.Errorf("record managed media creation: %w", err)
+		}
 	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit managed media creation: %w", err)

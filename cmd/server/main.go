@@ -463,6 +463,8 @@ func newApplicationHandlerWithContent(
 			mediaRepository,
 			contentStore,
 			uuid.NewString,
+			auditRepository,
+			uuid.NewString,
 			time.Now,
 			maximumUploadSize,
 		)

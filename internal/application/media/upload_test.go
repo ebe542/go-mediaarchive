@@ -11,6 +11,7 @@ import (
 	"time"
 
 	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
@@ -54,20 +55,37 @@ func (store *recordingContentStore) Delete(
 type recordingManagedCreator struct {
 	item     domainmedia.Item
 	location content.Location
+	event    audit.Event
 	err      error
 	calls    int
 }
 
-func (creator *recordingManagedCreator) CreateManaged(
+func (creator *recordingManagedCreator) CreateManagedWithAudit(
 	_ context.Context,
 	item domainmedia.Item,
 	location content.Location,
+	event audit.Event,
 ) error {
 	creator.calls++
 	creator.item = item
 	creator.location = location
+	creator.event = event
 
 	return creator.err
+}
+
+type recordingUploadAuditAppender struct {
+	events []audit.Event
+	err    error
+}
+
+func (appender *recordingUploadAuditAppender) Append(
+	_ context.Context,
+	event audit.Event,
+) error {
+	appender.events = append(appender.events, event)
+
+	return appender.err
 }
 
 func TestUploadItemPersistsServerDerivedContentMetadata(t *testing.T) {
@@ -111,6 +129,13 @@ func TestUploadItemPersistsServerDerivedContentMetadata(t *testing.T) {
 	if store.deletedKey != "" {
 		t.Fatalf("expected no compensation, deleted %q", store.deletedKey)
 	}
+	if repository.event.Type != audit.TypeMediaUploaded ||
+		repository.event.Outcome != audit.OutcomeSuccess ||
+		repository.event.ActorID != actor.ID ||
+		repository.event.TargetID != item.ID ||
+		repository.event.TargetName != item.Title {
+		t.Fatalf("unexpected upload audit event: %+v", repository.event)
+	}
 }
 
 func TestUploadItemRejectsUnauthorizedActorBeforeStorage(t *testing.T) {
@@ -120,10 +145,12 @@ func TestUploadItemRejectsUnauthorizedActorBeforeStorage(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			store := &recordingContentStore{}
-			service := newUploadService(
+			appender := &recordingUploadAuditAppender{}
+			service := newUploadServiceWithAudit(
 				t,
 				&recordingManagedCreator{},
 				store,
+				appender,
 				serviceTime(),
 				4096,
 			)
@@ -138,6 +165,13 @@ func TestUploadItemRejectsUnauthorizedActorBeforeStorage(t *testing.T) {
 			}
 			if store.putCalls != 0 {
 				t.Fatalf("expected no storage call, got %d", store.putCalls)
+			}
+			if len(appender.events) != 1 ||
+				appender.events[0].Outcome != audit.OutcomeDenied ||
+				appender.events[0].Reason != audit.ReasonInsufficientRole ||
+				appender.events[0].TargetID != "" ||
+				appender.events[0].TargetName != "" {
+				t.Fatalf("unexpected upload denial event: %+v", appender.events)
 			}
 		})
 	}
@@ -165,7 +199,15 @@ func TestUploadItemReturnsStoreFailureWithoutPersistence(t *testing.T) {
 func TestUploadItemCompensatesValidationFailure(t *testing.T) {
 	store := successfulRecordingContentStore()
 	repository := &recordingManagedCreator{}
-	service := newUploadService(t, repository, store, serviceTime(), 4096)
+	appender := &recordingUploadAuditAppender{}
+	service := newUploadServiceWithAudit(
+		t,
+		repository,
+		store,
+		appender,
+		serviceTime(),
+		4096,
+	)
 	input := uploadInput(bytes.NewReader([]byte("content")))
 	input.Title = ""
 
@@ -179,6 +221,12 @@ func TestUploadItemCompensatesValidationFailure(t *testing.T) {
 	}
 	if repository.calls != 0 || store.deletedKey != store.stored.StorageKey {
 		t.Fatalf("expected validation compensation: %+v %+v", repository, store)
+	}
+	if len(appender.events) != 1 ||
+		appender.events[0].Outcome != audit.OutcomeDenied ||
+		appender.events[0].Reason != audit.ReasonInvalidInput ||
+		appender.events[0].TargetName != "" {
+		t.Fatalf("unexpected invalid upload event: %+v", appender.events)
 	}
 }
 
@@ -211,10 +259,12 @@ func TestUploadItemReportsFailedCompensation(t *testing.T) {
 	cleanupError := errors.New("content removal failed")
 	store := successfulRecordingContentStore()
 	store.deleteError = cleanupError
-	service := newUploadService(
+	appender := &recordingUploadAuditAppender{}
+	service := newUploadServiceWithAudit(
 		t,
 		&recordingManagedCreator{err: persistenceError},
 		store,
+		appender,
 		serviceTime(),
 		4096,
 	)
@@ -226,6 +276,37 @@ func TestUploadItemReportsFailedCompensation(t *testing.T) {
 	)
 	if !errors.Is(err, persistenceError) || !errors.Is(err, cleanupError) {
 		t.Fatalf("expected persistence and cleanup errors, got %v", err)
+	}
+	if len(appender.events) != 1 ||
+		appender.events[0].Outcome != audit.OutcomeFailure ||
+		appender.events[0].Reason != audit.ReasonOperationFailure ||
+		appender.events[0].TargetID != serviceMediaID ||
+		appender.events[0].TargetName != "" {
+		t.Fatalf("unexpected failed upload event: %+v", appender.events)
+	}
+}
+
+func TestUploadItemFailsClosedWhenDenialCannotBeAudited(t *testing.T) {
+	auditError := errors.New("synthetic audit failure")
+	service := newUploadServiceWithAudit(
+		t,
+		&recordingManagedCreator{},
+		&recordingContentStore{},
+		&recordingUploadAuditAppender{err: auditError},
+		serviceTime(),
+		4096,
+	)
+
+	_, err := service.UploadItem(
+		context.Background(),
+		serviceUser(serviceOwnerID, identity.RoleViewer, true),
+		uploadInput(bytes.NewReader([]byte("content"))),
+	)
+	if !errors.Is(err, auditError) {
+		t.Fatalf("expected audit failure, got %v", err)
+	}
+	if errors.Is(err, appmedia.ErrCreationForbidden) {
+		t.Fatalf("expected audit failure to hide the denial, got %v", err)
 	}
 }
 
@@ -259,6 +340,8 @@ func TestNewUploadServiceRejectsInvalidMaximumSize(t *testing.T) {
 		&recordingManagedCreator{},
 		&recordingContentStore{},
 		func() string { return serviceMediaID },
+		&recordingUploadAuditAppender{},
+		func() string { return "923e4567-e89b-12d3-a456-426614174000" },
 		time.Now,
 		0,
 	)
@@ -284,11 +367,31 @@ func newUploadService(
 	now time.Time,
 	maximumSize int64,
 ) *appmedia.UploadService {
+	return newUploadServiceWithAudit(
+		test,
+		repository,
+		store,
+		&recordingUploadAuditAppender{},
+		now,
+		maximumSize,
+	)
+}
+
+func newUploadServiceWithAudit(
+	test *testing.T,
+	repository appmedia.ManagedCreator,
+	store content.Store,
+	appender audit.Appender,
+	now time.Time,
+	maximumSize int64,
+) *appmedia.UploadService {
 	test.Helper()
 	service, err := appmedia.NewUploadService(
 		repository,
 		store,
 		func() string { return serviceMediaID },
+		appender,
+		func() string { return "923e4567-e89b-12d3-a456-426614174000" },
 		func() time.Time { return now },
 		maximumSize,
 	)

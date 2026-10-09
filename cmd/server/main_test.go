@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -321,6 +323,133 @@ func TestApplicationHandlerRegistersManagedUploadRoute(t *testing.T) {
 			)
 		}
 	}
+}
+
+func TestApplicationHandlerAuditsManagedUpload(t *testing.T) {
+	ctx := context.Background()
+	database, err := sqlitestore.Open(ctx, filepath.Join(t.TempDir(), "mediaarchive.db"))
+	if err != nil {
+		t.Fatalf("open SQLite database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := sqlitestore.Migrate(ctx, database); err != nil {
+		t.Fatalf("apply migrations: %v", err)
+	}
+
+	now := time.Now().UTC()
+	actor, err := identity.NewUser(
+		"123e4567-e89b-12d3-a456-426614174000",
+		"upload_editor",
+		"Upload Editor",
+		identity.RoleEditor,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create upload actor: %v", err)
+	}
+	if err := sqlitestore.NewUserRepository(database).Create(ctx, actor); err != nil {
+		t.Fatalf("store upload actor: %v", err)
+	}
+	token := "managed-upload-session"
+	storedSession, err := session.New(
+		session.HashToken(token),
+		actor.ID,
+		now,
+		sessionAbsoluteLifetime,
+	)
+	if err != nil {
+		t.Fatalf("create upload session: %v", err)
+	}
+	if err := sqlitestore.NewSessionRepository(database).Create(
+		ctx,
+		storedSession,
+	); err != nil {
+		t.Fatalf("store upload session: %v", err)
+	}
+
+	contentStore, err := filesystemstore.NewContentStore(filepath.Join(t.TempDir(), "content"))
+	if err != nil {
+		t.Fatalf("create content store: %v", err)
+	}
+	handler, err := newApplicationHandlerWithContent(
+		database,
+		defaultEnrollmentLifetime,
+		contentStore,
+		1024,
+	)
+	if err != nil {
+		t.Fatalf("create application handler: %v", err)
+	}
+	body, contentType := managedUploadRequestBody(t)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/media/uploads", body)
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", contentType)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected upload status 201, got %d: %s", response.Code, response.Body.String())
+	}
+
+	var responseBody struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("decode upload response: %v", err)
+	}
+	var eventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events
+		 WHERE event_type = ? AND outcome = ? AND actor_id = ?
+		 AND actor_username = ? AND target_id = ? AND target_name = ?`,
+		audit.TypeMediaUploaded,
+		audit.OutcomeSuccess,
+		actor.ID,
+		actor.Username,
+		responseBody.ID,
+		responseBody.Title,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("count managed upload audit events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected one managed upload audit event, got %d", eventCount)
+	}
+}
+
+func managedUploadRequestBody(t *testing.T) (*bytes.Buffer, string) {
+	t.Helper()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	metadataHeader := make(textproto.MIMEHeader)
+	metadataHeader.Set("Content-Disposition", `form-data; name="metadata"`)
+	metadataHeader.Set("Content-Type", "application/json")
+	metadata, err := writer.CreatePart(metadataHeader)
+	if err != nil {
+		t.Fatalf("create upload metadata part: %v", err)
+	}
+	if _, err := io.WriteString(
+		metadata,
+		`{"title":"Audited Upload","authors":["Example Author"],"type":"book"}`,
+	); err != nil {
+		t.Fatalf("write upload metadata: %v", err)
+	}
+	fileHeader := make(textproto.MIMEHeader)
+	fileHeader.Set("Content-Disposition", `form-data; name="file"; filename="audit.pdf"`)
+	fileHeader.Set("Content-Type", "application/pdf")
+	file, err := writer.CreatePart(fileHeader)
+	if err != nil {
+		t.Fatalf("create upload file part: %v", err)
+	}
+	if _, err := io.WriteString(file, "synthetic PDF content"); err != nil {
+		t.Fatalf("write upload content: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close upload multipart body: %v", err)
+	}
+
+	return body, writer.FormDataContentType()
 }
 
 func TestApplicationHandlerStreamsManagedContent(t *testing.T) {
