@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/content"
@@ -150,7 +151,13 @@ func TestMediaRepositoryDeletesManagedMediaAtomically(t *testing.T) {
 		t.Fatalf("create grant fixture: %v", err)
 	}
 
-	if err := repository.DeleteManaged(ctx, item.ID, location.StorageKey); err != nil {
+	event := mediaDeletionAuditEvent(t, item)
+	if err := repository.DeleteManagedWithAudit(
+		ctx,
+		item.ID,
+		location.StorageKey,
+		event,
+	); err != nil {
 		t.Fatalf("delete managed media: %v", err)
 	}
 	for _, table := range []string{"media_contents", "media_grants", "media_authors", "media_items"} {
@@ -165,6 +172,49 @@ func TestMediaRepositoryDeletesManagedMediaAtomically(t *testing.T) {
 		if count != 0 {
 			t.Fatalf("expected no %s rows, got %d", table, count)
 		}
+	}
+}
+
+func TestMediaRepositoryRollsBackManagedDeletionOnAuditConflict(t *testing.T) {
+	ctx, database := openMediaSchemaDatabase(t)
+	insertMediaSchemaUser(t, ctx, database, schemaOwnerID, "media_owner")
+	repository := sqlitestore.NewMediaRepository(database)
+	item := mediaRepositoryItem(t, []string{"Author"})
+	location, err := content.NewLocation(item.ID, "32/"+item.ID, item.CreatedAt)
+	if err != nil {
+		t.Fatalf("create location: %v", err)
+	}
+	if err := repository.CreateManaged(ctx, item, location); err != nil {
+		t.Fatalf("create managed media: %v", err)
+	}
+	event := mediaDeletionAuditEvent(t, item)
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("store conflicting audit event: %v", err)
+	}
+
+	err = repository.DeleteManagedWithAudit(
+		ctx,
+		item.ID,
+		location.StorageKey,
+		event,
+	)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected ErrEventConflict, got %v", err)
+	}
+	stored, err := repository.FindByID(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("find managed media after rollback: %v", err)
+	}
+	assertMediaItem(t, stored, item)
+	storedLocation, err := sqlitestore.NewContentLocationRepository(database).FindByMediaID(
+		ctx,
+		item.ID,
+	)
+	if err != nil {
+		t.Fatalf("find managed location after rollback: %v", err)
+	}
+	if storedLocation != location {
+		t.Fatalf("expected location %+v, got %+v", location, storedLocation)
 	}
 }
 
@@ -230,6 +280,28 @@ func managedUploadAuditEvent(t *testing.T, item media.Item) audit.Event {
 	})
 	if err != nil {
 		t.Fatalf("create managed upload audit event: %v", err)
+	}
+
+	return event
+}
+
+func mediaDeletionAuditEvent(t *testing.T, item media.Item) audit.Event {
+	t.Helper()
+
+	event, err := audit.NewEvent(audit.Event{
+		ID:            "a23e4567-e89b-12d3-a456-426614174000",
+		OccurredAt:    item.CreatedAt.Add(time.Hour),
+		Type:          audit.TypeMediaDeleted,
+		Outcome:       audit.OutcomeSuccess,
+		ActorID:       item.OwnerID,
+		ActorUsername: "media_owner",
+		ActorRole:     string(identity.RoleEditor),
+		TargetType:    audit.TargetMedia,
+		TargetID:      item.ID,
+		TargetName:    item.Title,
+	})
+	if err != nil {
+		t.Fatalf("create media deletion audit event: %v", err)
 	}
 
 	return event

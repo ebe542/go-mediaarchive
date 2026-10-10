@@ -404,6 +404,8 @@ func newApplicationHandlerWithContent(
 		mediaRepository,
 		grantRepository,
 		uuid.NewString,
+		auditRepository,
+		uuid.NewString,
 		time.Now,
 	)
 	grantService := appmedia.NewGrantService(

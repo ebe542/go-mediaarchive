@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
 )
@@ -28,7 +29,7 @@ type Repository interface {
 	MediaFinder
 	Create(context.Context, domainmedia.Item) error
 	Update(context.Context, domainmedia.Item) error
-	Delete(context.Context, string) error
+	DeleteWithAudit(context.Context, string, audit.Event) error
 }
 
 // GrantFinder retrieves only the actor-specific grant needed for a decision.
@@ -61,6 +62,8 @@ type Service struct {
 	repository Repository
 	grants     GrantFinder
 	generateID IDGenerator
+	audit      audit.Appender
+	eventIDs   AuditEventIDGenerator
 	clock      Clock
 }
 
@@ -69,12 +72,16 @@ func NewService(
 	repository Repository,
 	grantFinder GrantFinder,
 	idGenerator IDGenerator,
+	auditAppender audit.Appender,
+	eventIDGenerator AuditEventIDGenerator,
 	clock Clock,
 ) *Service {
 	return &Service{
 		repository: repository,
 		grants:     grantFinder,
 		generateID: idGenerator,
+		audit:      auditAppender,
+		eventIDs:   eventIDGenerator,
 		clock:      clock,
 	}
 }
@@ -182,15 +189,27 @@ func (service *Service) DeleteItem(
 	actor identity.User,
 	id string,
 ) error {
-	if _, err := service.authorizedItem(
+	now := service.clock()
+	item, err := service.authorizeDeletion(
 		ctx,
 		actor,
 		id,
-		domainmedia.PermissionDelete,
-	); err != nil {
+		now,
+	)
+	if err != nil {
 		return err
 	}
-	if err := service.repository.Delete(ctx, id); err != nil {
+	event, err := service.newDeletionEvent(
+		actor,
+		item,
+		audit.OutcomeSuccess,
+		"",
+		now,
+	)
+	if err != nil {
+		return err
+	}
+	if err := service.repository.DeleteWithAudit(ctx, id, event); err != nil {
 		if errors.Is(err, domainmedia.ErrItemNotFound) {
 			return ErrMediaNotFound
 		}
@@ -199,6 +218,83 @@ func (service *Service) DeleteItem(
 	}
 
 	return nil
+}
+
+func (service *Service) authorizeDeletion(
+	ctx context.Context,
+	actor identity.User,
+	id string,
+	now time.Time,
+) (domainmedia.Item, error) {
+	item, err := service.authorizedItem(
+		ctx,
+		actor,
+		id,
+		domainmedia.PermissionDelete,
+	)
+	if err == nil {
+		return item, nil
+	}
+	if !errors.Is(err, ErrMediaNotFound) {
+		return domainmedia.Item{}, err
+	}
+
+	return domainmedia.Item{}, service.recordDeletionEvent(
+		ctx,
+		actor,
+		domainmedia.Item{},
+		audit.OutcomeDenied,
+		audit.ReasonUnknownTarget,
+		now,
+		err,
+	)
+}
+
+func (service *Service) recordDeletionEvent(
+	ctx context.Context,
+	actor identity.User,
+	item domainmedia.Item,
+	outcome audit.Outcome,
+	reason audit.Reason,
+	now time.Time,
+	operationErr error,
+) error {
+	event, err := service.newDeletionEvent(actor, item, outcome, reason, now)
+	if err != nil {
+		return err
+	}
+	if err := service.audit.Append(ctx, event); err != nil {
+		return fmt.Errorf("record media deletion event: %w", err)
+	}
+
+	return operationErr
+}
+
+func (service *Service) newDeletionEvent(
+	actor identity.User,
+	item domainmedia.Item,
+	outcome audit.Outcome,
+	reason audit.Reason,
+	now time.Time,
+) (audit.Event, error) {
+	event, err := audit.NewEvent(audit.Event{
+		ID:            service.eventIDs(),
+		OccurredAt:    now.UTC(),
+		Type:          audit.TypeMediaDeleted,
+		Outcome:       outcome,
+		ActorID:       actor.ID,
+		ActorUsername: actor.Username,
+		ActorRole:     string(actor.Role),
+		TargetType:    audit.TargetMedia,
+		TargetID:      item.ID,
+		TargetName:    item.Title,
+		Reason:        reason,
+	})
+	if err != nil {
+		return audit.Event{}, fmt.Errorf("create media deletion audit event: %w", err)
+	}
+
+	return event, nil
 }
 
 func (service *Service) authorizedItem(

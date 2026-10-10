@@ -274,6 +274,41 @@ func TestApplicationHandlerPersistsMediaAndGrantThroughSQLite(t *testing.T) {
 		!storedGrant.Permissions.Has(media.PermissionRead) {
 		t.Fatalf("unexpected stored permissions %v", storedGrant.Permissions.Values())
 	}
+
+	deleteRequest := httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/media/"+mediaBody.ID,
+		nil,
+	)
+	deleteRequest.Header.Set("Authorization", "Bearer "+sessionBody.AccessToken)
+	deleteResponse := httptest.NewRecorder()
+	handler.ServeHTTP(deleteResponse, deleteRequest)
+	if deleteResponse.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected media deletion status 204, got %d: %s",
+			deleteResponse.Code,
+			deleteResponse.Body.String(),
+		)
+	}
+
+	var deletionEventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events
+		 WHERE event_type = ? AND outcome = ? AND actor_id = ?
+		 AND actor_username = ? AND target_id = ? AND target_name = ?`,
+		audit.TypeMediaDeleted,
+		audit.OutcomeSuccess,
+		administrator.ID,
+		administrator.Username,
+		mediaBody.ID,
+		"Integration Book",
+	).Scan(&deletionEventCount); err != nil {
+		t.Fatalf("count media deletion audit events: %v", err)
+	}
+	if deletionEventCount != 1 {
+		t.Fatalf("expected one media deletion audit event, got %d", deletionEventCount)
+	}
 }
 
 func TestApplicationHandlerRegistersManagedUploadRoute(t *testing.T) {

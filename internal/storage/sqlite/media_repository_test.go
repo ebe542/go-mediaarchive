@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/media"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
@@ -202,7 +203,8 @@ func TestMediaRepositoryDeletesGrantsAuthorsAndItem(t *testing.T) {
 		t.Fatalf("insert media grant: %v", err)
 	}
 
-	if err := repository.Delete(ctx, item.ID); err != nil {
+	event := mediaDeletionAuditEvent(t, item)
+	if err := repository.DeleteWithAudit(ctx, item.ID, event); err != nil {
 		t.Fatalf("delete media: %v", err)
 	}
 	for _, table := range []string{"media_grants", "media_authors", "media_items"} {
@@ -218,6 +220,42 @@ func TestMediaRepositoryDeletesGrantsAuthorsAndItem(t *testing.T) {
 			t.Errorf("expected no %s records, got %d", table, count)
 		}
 	}
+	var eventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events WHERE id = ? AND event_type = ?`,
+		event.ID,
+		event.Type,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("count media deletion audit events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected one media deletion audit event, got %d", eventCount)
+	}
+}
+
+func TestMediaRepositoryRollsBackDeletionOnAuditConflict(t *testing.T) {
+	ctx, database := openMediaSchemaDatabase(t)
+	insertMediaSchemaUser(t, ctx, database, schemaOwnerID, "media_owner")
+	repository := sqlitestore.NewMediaRepository(database)
+	item := mediaRepositoryItem(t, []string{"Archive Author"})
+	if err := repository.Create(ctx, item); err != nil {
+		t.Fatalf("create media fixture: %v", err)
+	}
+	event := mediaDeletionAuditEvent(t, item)
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("store conflicting audit event: %v", err)
+	}
+
+	err := repository.DeleteWithAudit(ctx, item.ID, event)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected ErrEventConflict, got %v", err)
+	}
+	stored, err := repository.FindByID(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("find media after deletion rollback: %v", err)
+	}
+	assertMediaItem(t, stored, item)
 }
 
 func mediaRepositoryItem(test *testing.T, authors []string) media.Item {

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
@@ -17,7 +19,7 @@ type LocationFinder interface {
 
 // ManagedDeletionRepository atomically removes managed media database records.
 type ManagedDeletionRepository interface {
-	DeleteManaged(context.Context, string, string) error
+	DeleteManagedWithAudit(context.Context, string, string, audit.Event) error
 }
 
 // ManagedService adds coordinated content deletion to metadata operations.
@@ -49,44 +51,87 @@ func (service *ManagedService) DeleteItem(
 	actor identity.User,
 	id string,
 ) error {
-	if _, err := service.authorizedItem(
+	now := service.clock()
+	item, err := service.authorizeDeletion(
 		ctx,
 		actor,
 		id,
-		domainmedia.PermissionDelete,
-	); err != nil {
+		now,
+	)
+	if err != nil {
 		return err
 	}
 
 	location, err := service.locations.FindByMediaID(ctx, id)
 	if errors.Is(err, content.ErrLocationNotFound) {
-		return service.deleteAuthorizedMetadata(ctx, id)
+		return service.deleteAuthorizedMetadata(ctx, actor, item, now)
 	}
 	if err != nil {
 		return fmt.Errorf("retrieve content location for deletion: %w", err)
 	}
 
+	event, err := service.newDeletionEvent(
+		actor,
+		item,
+		audit.OutcomeSuccess,
+		"",
+		now,
+	)
+	if err != nil {
+		return err
+	}
 	staged, err := service.store.StageDelete(ctx, location.StorageKey)
 	if err != nil {
-		return fmt.Errorf("stage managed content deletion: %w", err)
+		operationErr := fmt.Errorf("stage managed content deletion: %w", err)
+
+		return service.recordDeletionEvent(
+			ctx,
+			actor,
+			item,
+			audit.OutcomeFailure,
+			audit.ReasonOperationFailure,
+			now,
+			operationErr,
+		)
 	}
-	if err := service.deletions.DeleteManaged(
+	if err := service.deletions.DeleteManagedWithAudit(
 		ctx,
 		id,
 		location.StorageKey,
+		event,
 	); err != nil {
 		rollbackErr := staged.Rollback(context.WithoutCancel(ctx))
 		if rollbackErr != nil {
-			return errors.Join(
+			operationErr := errors.Join(
 				fmt.Errorf("delete managed media records: %w", err),
 				fmt.Errorf("restore staged content: %w", rollbackErr),
+			)
+
+			return service.recordDeletionEvent(
+				context.WithoutCancel(ctx),
+				actor,
+				item,
+				audit.OutcomeFailure,
+				audit.ReasonOperationFailure,
+				service.clock(),
+				operationErr,
 			)
 		}
 
 		return fmt.Errorf("delete managed media records: %w", err)
 	}
 	if err := staged.Commit(context.WithoutCancel(ctx)); err != nil {
-		return fmt.Errorf("finalize managed content deletion: %w", err)
+		operationErr := fmt.Errorf("finalize managed content deletion: %w", err)
+
+		return service.recordDeletionEvent(
+			context.WithoutCancel(ctx),
+			actor,
+			item,
+			audit.OutcomeFailure,
+			audit.ReasonOperationFailure,
+			service.clock(),
+			operationErr,
+		)
 	}
 
 	return nil
@@ -94,9 +139,21 @@ func (service *ManagedService) DeleteItem(
 
 func (service *ManagedService) deleteAuthorizedMetadata(
 	ctx context.Context,
-	id string,
+	actor identity.User,
+	item domainmedia.Item,
+	now time.Time,
 ) error {
-	if err := service.repository.Delete(ctx, id); err != nil {
+	event, err := service.newDeletionEvent(
+		actor,
+		item,
+		audit.OutcomeSuccess,
+		"",
+		now,
+	)
+	if err != nil {
+		return err
+	}
+	if err := service.repository.DeleteWithAudit(ctx, item.ID, event); err != nil {
 		if errors.Is(err, domainmedia.ErrItemNotFound) {
 			return ErrMediaNotFound
 		}

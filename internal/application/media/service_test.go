@@ -9,6 +9,7 @@ import (
 	"time"
 
 	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
 )
@@ -28,6 +29,7 @@ type recordingMediaRepository struct {
 	created     domainmedia.Item
 	updated     domainmedia.Item
 	deletedID   string
+	deleteEvent audit.Event
 }
 
 func (repository *recordingMediaRepository) Create(_ context.Context, item domainmedia.Item) error {
@@ -48,6 +50,17 @@ func (repository *recordingMediaRepository) Update(_ context.Context, item domai
 
 func (repository *recordingMediaRepository) Delete(_ context.Context, id string) error {
 	repository.deletedID = id
+
+	return repository.deleteError
+}
+
+func (repository *recordingMediaRepository) DeleteWithAudit(
+	_ context.Context,
+	id string,
+	event audit.Event,
+) error {
+	repository.deletedID = id
+	repository.deleteEvent = event
 
 	return repository.deleteError
 }
@@ -82,6 +95,8 @@ func TestCreateItemAssignsActiveEditorOrAdministratorAsOwner(t *testing.T) {
 				repository,
 				&recordingGrantFinder{},
 				func() string { return serviceMediaID },
+				&recordingUploadAuditAppender{},
+				func() string { return "923e4567-e89b-12d3-a456-426614174000" },
 				func() time.Time { clockCalls++; return now },
 			)
 			actor := serviceUser(serviceActorID, role, true)
@@ -146,6 +161,13 @@ func TestOwnerReadsUpdatesAndDeletesWithoutGrantLookup(t *testing.T) {
 	}
 	if repository.deletedID != original.ID {
 		t.Fatalf("expected deleted ID %q, got %q", original.ID, repository.deletedID)
+	}
+	if repository.deleteEvent.Type != audit.TypeMediaDeleted ||
+		repository.deleteEvent.Outcome != audit.OutcomeSuccess ||
+		repository.deleteEvent.ActorID != owner.ID ||
+		repository.deleteEvent.TargetID != original.ID ||
+		repository.deleteEvent.TargetName != original.Title {
+		t.Fatalf("unexpected media deletion event: %+v", repository.deleteEvent)
 	}
 }
 
@@ -255,14 +277,79 @@ func TestUnauthorizedUpdateAndDeleteDoNotReachRepository(t *testing.T) {
 	}
 }
 
+func TestDeleteItemAuditsMaskedDenial(t *testing.T) {
+	item := serviceItem(t)
+	appender := &recordingUploadAuditAppender{}
+	service := appmedia.NewService(
+		&recordingMediaRepository{item: item},
+		&recordingGrantFinder{err: domainmedia.ErrGrantNotFound},
+		func() string { return serviceMediaID },
+		appender,
+		func() string { return "923e4567-e89b-12d3-a456-426614174000" },
+		func() time.Time { return serviceTime().Add(time.Hour) },
+	)
+	actor := serviceUser(serviceActorID, identity.RoleViewer, true)
+
+	err := service.DeleteItem(context.Background(), actor, item.ID)
+	if !errors.Is(err, appmedia.ErrMediaNotFound) {
+		t.Fatalf("expected ErrMediaNotFound, got %v", err)
+	}
+	if len(appender.events) != 1 ||
+		appender.events[0].Type != audit.TypeMediaDeleted ||
+		appender.events[0].Outcome != audit.OutcomeDenied ||
+		appender.events[0].Reason != audit.ReasonUnknownTarget ||
+		appender.events[0].TargetID != "" ||
+		appender.events[0].TargetName != "" {
+		t.Fatalf("unexpected masked deletion event: %+v", appender.events)
+	}
+}
+
+func TestDeleteItemFailsClosedWhenDenialCannotBeAudited(t *testing.T) {
+	auditError := errors.New("synthetic audit failure")
+	service := appmedia.NewService(
+		&recordingMediaRepository{findError: domainmedia.ErrItemNotFound},
+		&recordingGrantFinder{},
+		func() string { return serviceMediaID },
+		&recordingUploadAuditAppender{err: auditError},
+		func() string { return "923e4567-e89b-12d3-a456-426614174000" },
+		func() time.Time { return serviceTime().Add(time.Hour) },
+	)
+
+	err := service.DeleteItem(
+		context.Background(),
+		serviceUser(serviceActorID, identity.RoleViewer, true),
+		serviceMediaID,
+	)
+	if !errors.Is(err, auditError) {
+		t.Fatalf("expected audit failure, got %v", err)
+	}
+	if errors.Is(err, appmedia.ErrMediaNotFound) {
+		t.Fatalf("expected audit failure to hide the denial, got %v", err)
+	}
+}
+
 func newMetadataService(
 	repository *recordingMediaRepository,
 	grants *recordingGrantFinder,
+) *appmedia.Service {
+	return newMetadataServiceWithAudit(
+		repository,
+		grants,
+		&recordingUploadAuditAppender{},
+	)
+}
+
+func newMetadataServiceWithAudit(
+	repository *recordingMediaRepository,
+	grants *recordingGrantFinder,
+	appender audit.Appender,
 ) *appmedia.Service {
 	return appmedia.NewService(
 		repository,
 		grants,
 		func() string { return serviceMediaID },
+		appender,
+		func() string { return "923e4567-e89b-12d3-a456-426614174000" },
 		func() time.Time { return serviceTime().Add(time.Hour) },
 	)
 }

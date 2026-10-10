@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 )
@@ -28,16 +29,19 @@ func (finder *recordingLocationFinder) FindByMediaID(
 type recordingManagedDeletionRepository struct {
 	mediaID    string
 	storageKey string
+	event      audit.Event
 	err        error
 }
 
-func (repository *recordingManagedDeletionRepository) DeleteManaged(
+func (repository *recordingManagedDeletionRepository) DeleteManagedWithAudit(
 	_ context.Context,
 	mediaID string,
 	storageKey string,
+	event audit.Event,
 ) error {
 	repository.mediaID = mediaID
 	repository.storageKey = storageKey
+	repository.event = event
 
 	return repository.err
 }
@@ -111,6 +115,12 @@ func TestManagedServiceDeletesContentAndRecords(t *testing.T) {
 	if baseRepository.deletedID != "" {
 		t.Fatal("expected managed repository to own database deletion")
 	}
+	if repository.event.Type != audit.TypeMediaDeleted ||
+		repository.event.Outcome != audit.OutcomeSuccess ||
+		repository.event.TargetID != item.ID ||
+		repository.event.TargetName != item.Title {
+		t.Fatalf("unexpected managed deletion event: %+v", repository.event)
+	}
 }
 
 func TestManagedServiceRollsBackContentOnDatabaseFailure(t *testing.T) {
@@ -146,8 +156,13 @@ func TestManagedServiceKeepsRollbackFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create location: %v", err)
 	}
+	appender := &recordingUploadAuditAppender{}
 	service := appmedia.NewManagedService(
-		newMetadataService(&recordingMediaRepository{item: item}, &recordingGrantFinder{}),
+		newMetadataServiceWithAudit(
+			&recordingMediaRepository{item: item},
+			&recordingGrantFinder{},
+			appender,
+		),
 		&recordingLocationFinder{location: location},
 		&recordingManagedDeletionRepository{err: databaseError},
 		&recordingDeletionStore{deletion: &recordingStagedDeletion{rollbackError: rollbackError}},
@@ -160,6 +175,80 @@ func TestManagedServiceKeepsRollbackFailure(t *testing.T) {
 	)
 	if !errors.Is(err, databaseError) || !errors.Is(err, rollbackError) {
 		t.Fatalf("expected database and rollback errors, got %v", err)
+	}
+	if len(appender.events) != 1 ||
+		appender.events[0].Outcome != audit.OutcomeFailure ||
+		appender.events[0].Reason != audit.ReasonOperationFailure {
+		t.Fatalf("unexpected rollback failure event: %+v", appender.events)
+	}
+}
+
+func TestManagedServiceAuditsStagingFailure(t *testing.T) {
+	stageError := errors.New("staging failed")
+	item := serviceItem(t)
+	location, err := content.NewLocation(item.ID, "12/"+item.ID, item.CreatedAt)
+	if err != nil {
+		t.Fatalf("create location: %v", err)
+	}
+	appender := &recordingUploadAuditAppender{}
+	service := appmedia.NewManagedService(
+		newMetadataServiceWithAudit(
+			&recordingMediaRepository{item: item},
+			&recordingGrantFinder{},
+			appender,
+		),
+		&recordingLocationFinder{location: location},
+		&recordingManagedDeletionRepository{},
+		&recordingDeletionStore{err: stageError},
+	)
+
+	err = service.DeleteItem(
+		context.Background(),
+		serviceUser(item.OwnerID, identity.RoleViewer, true),
+		item.ID,
+	)
+	if !errors.Is(err, stageError) {
+		t.Fatalf("expected staging error, got %v", err)
+	}
+	if len(appender.events) != 1 ||
+		appender.events[0].Outcome != audit.OutcomeFailure ||
+		appender.events[0].Reason != audit.ReasonOperationFailure {
+		t.Fatalf("unexpected staging failure event: %+v", appender.events)
+	}
+}
+
+func TestManagedServiceAuditsFinalizationFailure(t *testing.T) {
+	commitError := errors.New("finalization failed")
+	item := serviceItem(t)
+	location, err := content.NewLocation(item.ID, "12/"+item.ID, item.CreatedAt)
+	if err != nil {
+		t.Fatalf("create location: %v", err)
+	}
+	appender := &recordingUploadAuditAppender{}
+	deletion := &recordingStagedDeletion{commitError: commitError}
+	service := appmedia.NewManagedService(
+		newMetadataServiceWithAudit(
+			&recordingMediaRepository{item: item},
+			&recordingGrantFinder{},
+			appender,
+		),
+		&recordingLocationFinder{location: location},
+		&recordingManagedDeletionRepository{},
+		&recordingDeletionStore{deletion: deletion},
+	)
+
+	err = service.DeleteItem(
+		context.Background(),
+		serviceUser(item.OwnerID, identity.RoleViewer, true),
+		item.ID,
+	)
+	if !errors.Is(err, commitError) {
+		t.Fatalf("expected finalization error, got %v", err)
+	}
+	if len(appender.events) != 1 ||
+		appender.events[0].Outcome != audit.OutcomeFailure ||
+		appender.events[0].Reason != audit.ReasonOperationFailure {
+		t.Fatalf("unexpected finalization failure event: %+v", appender.events)
 	}
 }
 

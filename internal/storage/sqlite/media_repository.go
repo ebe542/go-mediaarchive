@@ -223,6 +223,23 @@ func (repository *MediaRepository) Delete(
 	ctx context.Context,
 	id string,
 ) error {
+	return repository.delete(ctx, id, nil)
+}
+
+// DeleteWithAudit atomically removes media metadata and records its deletion.
+func (repository *MediaRepository) DeleteWithAudit(
+	ctx context.Context,
+	id string,
+	event audit.Event,
+) error {
+	return repository.delete(ctx, id, &event)
+}
+
+func (repository *MediaRepository) delete(
+	ctx context.Context,
+	id string,
+	event *audit.Event,
+) error {
 	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin media deletion: %w", err)
@@ -255,6 +272,11 @@ func (repository *MediaRepository) Delete(
 	if err := requireOneMediaRow(result); err != nil {
 		return err
 	}
+	if event != nil {
+		if err := insertAuditEvent(ctx, transaction, *event); err != nil {
+			return fmt.Errorf("record media deletion: %w", err)
+		}
+	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit media deletion: %w", err)
 	}
@@ -268,6 +290,25 @@ func (repository *MediaRepository) DeleteManaged(
 	ctx context.Context,
 	id string,
 	storageKey string,
+) error {
+	return repository.deleteManaged(ctx, id, storageKey, nil)
+}
+
+// DeleteManagedWithAudit atomically removes managed media and records deletion.
+func (repository *MediaRepository) DeleteManagedWithAudit(
+	ctx context.Context,
+	id string,
+	storageKey string,
+	event audit.Event,
+) error {
+	return repository.deleteManaged(ctx, id, storageKey, &event)
+}
+
+func (repository *MediaRepository) deleteManaged(
+	ctx context.Context,
+	id string,
+	storageKey string,
+	event *audit.Event,
 ) error {
 	transaction, err := repository.database.BeginTx(ctx, nil)
 	if err != nil {
@@ -312,6 +353,11 @@ func (repository *MediaRepository) DeleteManaged(
 	}
 	if err := requireOneMediaRow(result); err != nil {
 		return err
+	}
+	if event != nil {
+		if err := insertAuditEvent(ctx, transaction, *event); err != nil {
+			return fmt.Errorf("record managed media deletion: %w", err)
+		}
 	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit managed media deletion: %w", err)
