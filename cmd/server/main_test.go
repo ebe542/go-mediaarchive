@@ -274,6 +274,53 @@ func TestApplicationHandlerPersistsMediaAndGrantThroughSQLite(t *testing.T) {
 		!storedGrant.Permissions.Has(media.PermissionRead) {
 		t.Fatalf("unexpected stored permissions %v", storedGrant.Permissions.Values())
 	}
+	grantTargetID := mediaBody.ID + ":" + grantee.ID
+	var replacementEventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events
+		 WHERE event_type = ? AND outcome = ? AND actor_id = ? AND target_id = ?`,
+		audit.TypeMediaGrantReplaced,
+		audit.OutcomeSuccess,
+		administrator.ID,
+		grantTargetID,
+	).Scan(&replacementEventCount); err != nil {
+		t.Fatalf("count grant replacement audit events: %v", err)
+	}
+	if replacementEventCount != 1 {
+		t.Fatalf("expected one grant replacement audit event, got %d", replacementEventCount)
+	}
+
+	revokeRequest := httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/media/"+mediaBody.ID+"/grants/"+grantee.ID,
+		nil,
+	)
+	revokeRequest.Header.Set("Authorization", "Bearer "+sessionBody.AccessToken)
+	revokeResponse := httptest.NewRecorder()
+	handler.ServeHTTP(revokeResponse, revokeRequest)
+	if revokeResponse.Code != http.StatusNoContent {
+		t.Fatalf(
+			"expected grant revocation status 204, got %d: %s",
+			revokeResponse.Code,
+			revokeResponse.Body.String(),
+		)
+	}
+	var revocationEventCount int
+	if err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM audit_events
+		 WHERE event_type = ? AND outcome = ? AND actor_id = ? AND target_id = ?`,
+		audit.TypeMediaGrantRevoked,
+		audit.OutcomeSuccess,
+		administrator.ID,
+		grantTargetID,
+	).Scan(&revocationEventCount); err != nil {
+		t.Fatalf("count grant revocation audit events: %v", err)
+	}
+	if revocationEventCount != 1 {
+		t.Fatalf("expected one grant revocation audit event, got %d", revocationEventCount)
+	}
 
 	deleteRequest := httptest.NewRequest(
 		http.MethodDelete,

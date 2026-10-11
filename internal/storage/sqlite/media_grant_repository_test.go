@@ -2,9 +2,13 @@ package sqlite_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
+	"github.com/ebe542/go-mediaarchive/internal/identity"
 	"github.com/ebe542/go-mediaarchive/internal/media"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
@@ -12,7 +16,7 @@ import (
 const secondSchemaGranteeID = "423e4567-e89b-12d3-a456-426614174000"
 
 func TestMediaGrantRepositorySavesFindsAndReplacesMask(t *testing.T) {
-	ctx, repository := mediaGrantRepositoryFixture(t)
+	ctx, repository, _ := mediaGrantRepositoryFixture(t)
 	initial := mediaGrantFixture(
 		t,
 		schemaGranteeID,
@@ -46,7 +50,7 @@ func TestMediaGrantRepositorySavesFindsAndReplacesMask(t *testing.T) {
 }
 
 func TestMediaGrantRepositoryListsInUserIDOrder(t *testing.T) {
-	ctx, repository := mediaGrantRepositoryFixture(t)
+	ctx, repository, _ := mediaGrantRepositoryFixture(t)
 	grants := []media.Grant{
 		mediaGrantFixture(t, secondSchemaGranteeID, media.PermissionDownload),
 		mediaGrantFixture(t, schemaGranteeID, media.PermissionRead),
@@ -69,7 +73,7 @@ func TestMediaGrantRepositoryListsInUserIDOrder(t *testing.T) {
 }
 
 func TestMediaGrantRepositoryReturnsNonNilEmptyList(t *testing.T) {
-	ctx, repository := mediaGrantRepositoryFixture(t)
+	ctx, repository, _ := mediaGrantRepositoryFixture(t)
 
 	grants, err := repository.ListByMedia(ctx, schemaMediaID)
 	if err != nil {
@@ -81,12 +85,18 @@ func TestMediaGrantRepositoryReturnsNonNilEmptyList(t *testing.T) {
 }
 
 func TestMediaGrantRepositoryDeletesExplicitly(t *testing.T) {
-	ctx, repository := mediaGrantRepositoryFixture(t)
+	ctx, repository, _ := mediaGrantRepositoryFixture(t)
 	grant := mediaGrantFixture(t, schemaGranteeID, media.PermissionRead)
 	if err := repository.Save(ctx, grant); err != nil {
 		t.Fatalf("save grant fixture: %v", err)
 	}
-	if err := repository.Delete(ctx, grant.MediaID, grant.UserID); err != nil {
+	event := grantAuditEvent(
+		t, grant, audit.TypeMediaGrantRevoked,
+		"c23e4567-e89b-12d3-a456-426614174000",
+	)
+	if err := repository.DeleteWithAudit(
+		ctx, grant.MediaID, grant.UserID, event,
+	); err != nil {
 		t.Fatalf("delete grant: %v", err)
 	}
 	if _, err := repository.Find(ctx, grant.MediaID, grant.UserID); !errors.Is(err, media.ErrGrantNotFound) {
@@ -98,7 +108,7 @@ func TestMediaGrantRepositoryDeletesExplicitly(t *testing.T) {
 }
 
 func TestMediaGrantRepositoryRejectsInvalidGrantBeforeSave(t *testing.T) {
-	ctx, repository := mediaGrantRepositoryFixture(t)
+	ctx, repository, _ := mediaGrantRepositoryFixture(t)
 
 	for name, grant := range map[string]media.Grant{
 		"empty permissions": {
@@ -123,7 +133,7 @@ func TestMediaGrantRepositoryRejectsInvalidGrantBeforeSave(t *testing.T) {
 }
 
 func TestMediaGrantRepositoryEnforcesForeignKeys(t *testing.T) {
-	ctx, repository := mediaGrantRepositoryFixture(t)
+	ctx, repository, _ := mediaGrantRepositoryFixture(t)
 	permissions := mediaPermissionSet(t, media.PermissionRead)
 
 	for name, grant := range map[string]media.Grant{
@@ -144,9 +154,45 @@ func TestMediaGrantRepositoryEnforcesForeignKeys(t *testing.T) {
 	}
 }
 
+func TestMediaGrantRepositoryRollsBackChangesOnAuditConflict(t *testing.T) {
+	ctx, repository, database := mediaGrantRepositoryFixture(t)
+	initial := mediaGrantFixture(t, schemaGranteeID, media.PermissionRead)
+	if err := repository.Save(ctx, initial); err != nil {
+		t.Fatalf("save initial grant: %v", err)
+	}
+	event := grantAuditEvent(
+		t, initial, audit.TypeMediaGrantReplaced,
+		"b23e4567-e89b-12d3-a456-426614174000",
+	)
+	if err := sqlitestore.NewAuditRepository(database).Append(ctx, event); err != nil {
+		t.Fatalf("store conflicting audit event: %v", err)
+	}
+
+	replacement := mediaGrantFixture(t, schemaGranteeID, media.PermissionDownload)
+	err := repository.SaveWithAudit(ctx, replacement, event)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected replacement ErrEventConflict, got %v", err)
+	}
+	stored, err := repository.Find(ctx, initial.MediaID, initial.UserID)
+	if err != nil {
+		t.Fatalf("find rolled-back replacement: %v", err)
+	}
+	if stored != initial {
+		t.Fatalf("expected original grant %+v, got %+v", initial, stored)
+	}
+
+	err = repository.DeleteWithAudit(ctx, initial.MediaID, initial.UserID, event)
+	if !errors.Is(err, audit.ErrEventConflict) {
+		t.Fatalf("expected revocation ErrEventConflict, got %v", err)
+	}
+	if _, err := repository.Find(ctx, initial.MediaID, initial.UserID); err != nil {
+		t.Fatalf("find rolled-back revocation: %v", err)
+	}
+}
+
 func mediaGrantRepositoryFixture(
 	test *testing.T,
-) (context.Context, *sqlitestore.MediaGrantRepository) {
+) (context.Context, *sqlitestore.MediaGrantRepository, *sql.DB) {
 	test.Helper()
 
 	ctx, database := openMediaSchemaDatabase(test)
@@ -155,7 +201,33 @@ func mediaGrantRepositoryFixture(
 	insertMediaSchemaUser(test, ctx, database, secondSchemaGranteeID, "second_grantee")
 	insertValidSchemaMedia(test, ctx, database)
 
-	return ctx, sqlitestore.NewMediaGrantRepository(database)
+	return ctx, sqlitestore.NewMediaGrantRepository(database), database
+}
+
+func grantAuditEvent(
+	t *testing.T,
+	grant media.Grant,
+	eventType audit.Type,
+	eventID string,
+) audit.Event {
+	t.Helper()
+
+	event, err := audit.NewEvent(audit.Event{
+		ID:            eventID,
+		OccurredAt:    time.Date(2026, time.October, 10, 10, 0, 0, 0, time.UTC),
+		Type:          eventType,
+		Outcome:       audit.OutcomeSuccess,
+		ActorID:       schemaOwnerID,
+		ActorUsername: "media_owner",
+		ActorRole:     string(identity.RoleEditor),
+		TargetType:    audit.TargetGrant,
+		TargetID:      grant.MediaID + ":" + grant.UserID,
+	})
+	if err != nil {
+		t.Fatalf("create media grant audit event: %v", err)
+	}
+
+	return event
 }
 
 func mediaGrantFixture(

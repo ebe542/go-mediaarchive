@@ -412,6 +412,9 @@ func newApplicationHandlerWithContent(
 		mediaRepository,
 		grantRepository,
 		userRepository,
+		auditRepository,
+		uuid.NewString,
+		time.Now,
 	)
 	mediaMetadataService := api.MediaMetadataService(mediaService)
 	options := []api.Option{

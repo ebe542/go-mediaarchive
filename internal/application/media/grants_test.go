@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
 )
@@ -19,9 +21,11 @@ type recordingGrantRepository struct {
 	listCalls    int
 	listError    error
 	saved        domainmedia.Grant
+	savedEvent   audit.Event
 	saveError    error
 	deletedMedia string
 	deletedUser  string
+	deletedEvent audit.Event
 	deleteError  error
 }
 
@@ -47,6 +51,17 @@ func (repository *recordingGrantRepository) Save(
 	grant domainmedia.Grant,
 ) error {
 	repository.saved = grant
+
+	return repository.saveError
+}
+
+func (repository *recordingGrantRepository) SaveWithAudit(
+	_ context.Context,
+	grant domainmedia.Grant,
+	event audit.Event,
+) error {
+	repository.saved = grant
+	repository.savedEvent = event
 
 	return repository.saveError
 }
@@ -79,6 +94,19 @@ func (repository *recordingGrantRepository) Delete(
 	return repository.deleteError
 }
 
+func (repository *recordingGrantRepository) DeleteWithAudit(
+	_ context.Context,
+	mediaID string,
+	userID string,
+	event audit.Event,
+) error {
+	repository.deletedMedia = mediaID
+	repository.deletedUser = userID
+	repository.deletedEvent = event
+
+	return repository.deleteError
+}
+
 type recordingUserFinder struct {
 	user  identity.User
 	err   error
@@ -104,7 +132,7 @@ func TestOwnerReplacesInspectsListsAndRevokesGrant(t *testing.T) {
 	repository := &recordingMediaRepository{item: item}
 	grants := &recordingGrantRepository{grants: map[string]domainmedia.Grant{serviceGranteeID: existing}}
 	users := &recordingUserFinder{user: serviceUser(serviceGranteeID, identity.RoleViewer, true)}
-	service := appmedia.NewGrantService(repository, grants, users)
+	service := newGrantService(repository, grants, users, &recordingUploadAuditAppender{})
 	owner := serviceUser(item.OwnerID, identity.RoleViewer, true)
 
 	replaced, err := service.ReplaceGrant(
@@ -120,6 +148,11 @@ func TestOwnerReplacesInspectsListsAndRevokesGrant(t *testing.T) {
 	if replaced != existing || grants.saved != existing {
 		t.Fatalf("expected complete replacement grant %+v, got %+v", existing, replaced)
 	}
+	if grants.savedEvent.Type != audit.TypeMediaGrantReplaced ||
+		grants.savedEvent.Outcome != audit.OutcomeSuccess ||
+		grants.savedEvent.TargetID != item.ID+":"+serviceGranteeID {
+		t.Fatalf("unexpected grant replacement event: %+v", grants.savedEvent)
+	}
 	if _, err := service.GrantByUser(context.Background(), owner, item.ID, serviceGranteeID); err != nil {
 		t.Fatalf("inspect grant: %v", err)
 	}
@@ -131,6 +164,11 @@ func TestOwnerReplacesInspectsListsAndRevokesGrant(t *testing.T) {
 	}
 	if grants.deletedMedia != item.ID || grants.deletedUser != serviceGranteeID {
 		t.Fatalf("expected explicit grant deletion, got %+v", grants)
+	}
+	if grants.deletedEvent.Type != audit.TypeMediaGrantRevoked ||
+		grants.deletedEvent.Outcome != audit.OutcomeSuccess ||
+		grants.deletedEvent.TargetID != item.ID+":"+serviceGranteeID {
+		t.Fatalf("unexpected grant revocation event: %+v", grants.deletedEvent)
 	}
 	// The sole Find call inspects the requested grant; owner authorization performs no lookup.
 	if len(grants.findCalls) != 1 || grants.listCalls != 1 {
@@ -151,7 +189,10 @@ func TestExplicitSharePermissionAuthorizesGrantReplacement(t *testing.T) {
 	permissions := servicePermissionSet(t, domainmedia.PermissionDownload)
 	grants := &recordingGrantRepository{grants: map[string]domainmedia.Grant{serviceActorID: shareGrant}}
 	users := &recordingUserFinder{user: serviceUser(serviceGranteeID, identity.RoleViewer, true)}
-	service := appmedia.NewGrantService(&recordingMediaRepository{item: item}, grants, users)
+	service := newGrantService(
+		&recordingMediaRepository{item: item}, grants, users,
+		&recordingUploadAuditAppender{},
+	)
 
 	if _, err := service.ReplaceGrant(
 		context.Background(),
@@ -179,7 +220,10 @@ func TestGrantOperationsRequireShareAndMaskMedia(t *testing.T) {
 	}
 	grants := &recordingGrantRepository{grants: map[string]domainmedia.Grant{serviceActorID: discoverGrant}}
 	users := &recordingUserFinder{user: serviceUser(serviceGranteeID, identity.RoleViewer, true)}
-	service := appmedia.NewGrantService(&recordingMediaRepository{item: item}, grants, users)
+	service := newGrantService(
+		&recordingMediaRepository{item: item}, grants, users,
+		&recordingUploadAuditAppender{},
+	)
 	actor := serviceUser(serviceActorID, identity.RoleAdmin, true)
 
 	_, replaceErr := service.ReplaceGrant(
@@ -225,7 +269,10 @@ func TestReplaceGrantRejectsInvalidRecipientsAndPermissions(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			grants := &recordingGrantRepository{}
 			users := &recordingUserFinder{user: testCase.user, err: testCase.userError}
-			service := appmedia.NewGrantService(&recordingMediaRepository{item: item}, grants, users)
+			appender := &recordingUploadAuditAppender{}
+			service := newGrantService(
+				&recordingMediaRepository{item: item}, grants, users, appender,
+			)
 
 			_, err := service.ReplaceGrant(
 				context.Background(),
@@ -240,6 +287,10 @@ func TestReplaceGrantRejectsInvalidRecipientsAndPermissions(t *testing.T) {
 			if grants.saved.MediaID != "" {
 				t.Fatal("expected rejected grant not to be persisted")
 			}
+			if len(appender.events) != 1 ||
+				appender.events[0].Outcome != audit.OutcomeDenied {
+				t.Fatalf("unexpected denied grant event: %+v", appender.events)
+			}
 		})
 	}
 }
@@ -247,10 +298,12 @@ func TestReplaceGrantRejectsInvalidRecipientsAndPermissions(t *testing.T) {
 func TestRevokeGrantPreservesRepositoryNotFound(t *testing.T) {
 	item := serviceItem(t)
 	grants := &recordingGrantRepository{deleteError: domainmedia.ErrGrantNotFound}
-	service := appmedia.NewGrantService(
+	appender := &recordingUploadAuditAppender{}
+	service := newGrantService(
 		&recordingMediaRepository{item: item},
 		grants,
 		&recordingUserFinder{},
+		appender,
 	)
 
 	err := service.RevokeGrant(
@@ -262,4 +315,51 @@ func TestRevokeGrantPreservesRepositoryNotFound(t *testing.T) {
 	if !errors.Is(err, domainmedia.ErrGrantNotFound) {
 		t.Fatalf("expected ErrGrantNotFound, got %v", err)
 	}
+	if len(appender.events) != 1 ||
+		appender.events[0].Type != audit.TypeMediaGrantRevoked ||
+		appender.events[0].Outcome != audit.OutcomeDenied ||
+		appender.events[0].Reason != audit.ReasonUnknownTarget {
+		t.Fatalf("unexpected missing grant event: %+v", appender.events)
+	}
+}
+
+func TestGrantServiceFailsClosedWhenDenialCannotBeAudited(t *testing.T) {
+	auditError := errors.New("synthetic audit failure")
+	item := serviceItem(t)
+	service := newGrantService(
+		&recordingMediaRepository{item: item},
+		&recordingGrantRepository{},
+		&recordingUserFinder{},
+		&recordingUploadAuditAppender{err: auditError},
+	)
+
+	_, err := service.ReplaceGrant(
+		context.Background(),
+		serviceUser(item.OwnerID, identity.RoleViewer, true),
+		item.ID,
+		item.OwnerID,
+		servicePermissionSet(t, domainmedia.PermissionRead),
+	)
+	if !errors.Is(err, auditError) {
+		t.Fatalf("expected audit failure, got %v", err)
+	}
+	if errors.Is(err, appmedia.ErrOwnerGrant) {
+		t.Fatalf("expected audit failure to hide the denial, got %v", err)
+	}
+}
+
+func newGrantService(
+	mediaFinder appmedia.MediaFinder,
+	grants appmedia.GrantRepository,
+	users appmedia.UserFinder,
+	appender audit.Appender,
+) *appmedia.GrantService {
+	return appmedia.NewGrantService(
+		mediaFinder,
+		grants,
+		users,
+		appender,
+		func() string { return "b23e4567-e89b-12d3-a456-426614174000" },
+		func() time.Time { return serviceTime().Add(time.Hour) },
+	)
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/media"
 )
 
@@ -27,11 +28,34 @@ func (repository *MediaGrantRepository) Save(
 	ctx context.Context,
 	grant media.Grant,
 ) error {
+	return repository.save(ctx, grant, nil)
+}
+
+// SaveWithAudit atomically replaces a grant and records the change.
+func (repository *MediaGrantRepository) SaveWithAudit(
+	ctx context.Context,
+	grant media.Grant,
+	event audit.Event,
+) error {
+	return repository.save(ctx, grant, &event)
+}
+
+func (repository *MediaGrantRepository) save(
+	ctx context.Context,
+	grant media.Grant,
+	event *audit.Event,
+) error {
 	if err := grant.Validate(); err != nil {
 		return fmt.Errorf("validate media grant for save: %w", err)
 	}
 
-	_, err := repository.database.ExecContext(
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin media grant save: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	_, err = transaction.ExecContext(
 		ctx,
 		`
 			INSERT INTO media_grants (media_id, user_id, permissions)
@@ -45,6 +69,14 @@ func (repository *MediaGrantRepository) Save(
 	)
 	if err != nil {
 		return fmt.Errorf("save media grant: %w", err)
+	}
+	if event != nil {
+		if err := insertAuditEvent(ctx, transaction, *event); err != nil {
+			return fmt.Errorf("record media grant replacement: %w", err)
+		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit media grant save: %w", err)
 	}
 
 	return nil
@@ -128,7 +160,32 @@ func (repository *MediaGrantRepository) Delete(
 	mediaID string,
 	userID string,
 ) error {
-	result, err := repository.database.ExecContext(
+	return repository.delete(ctx, mediaID, userID, nil)
+}
+
+// DeleteWithAudit atomically removes a grant and records its revocation.
+func (repository *MediaGrantRepository) DeleteWithAudit(
+	ctx context.Context,
+	mediaID string,
+	userID string,
+	event audit.Event,
+) error {
+	return repository.delete(ctx, mediaID, userID, &event)
+}
+
+func (repository *MediaGrantRepository) delete(
+	ctx context.Context,
+	mediaID string,
+	userID string,
+	event *audit.Event,
+) error {
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin media grant deletion: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	result, err := transaction.ExecContext(
 		ctx,
 		`DELETE FROM media_grants WHERE media_id = ? AND user_id = ?`,
 		mediaID,
@@ -143,6 +200,14 @@ func (repository *MediaGrantRepository) Delete(
 	}
 	if affectedRows != 1 {
 		return media.ErrGrantNotFound
+	}
+	if event != nil {
+		if err := insertAuditEvent(ctx, transaction, *event); err != nil {
+			return fmt.Errorf("record media grant revocation: %w", err)
+		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit media grant deletion: %w", err)
 	}
 
 	return nil

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
 )
@@ -19,9 +21,9 @@ var (
 // GrantRepository persists complete per-user media permission sets.
 type GrantRepository interface {
 	GrantFinder
-	Save(context.Context, domainmedia.Grant) error
+	SaveWithAudit(context.Context, domainmedia.Grant, audit.Event) error
 	ListByMedia(context.Context, string) ([]domainmedia.Grant, error)
-	Delete(context.Context, string, string) error
+	DeleteWithAudit(context.Context, string, string, audit.Event) error
 }
 
 // UserFinder resolves grant recipients without exposing broader user operations.
@@ -31,9 +33,12 @@ type UserFinder interface {
 
 // GrantService coordinates authorized media grant operations.
 type GrantService struct {
-	media  MediaFinder
-	grants GrantRepository
-	users  UserFinder
+	media    MediaFinder
+	grants   GrantRepository
+	users    UserFinder
+	audit    audit.Appender
+	eventIDs AuditEventIDGenerator
+	clock    Clock
 }
 
 // NewGrantService creates a storage-independent media grant service.
@@ -41,8 +46,18 @@ func NewGrantService(
 	media MediaFinder,
 	grants GrantRepository,
 	users UserFinder,
+	auditAppender audit.Appender,
+	eventIDGenerator AuditEventIDGenerator,
+	clock Clock,
 ) *GrantService {
-	return &GrantService{media: media, grants: grants, users: users}
+	return &GrantService{
+		media:    media,
+		grants:   grants,
+		users:    users,
+		audit:    auditAppender,
+		eventIDs: eventIDGenerator,
+		clock:    clock,
+	}
 }
 
 // ReplaceGrant replaces one active user's complete permission set.
@@ -53,27 +68,64 @@ func (service *GrantService) ReplaceGrant(
 	userID string,
 	permissions domainmedia.PermissionSet,
 ) (domainmedia.Grant, error) {
+	now := service.clock()
 	item, err := service.sharedItem(ctx, actor, mediaID)
 	if err != nil {
-		return domainmedia.Grant{}, err
+		if !errors.Is(err, ErrMediaNotFound) {
+			return domainmedia.Grant{}, err
+		}
+
+		return domainmedia.Grant{}, service.recordGrantEvent(
+			ctx, actor, audit.TypeMediaGrantReplaced, "",
+			audit.OutcomeDenied, audit.ReasonUnknownTarget, now, err,
+		)
 	}
 	if userID == item.OwnerID {
-		return domainmedia.Grant{}, ErrOwnerGrant
+		return domainmedia.Grant{}, service.recordGrantEvent(
+			ctx, actor, audit.TypeMediaGrantReplaced,
+			grantTargetID(mediaID, userID), audit.OutcomeDenied,
+			audit.ReasonResourceConflict, now, ErrOwnerGrant,
+		)
 	}
 
 	grant, err := domainmedia.NewGrant(mediaID, userID, permissions)
 	if err != nil {
-		return domainmedia.Grant{}, fmt.Errorf("create media grant: %w", err)
+		operationErr := fmt.Errorf("create media grant: %w", err)
+
+		return domainmedia.Grant{}, service.recordGrantEvent(
+			ctx, actor, audit.TypeMediaGrantReplaced, "",
+			audit.OutcomeDenied, audit.ReasonInvalidInput, now, operationErr,
+		)
 	}
 
 	user, err := service.users.FindByID(ctx, userID)
 	if err != nil {
-		return domainmedia.Grant{}, fmt.Errorf("retrieve media grantee: %w", err)
+		operationErr := fmt.Errorf("retrieve media grantee: %w", err)
+		if errors.Is(err, identity.ErrUserNotFound) {
+			return domainmedia.Grant{}, service.recordGrantEvent(
+				ctx, actor, audit.TypeMediaGrantReplaced,
+				grantTargetID(mediaID, userID), audit.OutcomeDenied,
+				audit.ReasonUnknownTarget, now, operationErr,
+			)
+		}
+
+		return domainmedia.Grant{}, operationErr
 	}
 	if !user.Active {
-		return domainmedia.Grant{}, ErrInactiveGrantee
+		return domainmedia.Grant{}, service.recordGrantEvent(
+			ctx, actor, audit.TypeMediaGrantReplaced,
+			grantTargetID(mediaID, userID), audit.OutcomeDenied,
+			audit.ReasonInactiveUser, now, ErrInactiveGrantee,
+		)
 	}
-	if err := service.grants.Save(ctx, grant); err != nil {
+	event, err := service.newGrantEvent(
+		actor, audit.TypeMediaGrantReplaced, grantTargetID(mediaID, userID),
+		audit.OutcomeSuccess, "", now,
+	)
+	if err != nil {
+		return domainmedia.Grant{}, err
+	}
+	if err := service.grants.SaveWithAudit(ctx, grant, event); err != nil {
 		return domainmedia.Grant{}, fmt.Errorf("persist media grant: %w", err)
 	}
 
@@ -124,18 +176,99 @@ func (service *GrantService) RevokeGrant(
 	mediaID string,
 	userID string,
 ) error {
+	now := service.clock()
 	item, err := service.sharedItem(ctx, actor, mediaID)
+	if err != nil {
+		if !errors.Is(err, ErrMediaNotFound) {
+			return err
+		}
+
+		return service.recordGrantEvent(
+			ctx, actor, audit.TypeMediaGrantRevoked, "",
+			audit.OutcomeDenied, audit.ReasonUnknownTarget, now, err,
+		)
+	}
+	if userID == item.OwnerID {
+		return service.recordGrantEvent(
+			ctx, actor, audit.TypeMediaGrantRevoked,
+			grantTargetID(mediaID, userID), audit.OutcomeDenied,
+			audit.ReasonResourceConflict, now, ErrOwnerGrant,
+		)
+	}
+	if err := identity.ValidateUserID(userID); err != nil {
+		operationErr := fmt.Errorf("validate revoked grant user: %w", err)
+
+		return service.recordGrantEvent(
+			ctx, actor, audit.TypeMediaGrantRevoked, "",
+			audit.OutcomeDenied, audit.ReasonInvalidInput, now, operationErr,
+		)
+	}
+	targetID := grantTargetID(mediaID, userID)
+	event, err := service.newGrantEvent(
+		actor, audit.TypeMediaGrantRevoked, targetID,
+		audit.OutcomeSuccess, "", now,
+	)
 	if err != nil {
 		return err
 	}
-	if userID == item.OwnerID {
-		return ErrOwnerGrant
-	}
-	if err := service.grants.Delete(ctx, mediaID, userID); err != nil {
+	if err := service.grants.DeleteWithAudit(ctx, mediaID, userID, event); err != nil {
+		if errors.Is(err, domainmedia.ErrGrantNotFound) {
+			return service.recordGrantEvent(
+				ctx, actor, audit.TypeMediaGrantRevoked, targetID,
+				audit.OutcomeDenied, audit.ReasonUnknownTarget, now, err,
+			)
+		}
+
 		return fmt.Errorf("delete media grant: %w", err)
 	}
 
 	return nil
+}
+
+func (service *GrantService) recordGrantEvent(
+	ctx context.Context,
+	actor identity.User,
+	eventType audit.Type,
+	targetID string,
+	outcome audit.Outcome,
+	reason audit.Reason,
+	now time.Time,
+	operationErr error,
+) error {
+	event, err := service.newGrantEvent(actor, eventType, targetID, outcome, reason, now)
+	if err != nil {
+		return err
+	}
+	if err := service.audit.Append(ctx, event); err != nil {
+		return fmt.Errorf("record media grant event: %w", err)
+	}
+
+	return operationErr
+}
+
+func (service *GrantService) newGrantEvent(
+	actor identity.User,
+	eventType audit.Type,
+	targetID string,
+	outcome audit.Outcome,
+	reason audit.Reason,
+	now time.Time,
+) (audit.Event, error) {
+	event, err := audit.NewEvent(audit.Event{
+		ID: service.eventIDs(), OccurredAt: now.UTC(), Type: eventType,
+		Outcome: outcome, ActorID: actor.ID, ActorUsername: actor.Username,
+		ActorRole: string(actor.Role), TargetType: audit.TargetGrant,
+		TargetID: targetID, Reason: reason,
+	})
+	if err != nil {
+		return audit.Event{}, fmt.Errorf("create media grant audit event: %w", err)
+	}
+
+	return event, nil
+}
+
+func grantTargetID(mediaID string, userID string) string {
+	return mediaID + ":" + userID
 }
 
 func (service *GrantService) sharedItem(

@@ -242,7 +242,7 @@ stay in the same commit as the behavior they specify.
 - [x] Audit history survives user and media deletion.
 - [ ] Required audit failures prevent security-sensitive success.
 - [x] Authentication, user, and password operations create safe events.
-- [ ] Media, grant, upload, and deletion operations create safe events.
+- [x] Media, grant, upload, and deletion operations create safe events.
 - [ ] Each content request records authorization, range, and outcome safely.
 - [ ] Public authorization and availability masking remains unchanged.
 - [ ] Administrators can filter and page through immutable audit events.
