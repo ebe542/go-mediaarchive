@@ -457,6 +457,9 @@ func newApplicationHandlerWithContent(
 			grantRepository,
 			locationRepository,
 			contentStore,
+			sqlitestore.NewContentAuditRepository(database),
+			uuid.NewString,
+			time.Now,
 		)
 		mediaMetadataService = appmedia.NewManagedService(
 			mediaService,

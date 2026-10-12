@@ -124,25 +124,27 @@ Additional event types require tests and documentation before use.
 
 ## Content-access semantics
 
-Every authenticated `GET` or `HEAD` content request creates one event after
+The first successful `GET` or `HEAD` for one medium in an authenticated login
+session creates one `media.content_read` event. The event is stored after
 authorization, content-location lookup, file opening, and range validation but
-before response headers or bytes are committed.
+before response headers or bytes are committed. Later complete or ranged
+requests for the same medium and login session remain fully authorized but do
+not create duplicate success events.
 
-For a successful complete response, range fields are empty. For a successful
-partial response, they contain the selected inclusive start and end plus the
-complete representation size. Invalid or unsatisfiable ranges use a stable
-reason code and may include only already-authorized representation size data.
+SQLite stores a technical marker keyed by the hashed session token, media ID,
+outcome, and reason. The marker and its first audit event share one transaction.
+Markers may be removed with their session; immutable audit history remains.
+Raw bearer tokens are never persisted.
 
-A successful content event means the request was authorized and the response
-was permitted to start. A later client disconnect, network failure, or response
-writer failure cannot change an immutable event and may occur after HTTP headers
-have been committed. Transfer-completion telemetry is an operational concern
-outside this audit contract.
+The first masked denial and the first technical content failure for the same
+session, medium, outcome, and reason are recorded once. Malformed media IDs and
+invalid or unsatisfiable ranges remain transport validation results rather than
+permanent audit events. This prevents Range traffic or deliberate invalid
+requests from growing the immutable audit history without bound.
 
-One browser view may generate several Range requests and therefore several
-events. The server cannot reliably infer one logical viewing session from
-independent bearer-authenticated HTTP requests. Audit-event aggregation is a
-query or reporting concern, not a write-time heuristic.
+Range fields remain reserved in the initial audit schema but are not populated
+by session-level content events. Individual byte selections, transfer counts,
+client disconnects, and response-writer failures are operational telemetry.
 
 ## Transaction coordination
 
@@ -243,8 +245,8 @@ stay in the same commit as the behavior they specify.
 - [ ] Required audit failures prevent security-sensitive success.
 - [x] Authentication, user, and password operations create safe events.
 - [x] Media, grant, upload, and deletion operations create safe events.
-- [ ] Each content request records authorization, range, and outcome safely.
-- [ ] Public authorization and availability masking remains unchanged.
+- [x] Each login session records content access and outcomes once per medium.
+- [x] Public authorization and availability masking remains unchanged.
 - [ ] Administrators can filter and page through immutable audit events.
 - [ ] Audit-directory access is itself audited.
 - [ ] The typed client validates audit filters, events, and cursors.

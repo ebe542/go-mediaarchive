@@ -2,12 +2,14 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"net/http"
 	"slices"
 
 	appsessions "github.com/ebe542/go-mediaarchive/internal/application/sessions"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
+	"github.com/ebe542/go-mediaarchive/internal/session"
 )
 
 // SessionResolver resolves an authenticated user from an opaque access token.
@@ -19,6 +21,7 @@ type SessionResolver interface {
 }
 
 type authenticatedUserContextKey struct{}
+type authenticatedSessionHashContextKey struct{}
 
 // AuthenticatedUser returns the authenticated user stored in a request context.
 func AuthenticatedUser(
@@ -29,6 +32,15 @@ func AuthenticatedUser(
 	).(identity.User)
 
 	return user, exists
+}
+
+// AuthenticatedSessionHash returns the validated session's storage hash.
+func AuthenticatedSessionHash(ctx context.Context) ([sha256.Size]byte, bool) {
+	tokenHash, exists := ctx.Value(
+		authenticatedSessionHashContextKey{},
+	).([sha256.Size]byte)
+
+	return tokenHash, exists
 }
 
 // RequireAuthentication resolves a bearer token before calling a protected handler.
@@ -72,6 +84,11 @@ func RequireAuthentication(
 			request.Context(),
 			authenticatedUserContextKey{},
 			user,
+		)
+		requestContext = context.WithValue(
+			requestContext,
+			authenticatedSessionHashContextKey{},
+			session.HashToken(accessToken),
 		)
 
 		next.ServeHTTP(

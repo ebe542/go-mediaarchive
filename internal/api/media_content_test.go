@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"io"
 	"mime"
@@ -16,26 +17,56 @@ import (
 	"github.com/ebe542/go-mediaarchive/internal/api"
 	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
+	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
 )
 
 type recordingMediaContentService struct {
-	opened  appmedia.ReadableContent
-	err     error
-	actor   identity.User
-	mediaID string
-	calls   int
+	opened       appmedia.ReadableContent
+	err          error
+	actor        identity.User
+	mediaID      string
+	calls        int
+	sessionHash  [sha256.Size]byte
+	successCalls int
+	failureCalls int
+	recordError  error
 }
 
 func (service *recordingMediaContentService) Open(
 	_ context.Context,
 	actor identity.User,
+	sessionHash [sha256.Size]byte,
 	mediaID string,
 ) (appmedia.ReadableContent, error) {
 	service.calls++
 	service.actor = actor
 	service.mediaID = mediaID
+	service.sessionHash = sessionHash
 
 	return service.opened, service.err
+}
+
+func (service *recordingMediaContentService) RecordSuccessfulAccess(
+	_ context.Context,
+	_ identity.User,
+	_ [sha256.Size]byte,
+	_ domainmedia.Item,
+) error {
+	service.successCalls++
+
+	return service.recordError
+}
+
+func (service *recordingMediaContentService) RecordOperationalFailure(
+	_ context.Context,
+	_ identity.User,
+	_ [sha256.Size]byte,
+	_ domainmedia.Item,
+	_ error,
+) error {
+	service.failureCalls++
+
+	return service.recordError
 }
 
 type apiContentReader struct {
@@ -98,12 +129,31 @@ func TestMediaContentStreamsCompleteRepresentation(t *testing.T) {
 		t.Fatalf("unexpected content body length %d", response.Body.Len())
 	}
 	if service.calls != 1 || service.mediaID != apiMediaID ||
-		service.actor.ID != resolver.user.ID {
+		service.actor.ID != resolver.user.ID || service.successCalls != 1 ||
+		service.sessionHash == [sha256.Size]byte{} {
 		t.Fatalf("unexpected service call: %+v", service)
 	}
 	assertContentHeaders(t, response, int64(len(data)), "")
 	if !reader.closed {
 		t.Fatal("expected streamed content to be closed")
+	}
+}
+
+func TestMediaContentAuditFailurePreventsBinaryResponse(t *testing.T) {
+	service, reader := contentService(t, mediaContentData())
+	service.recordError = errors.New("audit unavailable")
+	handler := api.NewHandler(api.WithMediaContentAPI(mediaResolver(), service))
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, authenticatedContentRequest(http.MethodGet))
+
+	if response.Code != http.StatusInternalServerError ||
+		response.Header().Get("Content-Type") != "application/json; charset=utf-8" ||
+		response.Body.Len() == len(mediaContentData()) {
+		t.Fatalf("unexpected audit failure response: %d %v", response.Code, response.Header())
+	}
+	if !reader.closed {
+		t.Fatal("expected content to close after audit failure")
 	}
 }
 
@@ -237,6 +287,9 @@ func TestMediaContentRejectsInvalidRangesAsJSON(t *testing.T) {
 			if !reader.closed {
 				t.Fatal("expected rejected range content to be closed")
 			}
+			if service.successCalls != 0 || service.failureCalls != 0 {
+				t.Fatal("expected invalid range not to create a content audit event")
+			}
 		})
 	}
 }
@@ -283,6 +336,9 @@ func TestMediaContentHandlesSeekFailureBeforeBinaryResponse(t *testing.T) {
 	}
 	if !reader.closed {
 		t.Fatal("expected failed content to be closed")
+	}
+	if service.failureCalls != 1 || service.successCalls != 0 {
+		t.Fatalf("unexpected seek audit calls: %+v", service)
 	}
 }
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
+	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
 )
 
 // MediaContentService opens authorized managed content for streaming.
@@ -18,8 +20,22 @@ type MediaContentService interface {
 	Open(
 		ctx context.Context,
 		actor identity.User,
+		sessionHash [sha256.Size]byte,
 		mediaID string,
 	) (appmedia.ReadableContent, error)
+	RecordSuccessfulAccess(
+		context.Context,
+		identity.User,
+		[sha256.Size]byte,
+		domainmedia.Item,
+	) error
+	RecordOperationalFailure(
+		context.Context,
+		identity.User,
+		[sha256.Size]byte,
+		domainmedia.Item,
+		error,
+	) error
 }
 
 // WithMediaContentAPI enables authenticated inline content streaming.
@@ -47,10 +63,17 @@ func (handler *mediaContentHandler) serve(
 
 		return
 	}
+	sessionHash, exists := AuthenticatedSessionHash(request.Context())
+	if !exists {
+		writeMediaContextError(response)
+
+		return
+	}
 
 	opened, err := handler.content.Open(
 		request.Context(),
 		actor,
+		sessionHash,
 		request.PathValue("id"),
 	)
 	if err != nil {
@@ -82,10 +105,35 @@ func (handler *mediaContentHandler) serve(
 	if request.Method == http.MethodGet && selected.start > 0 {
 		offset, seekErr := opened.Reader.Seek(selected.start, io.SeekStart)
 		if seekErr != nil || offset != selected.start {
+			operationErr := seekErr
+			if operationErr == nil {
+				operationErr = fmt.Errorf(
+					"seek returned offset %d instead of %d",
+					offset,
+					selected.start,
+				)
+			}
+			_ = handler.content.RecordOperationalFailure(
+				request.Context(),
+				actor,
+				sessionHash,
+				opened.Item,
+				operationErr,
+			)
 			writeMediaContextError(response)
 
 			return
 		}
+	}
+	if err := handler.content.RecordSuccessfulAccess(
+		request.Context(),
+		actor,
+		sessionHash,
+		opened.Item,
+	); err != nil {
+		writeMediaContextError(response)
+
+		return
 	}
 
 	writeContentHeaders(response, opened, selected, partial)

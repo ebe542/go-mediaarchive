@@ -13,6 +13,7 @@ erDiagram
     users ||--|| password_credentials : "has"
     users ||--o| password_enrollments : "may receive"
     users ||--o{ sessions : "owns"
+    sessions ||--o{ content_audit_markers : "deduplicates"
     users ||--o{ media_items : "owns"
     users ||--o{ media_grants : "receives"
     media_items ||--o{ media_authors : "has"
@@ -87,6 +88,25 @@ erDiagram
         TEXT media_id PK,FK
         TEXT storage_key UK
         TEXT stored_at
+    }
+
+    audit_events {
+        TEXT id PK
+        TEXT occurred_at
+        TEXT event_type
+        TEXT outcome
+        TEXT actor_id
+        TEXT target_type
+        TEXT target_id
+        TEXT reason
+    }
+
+    content_audit_markers {
+        BLOB session_hash PK,FK
+        TEXT media_id PK
+        TEXT outcome PK
+        TEXT reason PK
+        TEXT recorded_at
     }
 ```
 
@@ -224,6 +244,29 @@ removal, and metadata removal explicitly. Managed deletion first stages the
 file outside its published key and then removes `media_contents`, grants,
 authors, and the media identity in one SQLite transaction.
 
+### `audit_events`
+
+`audit_events` is the immutable security-event history. It stores bounded
+snapshots instead of foreign keys so that later user, session, grant, or media
+deletion cannot rewrite or remove historical evidence. Database triggers reject
+updates and deletes. The `(occurred_at, id)` index supports deterministic
+newest-first keyset pagination.
+
+Optional range columns are reserved for events that require exact byte-range
+evidence. Session-level content access does not populate them because individual
+Range requests are operational transfer details rather than separate logical
+accesses.
+
+### `content_audit_markers`
+
+`content_audit_markers` is a technical deduplication table, not audit history.
+Its composite primary key permits only the first matching outcome and reason for
+one media identity in one authenticated session. Inserting a new marker and its
+immutable event shares one transaction, so neither can be committed alone.
+
+Only the 32-byte session-token hash is stored. The marker cascades when its
+session is deleted, while the independent `audit_events` row remains immutable.
+
 ## Storage and integrity rules
 
 - Domain tables use SQLite `STRICT` mode.
@@ -250,6 +293,8 @@ authors, and the media identity in one SQLite transaction.
 | `006` | [`006_create_users_pagination_index.sql`](../internal/storage/sqlite/migrations/006_create_users_pagination_index.sql) | Indexes the immutable user-directory ordering key. |
 | `007` | [`007_create_media.sql`](../internal/storage/sqlite/migrations/007_create_media.sql) | Creates media identities, ordered authors, and per-user permission grants. |
 | `008` | [`008_create_media_contents.sql`](../internal/storage/sqlite/migrations/008_create_media_contents.sql) | Associates media identities with opaque managed-content keys. |
+| `009` | [`009_create_audit_events.sql`](../internal/storage/sqlite/migrations/009_create_audit_events.sql) | Creates immutable, indexed security audit events. |
+| `010` | [`010_create_content_audit_markers.sql`](../internal/storage/sqlite/migrations/010_create_content_audit_markers.sql) | Deduplicates content-access outcomes within an authenticated session. |
 
 New schema changes must be added as a new zero-padded migration. Existing
 migrations must remain immutable after publication because deployed databases

@@ -3,15 +3,41 @@ package media_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
 	domainmedia "github.com/ebe542/go-mediaarchive/internal/media"
 )
+
+var contentSessionHash = [sha256.Size]byte{1}
+
+type recordingContentAuditRepository struct {
+	events []audit.Event
+	calls  int
+	err    error
+}
+
+func (repository *recordingContentAuditRepository) AppendOnce(
+	_ context.Context,
+	_ [sha256.Size]byte,
+	_ string,
+	_ audit.Outcome,
+	_ audit.Reason,
+	_ time.Time,
+	event audit.Event,
+) (bool, error) {
+	repository.calls++
+	repository.events = append(repository.events, event)
+
+	return true, repository.err
+}
 
 type recordingContentLocationFinder struct {
 	location content.Location
@@ -72,7 +98,7 @@ func TestContentReadServiceOpensOwnedContent(t *testing.T) {
 		},
 	}
 	grants := &recordingGrantFinder{err: domainmedia.ErrGrantNotFound}
-	service := appmedia.NewContentReadService(
+	service := newContentReadService(
 		&recordingMediaRepository{item: item},
 		grants,
 		locations,
@@ -82,6 +108,7 @@ func TestContentReadServiceOpensOwnedContent(t *testing.T) {
 	opened, err := service.Open(
 		context.Background(),
 		serviceUser(item.OwnerID, identity.RoleViewer, true),
+		contentSessionHash,
 		item.ID,
 	)
 	if err != nil {
@@ -120,7 +147,7 @@ func TestContentReadServiceAcceptsExplicitReadGrant(t *testing.T) {
 		t.Fatalf("create read grant: %v", err)
 	}
 	reader := &trackedReadSeekCloser{Reader: bytes.NewReader(nil)}
-	service := appmedia.NewContentReadService(
+	service := newContentReadService(
 		&recordingMediaRepository{item: item},
 		&recordingGrantFinder{grant: grant},
 		&recordingContentLocationFinder{location: contentLocation(t, item.ID)},
@@ -132,6 +159,7 @@ func TestContentReadServiceAcceptsExplicitReadGrant(t *testing.T) {
 	opened, err := service.Open(
 		context.Background(),
 		serviceUser(serviceActorID, identity.RoleViewer, true),
+		contentSessionHash,
 		item.ID,
 	)
 	if err != nil {
@@ -174,16 +202,19 @@ func TestContentReadServiceAuthorizesBeforeContentLookup(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			locations := &recordingContentLocationFinder{}
 			store := &recordingContentReadStore{}
-			service := appmedia.NewContentReadService(
+			auditRepository := &recordingContentAuditRepository{}
+			service := newContentReadServiceWithAudit(
 				testCase.repository,
 				testCase.grants,
 				locations,
 				store,
+				auditRepository,
 			)
 
 			_, err := service.Open(
 				context.Background(),
 				serviceUser(serviceActorID, identity.RoleAdmin, true),
+				contentSessionHash,
 				item.ID,
 			)
 			if !errors.Is(err, appmedia.ErrMediaNotFound) {
@@ -195,6 +226,11 @@ func TestContentReadServiceAuthorizesBeforeContentLookup(t *testing.T) {
 					locations.calls,
 					store.calls,
 				)
+			}
+			if auditRepository.calls != 1 ||
+				auditRepository.events[0].Outcome != audit.OutcomeDenied ||
+				auditRepository.events[0].Reason != audit.ReasonUnknownTarget {
+				t.Fatalf("unexpected denied content event: %+v", auditRepository.events)
 			}
 		})
 	}
@@ -224,7 +260,7 @@ func TestContentReadServiceMasksUnavailableContent(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			service := appmedia.NewContentReadService(
+			service := newContentReadService(
 				&recordingMediaRepository{item: item},
 				&recordingGrantFinder{},
 				testCase.locations,
@@ -234,6 +270,7 @@ func TestContentReadServiceMasksUnavailableContent(t *testing.T) {
 			_, err := service.Open(
 				context.Background(),
 				serviceUser(item.OwnerID, identity.RoleViewer, true),
+				contentSessionHash,
 				item.ID,
 			)
 			if !errors.Is(err, appmedia.ErrMediaNotFound) {
@@ -276,7 +313,7 @@ func TestContentReadServicePreservesOperationalErrors(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			service := appmedia.NewContentReadService(
+			service := newContentReadService(
 				&recordingMediaRepository{item: item},
 				&recordingGrantFinder{},
 				testCase.locations,
@@ -286,6 +323,7 @@ func TestContentReadServicePreservesOperationalErrors(t *testing.T) {
 			_, err := service.Open(
 				context.Background(),
 				serviceUser(item.OwnerID, identity.RoleViewer, true),
+				contentSessionHash,
 				item.ID,
 			)
 			if !errors.Is(err, testCase.expected) {
@@ -302,7 +340,7 @@ func TestContentReadServiceRejectsInconsistentContent(t *testing.T) {
 	t.Run("location belongs to another medium", func(t *testing.T) {
 		otherLocation := contentLocation(t, serviceActorID)
 		store := &recordingContentReadStore{}
-		service := appmedia.NewContentReadService(
+		service := newContentReadService(
 			&recordingMediaRepository{item: item},
 			&recordingGrantFinder{},
 			&recordingContentLocationFinder{location: otherLocation},
@@ -312,6 +350,7 @@ func TestContentReadServiceRejectsInconsistentContent(t *testing.T) {
 		_, err := service.Open(
 			context.Background(),
 			serviceUser(item.OwnerID, identity.RoleViewer, true),
+			contentSessionHash,
 			item.ID,
 		)
 		if !errors.Is(err, appmedia.ErrContentIntegrity) {
@@ -324,7 +363,7 @@ func TestContentReadServiceRejectsInconsistentContent(t *testing.T) {
 
 	t.Run("stored size differs", func(t *testing.T) {
 		reader := &trackedReadSeekCloser{Reader: bytes.NewReader(nil)}
-		service := appmedia.NewContentReadService(
+		service := newContentReadService(
 			&recordingMediaRepository{item: item},
 			&recordingGrantFinder{},
 			&recordingContentLocationFinder{location: location},
@@ -336,6 +375,7 @@ func TestContentReadServiceRejectsInconsistentContent(t *testing.T) {
 		_, err := service.Open(
 			context.Background(),
 			serviceUser(item.OwnerID, identity.RoleViewer, true),
+			contentSessionHash,
 			item.ID,
 		)
 		if !errors.Is(err, appmedia.ErrContentIntegrity) {
@@ -345,6 +385,39 @@ func TestContentReadServiceRejectsInconsistentContent(t *testing.T) {
 			t.Fatal("expected inconsistent opened content to be closed")
 		}
 	})
+}
+
+func newContentReadService(
+	mediaFinder appmedia.MediaFinder,
+	grantFinder appmedia.GrantFinder,
+	locations appmedia.ContentLocationFinder,
+	store content.ReadStore,
+) *appmedia.ContentReadService {
+	return newContentReadServiceWithAudit(
+		mediaFinder,
+		grantFinder,
+		locations,
+		store,
+		&recordingContentAuditRepository{},
+	)
+}
+
+func newContentReadServiceWithAudit(
+	mediaFinder appmedia.MediaFinder,
+	grantFinder appmedia.GrantFinder,
+	locations appmedia.ContentLocationFinder,
+	store content.ReadStore,
+	auditRepository appmedia.ContentAuditRecorder,
+) *appmedia.ContentReadService {
+	return appmedia.NewContentReadService(
+		mediaFinder,
+		grantFinder,
+		locations,
+		store,
+		auditRepository,
+		func() string { return "d23e4567-e89b-12d3-a456-426614174000" },
+		func() time.Time { return serviceTime().Add(time.Hour) },
+	)
 }
 
 func contentLocation(test *testing.T, mediaID string) content.Location {

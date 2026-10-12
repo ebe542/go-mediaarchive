@@ -674,6 +674,23 @@ func TestApplicationHandlerStreamsManagedContent(t *testing.T) {
 		t.Fatalf("expected %q, got %q", contentBytes, responseContent)
 	}
 
+	repeatedRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/media/"+mediaID+"/content",
+		nil,
+	)
+	repeatedRequest.Header.Set("Authorization", "Bearer "+ownerToken)
+	repeatedRequest.Header.Set("Range", "bytes=0-8")
+	repeatedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(repeatedResponse, repeatedRequest)
+	if repeatedResponse.Code != http.StatusPartialContent {
+		t.Fatalf(
+			"expected repeated range status 206, got %d: %s",
+			repeatedResponse.Code,
+			repeatedResponse.Body.String(),
+		)
+	}
+
 	viewerRequest := httptest.NewRequest(
 		http.MethodGet,
 		"/api/v1/media/"+mediaID+"/content",
@@ -688,6 +705,38 @@ func TestApplicationHandlerStreamsManagedContent(t *testing.T) {
 			viewerResponse.Code,
 			viewerResponse.Body.String(),
 		)
+	}
+
+	for _, expected := range []struct {
+		actorID string
+		outcome audit.Outcome
+		reason  audit.Reason
+	}{
+		{owner.ID, audit.OutcomeSuccess, ""},
+		{viewer.ID, audit.OutcomeDenied, audit.ReasonUnknownTarget},
+	} {
+		var eventCount int
+		if err := database.QueryRowContext(
+			ctx,
+			`SELECT COUNT(*) FROM audit_events
+			 WHERE event_type = ? AND actor_id = ? AND target_id = ?
+			 AND outcome = ? AND COALESCE(reason, '') = ?`,
+			audit.TypeMediaContentRead,
+			expected.actorID,
+			mediaID,
+			expected.outcome,
+			expected.reason,
+		).Scan(&eventCount); err != nil {
+			t.Fatalf("count content audit events: %v", err)
+		}
+		if eventCount != 1 {
+			t.Fatalf(
+				"expected one %s content event for %q, got %d",
+				expected.outcome,
+				expected.actorID,
+				eventCount,
+			)
+		}
 	}
 
 }

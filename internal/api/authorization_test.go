@@ -12,6 +12,7 @@ import (
 	"github.com/ebe542/go-mediaarchive/internal/api"
 	appsessions "github.com/ebe542/go-mediaarchive/internal/application/sessions"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
+	"github.com/ebe542/go-mediaarchive/internal/session"
 )
 
 type recordingSessionResolver struct {
@@ -64,6 +65,10 @@ func TestRequireAuthenticationProvidesCurrentUser(t *testing.T) {
 				currentUser,
 				authenticatedUser,
 			)
+		}
+		sessionHash, exists := api.AuthenticatedSessionHash(request.Context())
+		if !exists || sessionHash != session.HashToken("opaque-session-token") {
+			t.Fatal("expected authenticated session hash in request context")
 		}
 
 		response.WriteHeader(http.StatusNoContent)
