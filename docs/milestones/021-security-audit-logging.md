@@ -176,7 +176,7 @@ The API exposes one read-only endpoint:
 
 Supported optional filters are:
 
-- `from` and `to` UTC timestamps;
+- `from` inclusive and `to` exclusive UTC timestamps;
 - `actorId`;
 - exact event `type`;
 - exact `outcome`;
@@ -185,6 +185,8 @@ Supported optional filters are:
 Results use a stable descending `(occurredAt, id)` order so newly appended
 events do not duplicate or skip entries inside an existing cursor sequence. The
 cursor binds the active filters and limit and reveals no raw database offset.
+Continuation requests repeat the same filters and limit together with the
+cursor. The default limit is 50 and the maximum is 100.
 Malformed filters or cursors return `400 Bad Request`. Missing authentication
 returns `401 Unauthorized`; a non-administrator receives `403 Forbidden`.
 
@@ -247,8 +249,8 @@ stay in the same commit as the behavior they specify.
 - [x] Media, grant, upload, and deletion operations create safe events.
 - [x] Each login session records content access and outcomes once per medium.
 - [x] Public authorization and availability masking remains unchanged.
-- [ ] Administrators can filter and page through immutable audit events.
-- [ ] Audit-directory access is itself audited.
+- [x] Administrators can filter and page through immutable audit events.
+- [x] Audit-directory access is itself audited.
 - [ ] The typed client validates audit filters, events, and cursors.
 - [ ] No audit event contains prohibited secrets, content, paths, or raw errors.
 - [ ] Standard project checks pass.

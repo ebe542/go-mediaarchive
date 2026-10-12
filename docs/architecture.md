@@ -30,89 +30,104 @@ flowchart LR
     package4["internal/api"]
   end
   subgraph application["Application services"]
-    package5["internal/application/authentication"]
-    package6["internal/application/bootstrap"]
-    package7["internal/application/media"]
-    package8["internal/application/passwords"]
-    package9["internal/application/sessions"]
-    package10["internal/application/users"]
+    package5["internal/application/auditing"]
+    package6["internal/application/authentication"]
+    package7["internal/application/bootstrap"]
+    package8["internal/application/media"]
+    package9["internal/application/passwords"]
+    package10["internal/application/sessions"]
+    package11["internal/application/users"]
   end
   subgraph domain["Domain"]
-    package13["internal/content"]
-    package14["internal/credential"]
-    package15["internal/identity"]
-    package16["internal/media"]
-    package17["internal/password"]
-    package19["internal/session"]
+    package12["internal/audit"]
+    package15["internal/content"]
+    package16["internal/credential"]
+    package17["internal/identity"]
+    package18["internal/media"]
+    package19["internal/password"]
+    package21["internal/session"]
   end
   subgraph infrastructure["Infrastructure"]
-    package20["internal/storage/filesystem"]
-    package21["internal/storage/sqlite"]
+    package22["internal/storage/filesystem"]
+    package23["internal/storage/sqlite"]
   end
   subgraph client["Client"]
-    package11["internal/cli"]
-    package12["internal/client"]
+    package13["internal/cli"]
+    package14["internal/client"]
   end
   subgraph tooling["Development tooling"]
-    package18["internal/projecttool"]
+    package20["internal/projecttool"]
   end
-  package0 --> package6
-  package0 --> package11
-  package0 --> package12
-  package0 --> package15
+  package0 --> package7
+  package0 --> package13
+  package0 --> package14
   package0 --> package17
-  package0 --> package21
-  package1 --> package11
-  package1 --> package12
-  package2 --> package18
+  package0 --> package19
+  package0 --> package23
+  package1 --> package13
+  package1 --> package14
+  package2 --> package20
   package3 --> package4
   package3 --> package5
-  package3 --> package7
+  package3 --> package6
   package3 --> package8
   package3 --> package9
   package3 --> package10
-  package3 --> package13
-  package3 --> package14
-  package3 --> package17
+  package3 --> package11
+  package3 --> package15
+  package3 --> package16
   package3 --> package19
-  package3 --> package20
   package3 --> package21
+  package3 --> package22
+  package3 --> package23
   package4 --> package5
-  package4 --> package7
+  package4 --> package6
   package4 --> package8
   package4 --> package9
   package4 --> package10
-  package4 --> package13
-  package4 --> package14
+  package4 --> package11
+  package4 --> package12
   package4 --> package15
   package4 --> package16
   package4 --> package17
-  package5 --> package14
-  package5 --> package15
-  package6 --> package14
-  package6 --> package15
+  package4 --> package18
+  package4 --> package19
+  package4 --> package21
+  package5 --> package12
+  package5 --> package17
+  package6 --> package16
   package6 --> package17
-  package7 --> package13
-  package7 --> package15
   package7 --> package16
-  package8 --> package14
+  package7 --> package17
+  package7 --> package19
+  package8 --> package12
   package8 --> package15
   package8 --> package17
-  package9 --> package15
+  package8 --> package18
+  package9 --> package12
+  package9 --> package16
+  package9 --> package17
   package9 --> package19
-  package10 --> package15
+  package10 --> package6
+  package10 --> package12
+  package10 --> package17
+  package10 --> package21
   package11 --> package12
-  package12 --> package15
-  package12 --> package16
-  package14 --> package15
-  package16 --> package15
-  package20 --> package13
-  package21 --> package10
-  package21 --> package13
-  package21 --> package14
-  package21 --> package15
-  package21 --> package16
-  package21 --> package19
+  package11 --> package17
+  package13 --> package14
+  package14 --> package17
+  package14 --> package18
+  package16 --> package17
+  package18 --> package17
+  package22 --> package15
+  package23 --> package5
+  package23 --> package11
+  package23 --> package12
+  package23 --> package15
+  package23 --> package16
+  package23 --> package17
+  package23 --> package18
+  package23 --> package21
 ```
 
 ## Modules
@@ -124,12 +139,14 @@ flowchart LR
 | [`cmd/projectctl`](../cmd/projectctl) | Commands | Command projectctl provides repository-local development automation. |
 | [`cmd/server`](../cmd/server) | Commands | Not documented yet. |
 | [`internal/api`](../internal/api) | HTTP transport | Not documented yet. |
+| [`internal/application/auditing`](../internal/application/auditing) | Application services | Package auditing coordinates security audit directory operations. |
 | [`internal/application/authentication`](../internal/application/authentication) | Application services | Package authentication verifies user credentials. |
 | [`internal/application/bootstrap`](../internal/application/bootstrap) | Application services | Package bootstrap coordinates initial administrator creation. |
 | [`internal/application/media`](../internal/application/media) | Application services | Package media coordinates authorized media metadata use cases. |
 | [`internal/application/passwords`](../internal/application/passwords) | Application services | Package passwords coordinates password enrollment and credential lifecycle. |
 | [`internal/application/sessions`](../internal/application/sessions) | Application services | Package sessions coordinates authenticated server-side sessions. |
 | [`internal/application/users`](../internal/application/users) | Application services | Package users coordinates user identity application operations. |
+| [`internal/audit`](../internal/audit) | Domain | Package audit defines immutable security audit events. |
 | [`internal/cli`](../internal/cli) | Client | Package cli provides shared primitives for interactive command-line tools. |
 | [`internal/client`](../internal/client) | Client | Package client provides a typed client for the Media Archive REST API. |
 | [`internal/content`](../internal/content) | Domain | Package content defines storage-independent managed-content contracts. |

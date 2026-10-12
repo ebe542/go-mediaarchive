@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	appauditing "github.com/ebe542/go-mediaarchive/internal/application/auditing"
 	"github.com/ebe542/go-mediaarchive/internal/audit"
 	sqlitestore "github.com/ebe542/go-mediaarchive/internal/storage/sqlite"
 )
@@ -154,6 +155,62 @@ func TestAuditHistorySurvivesActorAndTargetDeletion(t *testing.T) {
 	}
 	if targetID != event.TargetID {
 		t.Fatalf("expected target snapshot %q, got %q", event.TargetID, targetID)
+	}
+}
+
+func TestAuditRepositoryFiltersAndPaginatesEvents(t *testing.T) {
+	ctx, database := openMediaSchemaDatabase(t)
+	repository := sqlitestore.NewAuditRepository(database)
+	for index, fixture := range []struct {
+		id      string
+		hour    int
+		outcome audit.Outcome
+	}{
+		{"a23e4567-e89b-12d3-a456-426614174000", 10, audit.OutcomeDenied},
+		{"b23e4567-e89b-12d3-a456-426614174000", 11, audit.OutcomeSuccess},
+		{"c23e4567-e89b-12d3-a456-426614174000", 12, audit.OutcomeDenied},
+	} {
+		event := auditRepositoryEvent()
+		event.ID = fixture.id
+		event.OccurredAt = time.Date(2026, time.October, 12, fixture.hour, 0, 0, index, time.UTC)
+		event.Outcome = fixture.outcome
+		event.Range = nil
+		if fixture.outcome == audit.OutcomeDenied {
+			event.Reason = audit.ReasonUnknownTarget
+		}
+		if err := repository.Append(ctx, event); err != nil {
+			t.Fatalf("append audit page fixture: %v", err)
+		}
+	}
+
+	firstPage, err := repository.ListAuditEvents(
+		ctx,
+		appauditing.Filter{Outcome: audit.OutcomeDenied},
+		nil,
+		1,
+	)
+	if err != nil {
+		t.Fatalf("list first audit page: %v", err)
+	}
+	if len(firstPage) != 1 || firstPage[0].ID != "c23e4567-e89b-12d3-a456-426614174000" {
+		t.Fatalf("unexpected first audit page: %+v", firstPage)
+	}
+
+	cursor := &appauditing.Cursor{
+		OccurredAt: firstPage[0].OccurredAt,
+		ID:         firstPage[0].ID,
+	}
+	secondPage, err := repository.ListAuditEvents(
+		ctx,
+		appauditing.Filter{Outcome: audit.OutcomeDenied},
+		cursor,
+		2,
+	)
+	if err != nil {
+		t.Fatalf("list second audit page: %v", err)
+	}
+	if len(secondPage) != 1 || secondPage[0].ID != "a23e4567-e89b-12d3-a456-426614174000" {
+		t.Fatalf("unexpected second audit page: %+v", secondPage)
 	}
 }
 

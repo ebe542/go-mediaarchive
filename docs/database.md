@@ -252,6 +252,12 @@ deletion cannot rewrite or remove historical evidence. Database triggers reject
 updates and deletes. The `(occurred_at, id)` index supports deterministic
 newest-first keyset pagination.
 
+The administrator-only audit directory applies inclusive `from`, exclusive
+`to`, actor, event-type, and outcome filters. Pages use a bounded lookahead and
+a descending `(occurred_at, id)` cursor instead of an increasing database
+offset. Reading the directory first appends its own `audit.events_listed` event;
+an audit-write failure prevents the protected query.
+
 Optional range columns are reserved for events that require exact byte-range
 evidence. Session-level content access does not populate them because individual
 Range requests are operational transfer details rather than separate logical

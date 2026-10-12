@@ -171,6 +171,21 @@ func NewHandler(options ...Option) http.Handler {
 		mux.Handle("GET /api/v1/users", listUsers)
 	}
 
+	if configuration.auditDirectoryResolver != nil &&
+		configuration.auditEventLister != nil {
+		directory := &auditDirectoryHandler{
+			events: configuration.auditEventLister,
+		}
+		listEvents := RequireAuthentication(
+			configuration.auditDirectoryResolver,
+			RequireRoles(
+				http.HandlerFunc(directory.list),
+				identity.RoleAdmin,
+			),
+		)
+		mux.Handle("GET /api/v1/audit-events", listEvents)
+	}
+
 	if configuration.mediaResolver != nil &&
 		configuration.mediaMetadata != nil {
 		mediaHandler := &mediaMetadataHandler{media: configuration.mediaMetadata}

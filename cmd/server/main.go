@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ebe542/go-mediaarchive/internal/api"
+	appauditing "github.com/ebe542/go-mediaarchive/internal/application/auditing"
 	"github.com/ebe542/go-mediaarchive/internal/application/authentication"
 	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
 	apppasswords "github.com/ebe542/go-mediaarchive/internal/application/passwords"
@@ -341,6 +342,12 @@ func newApplicationHandlerWithContent(
 
 	userRepository := sqlitestore.NewUserRepository(database)
 	auditRepository := sqlitestore.NewAuditRepository(database)
+	auditDirectoryService := appauditing.NewService(
+		auditRepository,
+		auditRepository,
+		uuid.NewString,
+		time.Now,
+	)
 	userService := appusers.NewService(
 		userRepository,
 		uuid.NewString,
@@ -434,6 +441,10 @@ func newApplicationHandlerWithContent(
 		api.WithUserDirectoryAPI(
 			sessionService,
 			userService,
+		),
+		api.WithAuditDirectoryAPI(
+			sessionService,
+			auditDirectoryService,
 		),
 		api.WithPasswordEnrollmentAPI(
 			sessionService,

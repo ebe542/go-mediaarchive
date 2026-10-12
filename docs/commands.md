@@ -374,6 +374,7 @@ directly with the same HTTPS JSON API and implement equivalent session handling.
 | Current identity | `GET /api/v1/users/me` | Authenticated |
 | User lookup | `GET /api/v1/users/{id}` | Administrator |
 | User directory | `GET /api/v1/users?limit={limit}&cursor={cursor}` | Administrator |
+| Audit directory | `GET /api/v1/audit-events?limit={limit}&cursor={cursor}` | Administrator |
 | Create user | `POST /api/v1/users` | Administrator |
 | Update user | `PUT /api/v1/users/{id}` | Administrator |
 | Activate or deactivate | `PUT /api/v1/users/{id}/active` | Administrator |
