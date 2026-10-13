@@ -50,6 +50,10 @@ Milestone 20 is complete. The project currently provides:
 - safe content headers, masked availability errors, and no administrator bypass;
 - a typed client operation that validates content headers before streaming into
   an `io.Writer`;
+- append-only security audit events with administrator-only filtering and
+  keyset pagination;
+- a typed client operation that validates audit filters, event snapshots, and
+  opaque continuation cursors;
 - one-time initial password enrollment and authenticated password changes;
 - a cross-platform Go project tool for quality gates and release builds.
 

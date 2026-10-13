@@ -220,6 +220,12 @@ the next opaque cursor. API error bodies retain the existing bounded JSON
 handling. The client never interprets internal reason codes as authorization
 decisions for another operation.
 
+Caller-provided time values are encoded as UTC. Event types, outcomes, actor
+IDs, limits, time bounds, complete range triples, event ordering, and returned
+event snapshots are validated before use. Cursor contents remain a server
+implementation detail; the client validates only their bounded URL-safe
+transport representation.
+
 The administrator console remains unchanged in this milestone. A future console
 command can build on the typed directory operation without duplicating HTTP or
 cursor validation.
@@ -251,7 +257,7 @@ stay in the same commit as the behavior they specify.
 - [x] Public authorization and availability masking remains unchanged.
 - [x] Administrators can filter and page through immutable audit events.
 - [x] Audit-directory access is itself audited.
-- [ ] The typed client validates audit filters, events, and cursors.
+- [x] The typed client validates audit filters, events, and cursors.
 - [ ] No audit event contains prohibited secrets, content, paths, or raw errors.
 - [ ] Standard project checks pass.
 - [ ] Local quality gate checks pass.
