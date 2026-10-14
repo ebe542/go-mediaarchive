@@ -108,6 +108,70 @@ func TestAuditSchemaRejectsUpdatesAndDeletes(t *testing.T) {
 	}
 }
 
+func TestAuditSchemaContainsOnlyAllowlistedColumns(t *testing.T) {
+	ctx, database := openMediaSchemaDatabase(t)
+	rows, err := database.QueryContext(ctx, `PRAGMA table_info(audit_events)`)
+	if err != nil {
+		t.Fatalf("inspect audit table: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	expected := []struct {
+		name     string
+		typeName string
+	}{
+		{"id", "TEXT"},
+		{"occurred_at", "TEXT"},
+		{"event_type", "TEXT"},
+		{"outcome", "TEXT"},
+		{"actor_id", "TEXT"},
+		{"actor_username", "TEXT"},
+		{"actor_role", "TEXT"},
+		{"target_type", "TEXT"},
+		{"target_id", "TEXT"},
+		{"target_name", "TEXT"},
+		{"reason", "TEXT"},
+		{"range_start", "INTEGER"},
+		{"range_end", "INTEGER"},
+		{"range_total", "INTEGER"},
+	}
+	index := 0
+	for rows.Next() {
+		var columnID int
+		var name string
+		var typeName string
+		var notNull int
+		var defaultValue sql.NullString
+		var primaryKey int
+		if err := rows.Scan(
+			&columnID,
+			&name,
+			&typeName,
+			&notNull,
+			&defaultValue,
+			&primaryKey,
+		); err != nil {
+			t.Fatalf("scan audit column: %v", err)
+		}
+		if index >= len(expected) || name != expected[index].name ||
+			typeName != expected[index].typeName {
+			t.Fatalf(
+				"unexpected audit column %d: %s %s",
+				index,
+				name,
+				typeName,
+			)
+		}
+		index++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate audit columns: %v", err)
+	}
+	if index != len(expected) {
+		t.Fatalf("expected %d audit columns, got %d", len(expected), index)
+	}
+}
+
 func TestAuditHistorySurvivesActorAndTargetDeletion(t *testing.T) {
 	ctx, database := openMediaSchemaDatabase(t)
 	insertMediaSchemaUser(t, ctx, database, auditActorID, "audit_actor")

@@ -46,9 +46,12 @@ transaction. Filesystem operations continue to use the existing staged or
 compensating workflow around that transaction. No successful database mutation
 may commit without its corresponding audit row.
 
-Denied operations also require an audit event before their safe public response
-is returned. If that event cannot be stored, the API returns a generic internal
-error rather than silently producing an unaudited denial.
+Audited application-level denials also require an event before their safe public
+response is returned. If that event cannot be stored, the API returns a generic
+internal error rather than silently producing an unaudited denial. Transport
+validation, missing or malformed bearer authentication, and early HTTP
+role-middleware rejection remain bounded operational logging concerns; they do
+not create permanent database events that unauthenticated traffic could amplify.
 
 ### Append-only, not tamper-proof
 
@@ -250,7 +253,7 @@ stay in the same commit as the behavior they specify.
 - [x] Audit events validate bounded allowlisted data and UTC timestamps.
 - [x] SQLite audit rows reject application updates and deletions.
 - [x] Audit history survives user and media deletion.
-- [ ] Required audit failures prevent security-sensitive success.
+- [x] Required audit failures prevent security-sensitive success.
 - [x] Authentication, user, and password operations create safe events.
 - [x] Media, grant, upload, and deletion operations create safe events.
 - [x] Each login session records content access and outcomes once per medium.
@@ -258,9 +261,9 @@ stay in the same commit as the behavior they specify.
 - [x] Administrators can filter and page through immutable audit events.
 - [x] Audit-directory access is itself audited.
 - [x] The typed client validates audit filters, events, and cursors.
-- [ ] No audit event contains prohibited secrets, content, paths, or raw errors.
-- [ ] Standard project checks pass.
-- [ ] Local quality gate checks pass.
+- [x] No audit event contains prohibited secrets, content, paths, or raw errors.
+- [x] Standard project checks pass.
+- [x] Local quality gate checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-021` tag after all milestone commits are complete.

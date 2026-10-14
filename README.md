@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 20 is complete. The project currently provides:
+Milestone 21 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -223,7 +223,9 @@ See [Project goals](docs/project-goals.md), the
 [architecture overview](docs/architecture.md) for details. All program,
 interactive-console, verification, and release commands are collected in the
 [Command reference](docs/commands.md). Product versioning and binary publication
-are described in [Releases](docs/releases.md).
+are described in [Releases](docs/releases.md). The audit threat model,
+data exclusions, query contract, and operational limits are documented in the
+[Security audit guide](docs/audit.md).
 Notable product changes are recorded in the [Changelog](CHANGELOG.md).
 
 ## License

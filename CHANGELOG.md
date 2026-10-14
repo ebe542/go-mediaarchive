@@ -36,6 +36,9 @@ checkpoints.
   sessions, user-aware prompts, retryable field input, local-time presentation,
   and complete user-management commands.
 - Generated Go package architecture and SQLite database documentation.
+- Append-only security audit history with fail-closed business events,
+  session-deduplicated content access, an administrator directory, and a typed
+  paginated client.
 - Cross-platform Go project tooling for Quality Gate checks, reproducible
   release archives, checksums, and semantic-version release validation.
 
