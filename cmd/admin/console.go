@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	sharedcli "github.com/ebe542/go-mediaarchive/internal/cli"
 	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
@@ -32,6 +33,7 @@ type adminAPI interface {
 	DeleteUser(context.Context, string, string) error
 	IssuePasswordEnrollment(context.Context, string, string) (apiclient.PasswordEnrollment, error)
 	ChangePassword(context.Context, string, []byte, []byte) error
+	ListAuditEvents(context.Context, string, apiclient.AuditEventFilter) (apiclient.AuditEventPage, error)
 }
 
 type secretReader = sharedcli.SecretReader
@@ -47,6 +49,9 @@ type adminConsole struct {
 	pageLimit     int
 	nextCursor    string
 	pageStarted   bool
+	auditFilter   apiclient.AuditEventFilter
+	auditCursor   string
+	auditStarted  bool
 }
 
 func newAdminConsole(
@@ -154,6 +159,8 @@ func (console *adminConsole) execute(
 		return false, console.user(ctx, fields[1:])
 	case "password":
 		return false, console.password(ctx, fields[1:])
+	case "audit":
+		return false, console.audit(ctx, fields[1:])
 	case "exit", "quit", "bye":
 		if len(fields) != 1 {
 			return false, adminCommandUsage(fields[0])
@@ -254,6 +261,9 @@ func (console *adminConsole) clearSession() {
 	console.session.Clear()
 	console.pageStarted = false
 	console.nextCursor = ""
+	console.auditStarted = false
+	console.auditCursor = ""
+	console.auditFilter = apiclient.AuditEventFilter{}
 }
 
 func (console *adminConsole) me(ctx context.Context) error {
@@ -614,6 +624,280 @@ func (console *adminConsole) password(
 	return adminCommandUsage("password enrollment <user-id>|change")
 }
 
+func (console *adminConsole) audit(
+	ctx context.Context,
+	arguments []string,
+) error {
+	if err := console.requireAuthentication(); err != nil {
+		return err
+	}
+	if len(arguments) == 0 {
+		return adminCommandUsage("audit list [limit]|next|first")
+	}
+
+	switch arguments[0] {
+	case "list":
+		return console.startAuditList(ctx, arguments[1:])
+	case "next":
+		if len(arguments) != 1 {
+			return adminCommandUsage("audit next")
+		}
+
+		return console.nextAuditPage(ctx)
+	case "first":
+		if len(arguments) != 1 {
+			return adminCommandUsage("audit first")
+		}
+
+		return console.firstAuditPage(ctx)
+	default:
+		return fmt.Errorf("unknown audit command %q", arguments[0])
+	}
+}
+
+func (console *adminConsole) startAuditList(
+	ctx context.Context,
+	arguments []string,
+) error {
+	if len(arguments) > 1 {
+		return adminCommandUsage("audit list [limit]")
+	}
+
+	limit, err := parsePageLimit(arguments, "audit")
+	if err != nil {
+		return err
+	}
+	from, err := console.readAuditTime(ctx, "From (RFC3339, blank for any): ")
+	if err != nil {
+		return err
+	}
+	var to *time.Time
+	for {
+		to, err = console.readAuditTime(ctx, "To (RFC3339, blank for any): ")
+		if err != nil {
+			return err
+		}
+		if from == nil || to == nil || from.Before(*to) {
+			break
+		}
+
+		console.printError(errors.New("audit filter end must be after start; try again"))
+	}
+	actorID, err := console.readAuditActorID(ctx)
+	if err != nil {
+		return err
+	}
+	eventType, err := console.readAuditType(ctx)
+	if err != nil {
+		return err
+	}
+	outcome, err := console.readAuditOutcome(ctx)
+	if err != nil {
+		return err
+	}
+
+	filter := apiclient.AuditEventFilter{
+		From:    from,
+		To:      to,
+		ActorID: actorID,
+		Type:    eventType,
+		Outcome: outcome,
+		Limit:   limit,
+	}
+	if err := console.loadAuditPage(ctx, filter); err != nil {
+		return err
+	}
+	console.auditFilter = filter
+	console.auditStarted = true
+
+	return nil
+}
+
+func parsePageLimit(arguments []string, subject string) (int, error) {
+	limit := defaultUserLimit
+	if len(arguments) == 0 {
+		return limit, nil
+	}
+	parsedLimit, err := strconv.Atoi(arguments[0])
+	if err != nil || parsedLimit < 1 || parsedLimit > maximumUserLimit {
+		return 0, fmt.Errorf("%s list limit must be between 1 and %d", subject, maximumUserLimit)
+	}
+
+	return parsedLimit, nil
+}
+
+func (console *adminConsole) nextAuditPage(ctx context.Context) error {
+	if !console.auditStarted {
+		return errors.New("start pagination with 'audit list [limit]'")
+	}
+	if console.auditCursor == "" {
+		return errors.New("there is no next audit page")
+	}
+
+	filter := console.auditFilter
+	filter.Cursor = console.auditCursor
+
+	return console.loadAuditPage(ctx, filter)
+}
+
+func (console *adminConsole) firstAuditPage(ctx context.Context) error {
+	if !console.auditStarted {
+		return errors.New("start pagination with 'audit list [limit]'")
+	}
+
+	return console.loadAuditPage(ctx, console.auditFilter)
+}
+
+func (console *adminConsole) loadAuditPage(
+	ctx context.Context,
+	filter apiclient.AuditEventFilter,
+) error {
+	page, err := console.api.ListAuditEvents(
+		ctx,
+		console.session.AccessToken(),
+		filter,
+	)
+	if err != nil {
+		return fmt.Errorf("list audit events: %w", err)
+	}
+	console.auditCursor = page.NextCursor
+	if len(page.Events) == 0 {
+		fmt.Fprintln(console.output, "No audit events found.")
+
+		return nil
+	}
+	for _, event := range page.Events {
+		console.printAuditEvent(event)
+	}
+	if page.NextCursor != "" {
+		fmt.Fprintln(console.output, "More audit events are available; use 'audit next'.")
+	}
+
+	return nil
+}
+
+func (console *adminConsole) printAuditEvent(event apiclient.AuditEvent) {
+	actor := "anonymous"
+	if event.ActorID != "" {
+		actor = fmt.Sprintf("%s (%s, %s)", event.ActorUsername, event.ActorID, event.ActorRole)
+	}
+	target := string(event.TargetType)
+	if event.TargetID != "" {
+		target += ":" + event.TargetID
+	}
+	if event.TargetName != "" {
+		target += fmt.Sprintf(" %q", event.TargetName)
+	}
+
+	fmt.Fprintf(
+		console.output,
+		"%s  %-7s  %s\n  actor=%s  target=%s",
+		sharedcli.FormatLocalTime(event.OccurredAt),
+		event.Outcome,
+		event.Type,
+		actor,
+		target,
+	)
+	if event.Reason != "" {
+		fmt.Fprintf(console.output, "  reason=%s", event.Reason)
+	}
+	if event.Range != nil {
+		fmt.Fprintf(
+			console.output,
+			"  range=%d-%d/%d",
+			event.Range.Start,
+			event.Range.End,
+			event.Range.Total,
+		)
+	}
+	fmt.Fprintln(console.output)
+}
+
+func (console *adminConsole) readAuditTime(
+	ctx context.Context,
+	prompt string,
+) (*time.Time, error) {
+	for {
+		value, available, err := console.readCommand(ctx, prompt)
+		if err != nil {
+			return nil, fmt.Errorf("read audit time: %w", err)
+		}
+		if !available {
+			return nil, io.EOF
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil, nil
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, value)
+		if err == nil {
+			return &parsed, nil
+		}
+
+		console.printError(errors.New("time must use RFC3339 with a UTC offset; try again"))
+	}
+}
+
+func (console *adminConsole) readAuditActorID(ctx context.Context) (string, error) {
+	for {
+		value, available, err := console.readCommand(ctx, "Actor ID (blank for any): ")
+		if err != nil {
+			return "", fmt.Errorf("read audit actor ID: %w", err)
+		}
+		if !available {
+			return "", io.EOF
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return "", nil
+		}
+		if err := identity.ValidateUserID(value); err == nil {
+			return value, nil
+		}
+
+		console.printError(errors.New("actor ID must be a canonical UUID; try again"))
+	}
+}
+
+func (console *adminConsole) readAuditType(ctx context.Context) (audit.Type, error) {
+	for {
+		value, available, err := console.readCommand(ctx, "Event type (blank for any): ")
+		if err != nil {
+			return "", fmt.Errorf("read audit event type: %w", err)
+		}
+		if !available {
+			return "", io.EOF
+		}
+		eventType := audit.Type(strings.TrimSpace(value))
+		if eventType == "" || eventType.Valid() {
+			return eventType, nil
+		}
+
+		console.printError(errors.New("unsupported audit event type; try again"))
+	}
+}
+
+func (console *adminConsole) readAuditOutcome(ctx context.Context) (audit.Outcome, error) {
+	for {
+		value, available, err := console.readCommand(
+			ctx,
+			"Outcome (success|denied|failure, blank for any): ",
+		)
+		if err != nil {
+			return "", fmt.Errorf("read audit outcome: %w", err)
+		}
+		if !available {
+			return "", io.EOF
+		}
+		outcome := audit.Outcome(strings.TrimSpace(value))
+		if outcome == "" || outcome.Valid() {
+			return outcome, nil
+		}
+
+		console.printError(errors.New("outcome must be success, denied, or failure; try again"))
+	}
+}
+
 func (console *adminConsole) issuePasswordEnrollment(
 	ctx context.Context,
 	userID string,
@@ -764,6 +1048,9 @@ func (console *adminConsole) printHelp() {
 	fmt.Fprintln(console.output, "  user delete <id>")
 	fmt.Fprintln(console.output, "  password enrollment <user-id>")
 	fmt.Fprintln(console.output, "  password change")
+	fmt.Fprintln(console.output, "  audit list [limit]")
+	fmt.Fprintln(console.output, "  audit next")
+	fmt.Fprintln(console.output, "  audit first")
 	fmt.Fprintln(console.output, "  exit | quit | bye")
 }
 

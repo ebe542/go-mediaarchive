@@ -249,10 +249,47 @@ operating system's current local time zone and retain their numeric UTC offset.
 | `user delete <id>` | Permanently delete a user after exact username confirmation. | `user delete 123e4567-e89b-12d3-a456-426614174000` |
 | `password enrollment <user-id>` | Issue a one-time initial-password token. | `password enrollment 123e4567-e89b-12d3-a456-426614174000` |
 | `password change` | Change the administrator's own password. | `password change` |
+| `audit list [limit]` | Prompt for filters and start at the first audit-event page. | `audit list 20` |
+| `audit next` | Load the next audit page with the active filters. | `audit next` |
+| `audit first` | Return to the first audit page with the active filters. | `audit first` |
 | `exit`, `quit`, `bye` | Attempt logout and close the console. | `exit` |
 
 `user list` accepts limits from 1 through 100 and uses 50 by default. The
 continuation cursor is retained internally and is cleared on logout.
+
+`audit list` uses the same limit range and default. It prompts for optional
+inclusive `from`, exclusive `to`, actor ID, exact event type, and exact outcome
+filters. Enter timestamps as RFC3339 values with an explicit UTC offset, for
+example `2026-10-14T09:00:00+02:00`. Press Enter at any filter prompt to leave
+that filter unrestricted. Invalid values repeat only the affected prompt.
+
+Audit results display timestamps in the operating system's local time zone.
+The console retains filters and the opaque continuation cursor in memory for
+`audit next` and `audit first`; logout and password changes clear that state.
+Supported event types are documented in
+[Milestone 21](milestones/021-security-audit-logging.md#event-types), and valid
+outcomes are `success`, `denied`, and `failure`.
+
+### Inspect audit events
+
+List denied content-access events for one actor:
+
+```text
+archive_admin@mediaarchive-admin> audit list 20
+From (RFC3339, blank for any): 2026-10-01T00:00:00+02:00
+To (RFC3339, blank for any):
+Actor ID (blank for any): 123e4567-e89b-12d3-a456-426614174000
+Event type (blank for any): media.content_read
+Outcome (success|denied|failure, blank for any): denied
+<local timestamp>  denied   media.content_read
+  actor=archive_user (123e4567-e89b-12d3-a456-426614174000, viewer)  target=media:<media-id> "Reference Manual"  reason=missing_permission
+More audit events are available; use 'audit next'.
+archive_admin@mediaarchive-admin> audit next
+```
+
+The directory contains security metadata, not media content, credentials,
+storage paths, or unrestricted server errors. Listing audit events creates its
+own `audit.events_listed` event.
 
 ## Complete user enrollment scenario
 

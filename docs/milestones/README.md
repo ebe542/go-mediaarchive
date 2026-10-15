@@ -26,6 +26,7 @@ verifiable increments.
 | `milestone-019` | [Secure managed content storage](019-secure-managed-content-storage.md) | Complete |
 | `milestone-020` | [Authorized content streaming](020-authorized-content-streaming.md) | Complete |
 | `milestone-021` | [Security audit logging](021-security-audit-logging.md) | Complete |
+| `milestone-022` | [Administrator audit console](022-administrator-audit-console.md) | Complete |
 
 ## Versioning rule
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ebe542/go-mediaarchive/internal/audit"
 	sharedcli "github.com/ebe542/go-mediaarchive/internal/cli"
 	apiclient "github.com/ebe542/go-mediaarchive/internal/client"
 	"github.com/ebe542/go-mediaarchive/internal/identity"
@@ -17,11 +18,17 @@ type userListCall struct {
 	cursor string
 }
 
+type auditListCall struct {
+	accessToken string
+	filter      apiclient.AuditEventFilter
+}
+
 type recordingAdminAPI struct {
 	loginSession       apiclient.Session
 	currentUser        apiclient.User
 	logoutTokens       []string
 	listCalls          []userListCall
+	auditCalls         []auditListCall
 	createdInput       apiclient.UserInput
 	updatedID          string
 	updatedInput       apiclient.UserInput
@@ -34,6 +41,47 @@ type recordingAdminAPI struct {
 	currentPassword    string
 	newPassword        string
 	currentUserCallNum int
+}
+
+func (api *recordingAdminAPI) ListAuditEvents(
+	_ context.Context,
+	accessToken string,
+	filter apiclient.AuditEventFilter,
+) (apiclient.AuditEventPage, error) {
+	api.auditCalls = append(api.auditCalls, auditListCall{
+		accessToken: accessToken,
+		filter:      filter,
+	})
+	nextCursor := "next-audit-cursor"
+	event := apiclient.AuditEvent{
+		ID:            "11111111-1111-4111-8111-111111111111",
+		OccurredAt:    time.Date(2026, time.October, 14, 12, 30, 0, 0, time.UTC),
+		Type:          audit.TypeMediaContentRead,
+		Outcome:       audit.OutcomeDenied,
+		ActorID:       "123e4567-e89b-12d3-a456-426614174000",
+		ActorUsername: "archive_user",
+		ActorRole:     "viewer",
+		TargetType:    audit.TargetMedia,
+		TargetID:      "22222222-2222-4222-8222-222222222222",
+		TargetName:    "Reference Manual",
+		Reason:        audit.ReasonMissingPermission,
+		Range: &apiclient.AuditRange{
+			Start: 0,
+			End:   99,
+			Total: 1000,
+		},
+	}
+	if filter.Cursor != "" {
+		nextCursor = ""
+		event.ActorID = ""
+		event.ActorUsername = ""
+		event.ActorRole = ""
+	}
+
+	return apiclient.AuditEventPage{
+		Events:     []apiclient.AuditEvent{event},
+		NextCursor: nextCursor,
+	}, nil
 }
 
 func (api *recordingAdminAPI) Health(
@@ -485,6 +533,127 @@ func TestAdminConsoleLogsOutActiveSessionOnExit(t *testing.T) {
 	}
 	if len(api.logoutTokens) != 1 || api.logoutTokens[0] != "admin-token" {
 		t.Errorf("expected exit logout, got %v", api.logoutTokens)
+	}
+}
+
+func TestAdminConsoleListsFilteredAuditEvents(t *testing.T) {
+	api := &recordingAdminAPI{
+		loginSession: apiclient.Session{AccessToken: "admin-token"},
+		currentUser: testAdminUser(
+			"admin-id",
+			"archive_admin",
+			identity.RoleAdmin,
+			true,
+		),
+	}
+	actorID := "123e4567-e89b-12d3-a456-426614174000"
+	input := strings.Join([]string{
+		"login archive_admin",
+		"help",
+		"audit list 2",
+		"not-a-time",
+		"2026-10-14T10:00:00+02:00",
+		"2026-10-14T09:00:00+02:00",
+		"2026-10-14T12:00:00+02:00",
+		"not-an-id",
+		actorID,
+		"unknown.event",
+		"media.content_read",
+		"unknown",
+		"denied",
+		"audit next",
+		"audit first",
+		"logout",
+		"exit",
+	}, "\n") + "\n"
+	var output bytes.Buffer
+	var errorOutput bytes.Buffer
+	console := newAdminConsole(
+		api,
+		strings.NewReader(input),
+		&output,
+		&errorOutput,
+		func(string) ([]byte, error) {
+			return []byte("admin passphrase"), nil
+		},
+		time.Second,
+	)
+
+	if err := console.run(context.Background()); err != nil {
+		t.Fatalf("run admin console: %v", err)
+	}
+	if len(api.auditCalls) != 3 {
+		t.Fatalf("expected three audit calls, got %+v", api.auditCalls)
+	}
+	first := api.auditCalls[0]
+	if first.accessToken != "admin-token" ||
+		first.filter.Limit != 2 ||
+		first.filter.ActorID != actorID ||
+		first.filter.Type != audit.TypeMediaContentRead ||
+		first.filter.Outcome != audit.OutcomeDenied ||
+		first.filter.Cursor != "" ||
+		first.filter.From == nil || first.filter.To == nil {
+		t.Fatalf("unexpected first audit call: %+v", first)
+	}
+	if api.auditCalls[1].filter.Cursor != "next-audit-cursor" {
+		t.Errorf("expected continuation cursor, got %+v", api.auditCalls[1].filter)
+	}
+	if api.auditCalls[2].filter.Cursor != "" {
+		t.Errorf("expected first page without cursor, got %+v", api.auditCalls[2].filter)
+	}
+	for _, fragment := range []string{
+		"time must use RFC3339",
+		"audit filter end must be after start",
+		"actor ID must be a canonical UUID",
+		"unsupported audit event type",
+		"outcome must be success, denied, or failure",
+	} {
+		if !strings.Contains(errorOutput.String(), fragment) {
+			t.Errorf("expected error %q, got %q", fragment, errorOutput.String())
+		}
+	}
+	for _, fragment := range []string{
+		sharedcli.FormatLocalTime(
+			time.Date(2026, time.October, 14, 12, 30, 0, 0, time.UTC),
+		),
+		"archive_user (123e4567-e89b-12d3-a456-426614174000, viewer)",
+		`media:22222222-2222-4222-8222-222222222222 "Reference Manual"`,
+		"reason=missing_permission",
+		"range=0-99/1000",
+		"actor=anonymous",
+		"More audit events are available",
+		"audit list [limit]",
+	} {
+		if !strings.Contains(output.String(), fragment) {
+			t.Errorf("expected output %q, got %q", fragment, output.String())
+		}
+	}
+}
+
+func TestAdminConsoleRequiresAuditListBeforePaging(t *testing.T) {
+	console := newAdminConsole(
+		&recordingAdminAPI{},
+		strings.NewReader(""),
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		func(string) ([]byte, error) { return nil, nil },
+		time.Second,
+	)
+	if _, err := console.execute(context.Background(), "audit first"); err == nil ||
+		!strings.Contains(err.Error(), "not logged in") {
+		t.Fatalf("expected authentication error, got %v", err)
+	}
+	console.session.Set("archive_admin", "admin-token")
+
+	if err := console.nextAuditPage(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "start pagination") {
+		t.Fatalf("expected pagination start error, got %v", err)
+	}
+	console.auditStarted = true
+	console.auditCursor = "next-audit-cursor"
+	console.clearSession()
+	if console.auditStarted || console.auditCursor != "" {
+		t.Fatalf("expected audit pagination to be cleared: %+v", console)
 	}
 }
 
