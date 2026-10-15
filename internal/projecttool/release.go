@@ -22,6 +22,8 @@ const releaseUsage = `Usage: projectctl release COMMAND [OPTIONS]
 Commands:
   validate  Validate a release tag and changelog entry.
   build     Build cross-platform release archives and checksums.
+  check     Check a tag and built assets before publication.
+  publish   Publish checked assets to a GitHub release.
 
 Run "projectctl release COMMAND --help" for command-specific options.
 `
@@ -32,7 +34,17 @@ const validateReleaseUsage = `Usage: projectctl release validate --version vMAJO
 const buildReleaseUsage = `Usage: projectctl release build --version vMAJOR.MINOR.PATCH [--output-directory PATH]
 `
 
+const checkReleaseUsage = `Usage: projectctl release check --version vMAJOR.MINOR.PATCH --repository OWNER/REPOSITORY [--asset-directory PATH]
+`
+
+const publishReleaseUsage = `Usage: projectctl release publish --version vMAJOR.MINOR.PATCH --repository OWNER/REPOSITORY [--asset-directory PATH]
+`
+
 var releaseVersionPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+
+var releaseRepositoryPattern = regexp.MustCompile(
+	`^[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?/[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$`,
+)
 
 var releaseTimestamp = time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC)
 
@@ -68,6 +80,10 @@ func (app application) runReleaseCommand(arguments []string) error {
 		return app.validateRelease(arguments[1:])
 	case "build":
 		return app.buildRelease(arguments[1:])
+	case "check":
+		return app.checkRelease(arguments[1:])
+	case "publish":
+		return app.publishRelease(arguments[1:])
 	default:
 		fmt.Fprint(app.stderr, releaseUsage)
 
@@ -86,6 +102,10 @@ func (app application) validateRelease(arguments []string) error {
 		return err
 	}
 
+	return app.validateReleaseVersion(version)
+}
+
+func (app application) validateReleaseVersion(version string) error {
 	tagType, err := app.runner.Output(Command{
 		Name: "git", Args: []string{"cat-file", "-t", version}, Dir: app.root,
 	})
@@ -127,6 +147,69 @@ func (app application) validateRelease(arguments []string) error {
 	}
 
 	fmt.Fprintf(app.stdout, "Release %s is valid.\n", version)
+
+	return nil
+}
+
+func (app application) checkRelease(arguments []string) error {
+	if hasHelpArgument(arguments) {
+		fmt.Fprint(app.stdout, checkReleaseUsage)
+
+		return nil
+	}
+	options, err := parseReleaseAssetArguments(arguments, checkReleaseUsage, app.stderr)
+	if err != nil {
+		return err
+	}
+	if err := app.validateReleaseVersion(options.version); err != nil {
+		return err
+	}
+	if err := app.requireCommand("gh", "GitHub CLI"); err != nil {
+		return err
+	}
+	options.assetDirectory = resolveReleaseDirectory(app.root, options.assetDirectory)
+	if err := checkReleaseAssets(options.version, options.assetDirectory); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(app.stdout, "Release %s assets are ready for %s.\n", options.version, options.repository)
+
+	return nil
+}
+
+func (app application) publishRelease(arguments []string) error {
+	if hasHelpArgument(arguments) {
+		fmt.Fprint(app.stdout, publishReleaseUsage)
+
+		return nil
+	}
+	options, err := parseReleaseAssetArguments(arguments, publishReleaseUsage, app.stderr)
+	if err != nil {
+		return err
+	}
+	if err := app.requireCommand("gh", "GitHub CLI"); err != nil {
+		return err
+	}
+	options.assetDirectory = resolveReleaseDirectory(app.root, options.assetDirectory)
+	if err := checkReleaseAssets(options.version, options.assetDirectory); err != nil {
+		return err
+	}
+
+	arguments = []string{"release", "create", options.version}
+	for _, name := range expectedReleaseAssetNames(options.version) {
+		arguments = append(arguments, filepath.Join(options.assetDirectory, name))
+	}
+	arguments = append(
+		arguments,
+		"--verify-tag",
+		"--generate-notes",
+		"--repo", options.repository,
+		"--title", options.version,
+	)
+	if err := app.runner.Run(Command{Name: "gh", Args: arguments}); err != nil {
+		return fmt.Errorf("publish GitHub release %s: %w", options.version, err)
+	}
+	fmt.Fprintf(app.stdout, "Published release %s to %s.\n", options.version, options.repository)
 
 	return nil
 }
@@ -325,6 +408,173 @@ func parseBuildArguments(arguments []string, stderr io.Writer) (string, string, 
 	version, err := parseVersionArguments(versionArguments, buildReleaseUsage, stderr)
 
 	return version, outputDirectory, err
+}
+
+type releaseAssetOptions struct {
+	version        string
+	repository     string
+	assetDirectory string
+}
+
+func parseReleaseAssetArguments(
+	arguments []string,
+	usage string,
+	stderr io.Writer,
+) (releaseAssetOptions, error) {
+	options := releaseAssetOptions{assetDirectory: "dist"}
+	for index := 0; index < len(arguments); index++ {
+		if index+1 >= len(arguments) {
+			fmt.Fprint(stderr, usage)
+
+			return releaseAssetOptions{}, fmt.Errorf("value is required for %s", arguments[index])
+		}
+		value := arguments[index+1]
+		switch arguments[index] {
+		case "--version":
+			options.version = value
+		case "--repository":
+			options.repository = value
+		case "--asset-directory":
+			options.assetDirectory = value
+		default:
+			fmt.Fprint(stderr, usage)
+
+			return releaseAssetOptions{}, fmt.Errorf("unknown release argument %q", arguments[index])
+		}
+		index++
+	}
+	if !releaseVersionPattern.MatchString(options.version) {
+		return releaseAssetOptions{}, fmt.Errorf(
+			"version must use vMAJOR.MINOR.PATCH: %q",
+			options.version,
+		)
+	}
+	if !releaseRepositoryPattern.MatchString(options.repository) {
+		return releaseAssetOptions{}, fmt.Errorf(
+			"repository must use OWNER/REPOSITORY: %q",
+			options.repository,
+		)
+	}
+	if strings.TrimSpace(options.assetDirectory) == "" {
+		return releaseAssetOptions{}, errors.New("asset directory is required")
+	}
+
+	return options, nil
+}
+
+func resolveReleaseDirectory(root string, directory string) string {
+	if filepath.IsAbs(directory) {
+		return filepath.Clean(directory)
+	}
+
+	return filepath.Join(root, directory)
+}
+
+func expectedReleaseArchiveNames(version string) []string {
+	releaseVersion := strings.TrimPrefix(version, "v")
+	names := make([]string, 0, len(releaseTargets))
+	for _, target := range releaseTargets {
+		extension := ".tar.gz"
+		if target.operatingSystem == "windows" {
+			extension = ".zip"
+		}
+		names = append(names, fmt.Sprintf(
+			"go-mediaarchive_%s_%s_%s%s",
+			releaseVersion,
+			target.operatingSystem,
+			target.architecture,
+			extension,
+		))
+	}
+
+	return names
+}
+
+func expectedReleaseAssetNames(version string) []string {
+	names := expectedReleaseArchiveNames(version)
+
+	return append(names, "SHA256SUMS")
+}
+
+func checkReleaseAssets(version string, directory string) error {
+	expectedNames := expectedReleaseAssetNames(version)
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return fmt.Errorf("read release asset directory: %w", err)
+	}
+	actualNames := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return fmt.Errorf("unexpected release asset directory %q", entry.Name())
+		}
+		actualNames[entry.Name()] = struct{}{}
+	}
+	for _, name := range expectedNames {
+		if _, exists := actualNames[name]; !exists {
+			return fmt.Errorf("required release asset %q is missing", name)
+		}
+		delete(actualNames, name)
+	}
+	if len(actualNames) != 0 {
+		for name := range actualNames {
+			return fmt.Errorf("unexpected release asset %q", name)
+		}
+	}
+
+	checksumData, err := os.ReadFile(filepath.Join(directory, "SHA256SUMS"))
+	if err != nil {
+		return fmt.Errorf("read release checksums: %w", err)
+	}
+	checksums := make(map[string]string, len(releaseTargets))
+	for lineNumber, line := range strings.Split(strings.TrimSpace(string(checksumData)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || len(fields[0]) != sha256.Size*2 {
+			return fmt.Errorf("invalid checksum line %d", lineNumber+1)
+		}
+		if _, err := hex.DecodeString(fields[0]); err != nil {
+			return fmt.Errorf("invalid checksum line %d: %w", lineNumber+1, err)
+		}
+		if _, duplicate := checksums[fields[1]]; duplicate {
+			return fmt.Errorf("duplicate checksum for %q", fields[1])
+		}
+		checksums[fields[1]] = strings.ToLower(fields[0])
+	}
+	for _, name := range expectedReleaseArchiveNames(version) {
+		expected, exists := checksums[name]
+		if !exists {
+			return fmt.Errorf("checksum for %q is missing", name)
+		}
+		actual, err := fileSHA256(filepath.Join(directory, name))
+		if err != nil {
+			return fmt.Errorf("hash release asset %q: %w", name, err)
+		}
+		if actual != expected {
+			return fmt.Errorf("checksum for %q does not match", name)
+		}
+		delete(checksums, name)
+	}
+	if len(checksums) != 0 {
+		for name := range checksums {
+			return fmt.Errorf("unexpected checksum for %q", name)
+		}
+	}
+
+	return nil
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func copyFile(sourcePath string, destinationPath string, mode fs.FileMode) error {

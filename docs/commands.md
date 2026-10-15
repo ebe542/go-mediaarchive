@@ -584,5 +584,28 @@ Validate an existing annotated release tag and its changelog entry:
 go run ./cmd/projectctl release validate --version v0.1.0
 ```
 
+Check the annotated tag, GitHub CLI, expected archives, and every checksum
+before publication:
+
+```bash
+go run ./cmd/projectctl release check \
+  --version v0.1.0 \
+  --repository ebe542/go-mediaarchive \
+  --asset-directory dist
+```
+
+The Release workflow publishes the checked directory with:
+
+```bash
+go run ./cmd/projectctl release publish \
+  --version v0.1.0 \
+  --repository ebe542/go-mediaarchive \
+  --asset-directory dist
+```
+
+`release publish` requires an authenticated GitHub CLI and deliberately needs
+an explicit repository. It does not discover publication state from a local
+Git worktree.
+
 Local release builds do not publish files. Publishing is triggered only by an
 annotated `vMAJOR.MINOR.PATCH` tag as described in [Releases](releases.md).

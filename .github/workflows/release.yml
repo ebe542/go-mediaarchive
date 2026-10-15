@@ -4,9 +4,19 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing release tag to publish
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ inputs.version || github.ref_name }}
+  RELEASE_REPOSITORY: ${{ github.repository }}
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.version || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -18,39 +28,62 @@ jobs:
       contents: read
 
     steps:
-      - name: Check out repository history
+      - name: Check out release tooling
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Set up Go
+      - name: Set up tooling Go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
+      - name: Build release tooling
+        run: go build -o "$RUNNER_TEMP/projectctl" ./cmd/projectctl
+
+      - name: Check out release source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+          path: release-source
+
+      - name: Set up release Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: release-source/go.mod
+          cache: true
+
       - name: Validate release tag
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
+        working-directory: release-source
         run: >-
-          go run ./cmd/projectctl release validate
+          "$RUNNER_TEMP/projectctl" release validate
           --version "$RELEASE_TAG"
 
       - name: Run quality gate
-        run: go run ./cmd/projectctl check --race
+        working-directory: release-source
+        run: '"$RUNNER_TEMP/projectctl" check --race'
 
       - name: Build release archives
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
+        working-directory: release-source
         run: >-
-          go run ./cmd/projectctl release build
+          "$RUNNER_TEMP/projectctl" release build
           --version "$RELEASE_TAG"
-          --output-directory dist
+          --output-directory "$GITHUB_WORKSPACE/dist"
+
+      - name: Check release publication
+        working-directory: release-source
+        run: >-
+          "$RUNNER_TEMP/projectctl" release check
+          --version "$RELEASE_TAG"
+          --repository "$RELEASE_REPOSITORY"
+          --asset-directory "$GITHUB_WORKSPACE/dist"
 
       - name: Upload verified release assets
         uses: actions/upload-artifact@v4
         with:
-          name: release-assets-${{ github.ref_name }}
+          name: release-assets-${{ env.RELEASE_TAG }}
           path: dist/
           if-no-files-found: error
           retention-days: 1
@@ -64,24 +97,26 @@ jobs:
       contents: write
 
     steps:
+      - name: Check out release tooling
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Download verified release assets
         uses: actions/download-artifact@v4
         with:
-          name: release-assets-${{ github.ref_name }}
+          name: release-assets-${{ env.RELEASE_TAG }}
           path: dist
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            printf 'Release already exists: %s\n' "$RELEASE_TAG" >&2
-            exit 1
-          fi
-
-          gh release create "$RELEASE_TAG" \
-            dist/* \
-            --verify-tag \
-            --generate-notes \
-            --title "$RELEASE_TAG"
+        run: >-
+          go run ./cmd/projectctl release publish
+          --version "$RELEASE_TAG"
+          --repository "$RELEASE_REPOSITORY"
+          --asset-directory dist

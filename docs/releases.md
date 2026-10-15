@@ -82,5 +82,23 @@ dated changelog section, repeats the quality gate, builds the archives,
 calculates checksums, and creates the GitHub release with generated release
 notes.
 
+## Recovering a failed publication
+
+If verification and archive creation succeed but GitHub release publication
+fails, do not move or replace the published tag. Correct the workflow on
+`main`, wait for its Quality Gate, and start the `Release` workflow manually
+from the GitHub Actions page. Enter the existing tag, for example `v0.1.0`, as
+the required `version` input.
+
+The recovery run checks out that exact tag, validates it, repeats the quality
+gate, rebuilds the archives, and publishes them to the configured repository.
+It refuses to overwrite a GitHub release that already exists.
+
+Before uploading artifacts, the workflow runs the Go-based publication check.
+It verifies the annotated tag and changelog, requires the GitHub CLI, checks
+the exact five-platform asset set, and recalculates every entry in
+`SHA256SUMS`. Publication also requires an explicit `OWNER/REPOSITORY` value,
+so it does not depend on discovering a local Git worktree.
+
 Release tags and published releases are immutable. Corrections require a new
 semantic version rather than moving or replacing an existing tag.

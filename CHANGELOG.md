@@ -8,6 +8,11 @@ checkpoints.
 
 ## [Unreleased]
 
+### Fixed
+
+- Release publication explicitly targets the GitHub repository and supports a
+  manual recovery run for an existing immutable release tag.
+
 ## [0.1.0] - 2026-10-15
 
 ### Added

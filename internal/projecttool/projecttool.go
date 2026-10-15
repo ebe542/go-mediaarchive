@@ -11,7 +11,7 @@ const usage = `Usage: projectctl COMMAND [OPTIONS]
 Commands:
   check         Run the standard project checks.
   quality-gate  Validate workflows and reproduce the quality gate locally.
-  release       Validate or build a release.
+  release       Validate, build, check, or publish a release.
 
 Run "projectctl COMMAND --help" for command-specific options.
 `
