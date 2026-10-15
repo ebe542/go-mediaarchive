@@ -56,13 +56,17 @@ go run ./cmd/projectctl release build \
 The `dist` directory is ignored by Git. Local builds validate packaging but do
 not publish a GitHub release.
 
+`release validate` is intentionally a post-tag check used by the Release
+workflow. Running it before `v0.1.0` exists fails because there is no annotated
+Git object to inspect. Use `release build` for the local pre-tag verification.
+
 ## Publishing a release
 
 First move the completed entries under `Unreleased` in `CHANGELOG.md` to a dated
 section matching the intended version:
 
 ```markdown
-## [0.1.0] - 2026-09-01
+## [0.1.0] - 2026-10-15
 ```
 
 Ensure the changelog commit is on `main` and its Quality Gate workflow is green.

@@ -8,6 +8,8 @@ checkpoints.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-15
+
 ### Added
 
 - Versioned JSON health, authentication, and user-management APIs.
@@ -39,7 +41,10 @@ checkpoints.
 - Append-only security audit history with fail-closed business events,
   session-deduplicated content access, an administrator directory, and a typed
   paginated client.
+- Interactive administrator audit commands with validated filters, local-time
+  output, and opaque cursor pagination.
 - Cross-platform Go project tooling for Quality Gate checks, reproducible
   release archives, checksums, and semantic-version release validation.
 
-[Unreleased]: https://github.com/ebe542/go-mediaarchive/compare/milestone-010...HEAD
+[Unreleased]: https://github.com/ebe542/go-mediaarchive/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/ebe542/go-mediaarchive/releases/tag/v0.1.0
