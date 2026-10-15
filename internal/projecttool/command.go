@@ -48,7 +48,9 @@ func (runner execRunner) Output(specification Command) (string, error) {
 	command.Stdout = &stdout
 	command.Stderr = runner.stderr
 
-	return stdout.String(), command.Run()
+	err := command.Run()
+
+	return stdout.String(), err
 }
 
 func (execRunner) LookPath(name string) error {

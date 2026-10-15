@@ -46,5 +46,10 @@ checkpoints.
 - Cross-platform Go project tooling for Quality Gate checks, reproducible
   release archives, checksums, and semantic-version release validation.
 
+### Fixed
+
+- Project-tool subprocess output is captured after command completion so
+  release-tag and formatting validation inspect the actual command result.
+
 [Unreleased]: https://github.com/ebe542/go-mediaarchive/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/ebe542/go-mediaarchive/releases/tag/v0.1.0
