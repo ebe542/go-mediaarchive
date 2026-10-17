@@ -109,7 +109,7 @@ func NewItem(
 	createdAt time.Time,
 	updatedAt time.Time,
 ) (Item, error) {
-	if err := validateCanonicalUUID(id, ErrInvalidMediaID); err != nil {
+	if err := ValidateMediaID(id); err != nil {
 		return Item{}, err
 	}
 
@@ -187,6 +187,11 @@ func NewItem(
 		CreatedAt:        createdAt.UTC(),
 		UpdatedAt:        updatedAt.UTC(),
 	}, nil
+}
+
+// ValidateMediaID verifies a canonical lowercase non-nil media UUID.
+func ValidateMediaID(id string) error {
+	return validateCanonicalUUID(id, ErrInvalidMediaID)
 }
 
 func validateCanonicalUUID(id string, inputError error) error {

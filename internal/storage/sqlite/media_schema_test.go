@@ -28,6 +28,8 @@ func TestMediaMigrationCreatesExpectedTablesAndIndexes(t *testing.T) {
 		{"table", "media_authors"},
 		{"table", "media_grants"},
 		{"index", "media_items_owner_id_index"},
+		{"index", "media_items_directory_index"},
+		{"index", "media_items_type_directory_index"},
 		{"index", "media_grants_user_id_index"},
 	} {
 		var count int

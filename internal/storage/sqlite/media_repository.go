@@ -6,8 +6,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	appmedia "github.com/ebe542/go-mediaarchive/internal/application/media"
 	"github.com/ebe542/go-mediaarchive/internal/audit"
 	"github.com/ebe542/go-mediaarchive/internal/content"
 	"github.com/ebe542/go-mediaarchive/internal/media"
@@ -20,6 +22,9 @@ type MediaRepository struct {
 
 // Verify at compile time that MediaRepository implements the domain contract.
 var _ media.Repository = (*MediaRepository)(nil)
+
+// Verify that MediaRepository also supports authorization-aware discovery.
+var _ appmedia.DirectoryRepository = (*MediaRepository)(nil)
 
 // NewMediaRepository creates a SQLite-backed media repository.
 func NewMediaRepository(database *sql.DB) *MediaRepository {
@@ -159,6 +164,115 @@ func (repository *MediaRepository) FindByID(
 	}
 
 	return item, nil
+}
+
+// ListDiscoverableMedia returns one immutable-key page visible to an actor.
+func (repository *MediaRepository) ListDiscoverableMedia(
+	ctx context.Context,
+	actorID string,
+	filter appmedia.DirectoryFilter,
+	cursor *appmedia.DirectoryCursor,
+	limit int,
+) ([]media.Item, error) {
+	query := `
+		SELECT m.id
+		FROM media_items AS m
+		WHERE (
+			m.owner_id = ?
+			OR EXISTS (
+				SELECT 1
+				FROM media_grants AS g
+				WHERE g.media_id = m.id
+					AND g.user_id = ?
+					AND (g.permissions & ?) != 0
+			)
+		)
+	`
+	arguments := []any{actorID, actorID, int(media.PermissionDiscover)}
+	if filter.Query != "" {
+		pattern := "%" + escapeLikePattern(strings.ToLower(filter.Query)) + "%"
+		query += `
+			AND (
+				lower(m.title) LIKE ? ESCAPE '\'
+				OR EXISTS (
+					SELECT 1
+					FROM media_authors AS a
+					WHERE a.media_id = m.id
+						AND lower(a.name) LIKE ? ESCAPE '\'
+				)
+			)
+		`
+		arguments = append(arguments, pattern, pattern)
+	}
+	if filter.Type != "" {
+		query += " AND m.media_type = ?\n"
+		arguments = append(arguments, filter.Type)
+	}
+	if cursor != nil {
+		query += `
+			AND (
+				m.created_at < ?
+				OR (m.created_at = ? AND m.id < ?)
+			)
+		`
+		createdAt := cursor.CreatedAt.Format(time.RFC3339Nano)
+		arguments = append(arguments, createdAt, createdAt, cursor.ID)
+	}
+	query += " ORDER BY m.created_at DESC, m.id DESC LIMIT ?"
+	arguments = append(arguments, limit)
+
+	transaction, err := repository.database.BeginTx(
+		ctx,
+		&sql.TxOptions{ReadOnly: true},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("begin media directory read: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	rows, err := transaction.QueryContext(ctx, query, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("select discoverable media IDs: %w", err)
+	}
+	ids := make([]string, 0, limit)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+
+			return nil, fmt.Errorf("scan discoverable media ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+
+		return nil, fmt.Errorf("iterate discoverable media IDs: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close discoverable media IDs: %w", err)
+	}
+
+	items := make([]media.Item, 0, len(ids))
+	for _, id := range ids {
+		item, err := findMediaItemByID(ctx, transaction, id)
+		if err != nil {
+			return nil, fmt.Errorf("load discoverable media %q: %w", id, err)
+		}
+		items = append(items, item)
+	}
+	if err := transaction.Commit(); err != nil {
+		return nil, fmt.Errorf("commit media directory read: %w", err)
+	}
+
+	return items, nil
+}
+
+func escapeLikePattern(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+
+	return strings.ReplaceAll(value, `_`, `\_`)
 }
 
 // Update atomically replaces mutable metadata and ordered authors while

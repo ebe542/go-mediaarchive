@@ -273,6 +273,12 @@ immutable event shares one transaction, so neither can be committed alone.
 Only the 32-byte session-token hash is stored. The marker cascades when its
 session is deleted, while the independent `audit_events` row remains immutable.
 
+Media-directory traversal uses `media_items_directory_index` for immutable
+descending `(created_at, id)` pagination and
+`media_items_type_directory_index` when a media-type filter is active. Title
+and author substring matching is deliberately bounded but does not use a
+full-text index in the initial directory.
+
 ## Storage and integrity rules
 
 - Domain tables use SQLite `STRICT` mode.

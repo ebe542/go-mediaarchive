@@ -59,6 +59,7 @@ flowchart LR
     package20["internal/projecttool"]
   end
   package0 --> package7
+  package0 --> package12
   package0 --> package13
   package0 --> package14
   package0 --> package17
@@ -122,6 +123,7 @@ flowchart LR
   package18 --> package17
   package22 --> package15
   package23 --> package5
+  package23 --> package8
   package23 --> package11
   package23 --> package12
   package23 --> package15
