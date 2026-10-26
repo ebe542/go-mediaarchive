@@ -150,7 +150,12 @@ func TestMediaRepositoryUsesDescendingImmutableCursor(t *testing.T) {
 			t.Fatalf("create cursor fixture: %v", err)
 		}
 	}
-	cursor, err := appmedia.NewDirectoryCursor(first.CreatedAt, first.ID)
+	cursor, err := appmedia.NewDirectoryCursor(
+		first.CreatedAt,
+		first.ID,
+		[32]byte{1},
+		10,
+	)
 	if err != nil {
 		t.Fatalf("create directory cursor: %v", err)
 	}

@@ -74,6 +74,8 @@ type handlerConfiguration struct {
 	userLister                 UserLister
 	mediaResolver              SessionResolver
 	mediaMetadata              MediaMetadataService
+	mediaDirectoryResolver     SessionResolver
+	mediaDirectoryLister       MediaDirectoryLister
 	mediaGrantResolver         SessionResolver
 	mediaGrants                MediaGrantService
 	mediaUploadResolver        SessionResolver

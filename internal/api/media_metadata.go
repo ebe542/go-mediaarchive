@@ -220,15 +220,18 @@ func writeMediaMetadataResponse(
 	item domainmedia.Item,
 	status int,
 ) {
-	authors := append([]string{}, item.Authors...)
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.Header().Set("Cache-Control", "no-store")
 	response.WriteHeader(status)
 
-	_ = json.NewEncoder(response).Encode(mediaMetadataResponse{
+	_ = json.NewEncoder(response).Encode(newMediaMetadataResponse(item))
+}
+
+func newMediaMetadataResponse(item domainmedia.Item) mediaMetadataResponse {
+	return mediaMetadataResponse{
 		ID:               item.ID,
 		Title:            item.Title,
-		Authors:          authors,
+		Authors:          append([]string{}, item.Authors...),
 		OriginalFilename: item.OriginalFilename,
 		Type:             item.Type,
 		MIMEType:         item.MIMEType,
@@ -237,7 +240,7 @@ func writeMediaMetadataResponse(
 		OwnerID:          item.OwnerID,
 		CreatedAt:        item.CreatedAt.UTC(),
 		UpdatedAt:        item.UpdatedAt.UTC(),
-	})
+	}
 }
 
 func writeMediaContextError(response http.ResponseWriter) {

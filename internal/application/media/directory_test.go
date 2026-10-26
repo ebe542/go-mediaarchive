@@ -73,29 +73,77 @@ func TestDirectoryListsNormalizedDiscoverablePage(t *testing.T) {
 	}
 	if page.NextCursor == nil ||
 		page.NextCursor.ID != first.ID ||
-		!page.NextCursor.CreatedAt.Equal(first.CreatedAt) {
+		!page.NextCursor.CreatedAt.Equal(first.CreatedAt) ||
+		page.NextCursor.FilterHash == ([32]byte{}) ||
+		page.NextCursor.Limit != 1 {
 		t.Fatalf("unexpected next cursor: %+v", page.NextCursor)
+	}
+	repository.limit = 0
+	_, err = directory.ListItems(
+		context.Background(),
+		serviceUser(serviceActorID, identity.RoleViewer, true),
+		appmedia.ListItemsInput{
+			Filter: appmedia.DirectoryFilter{Query: "Changed"},
+			Limit:  1,
+			Cursor: page.NextCursor,
+		},
+	)
+	if !errors.Is(err, appmedia.ErrInvalidDirectoryCursor) {
+		t.Fatalf("expected filter-bound cursor rejection, got %v", err)
+	}
+	if repository.limit != 0 {
+		t.Fatal("expected mismatched cursor not to reach repository")
 	}
 }
 
-func TestDirectoryUsesDefaultLimitAndValidatedCursor(t *testing.T) {
+func TestDirectoryUsesDefaultLimit(t *testing.T) {
 	repository := &recordingDirectoryRepository{items: []domainmedia.Item{}}
 	directory := appmedia.NewDirectory(repository)
-	cursor := &appmedia.DirectoryCursor{
-		CreatedAt: serviceTime().In(time.FixedZone("test", 2*60*60)),
-		ID:        serviceMediaID,
-	}
 
 	page, err := directory.ListItems(
 		context.Background(),
 		serviceUser(serviceActorID, identity.RoleViewer, true),
-		appmedia.ListItemsInput{Cursor: cursor},
+		appmedia.ListItemsInput{},
+	)
+	if err != nil {
+		t.Fatalf("list media with default limit: %v", err)
+	}
+	if page.Items == nil || repository.limit != appmedia.DefaultDirectoryLimit+1 {
+		t.Fatalf("unexpected default page: %+v", page)
+	}
+}
+
+func TestDirectoryValidatesAndNormalizesCursor(t *testing.T) {
+	first := directoryItem(t, serviceMediaID, serviceTime())
+	second := directoryItem(
+		t,
+		"423e4567-e89b-12d3-a456-426614174000",
+		serviceTime().Add(-time.Hour),
+	)
+	repository := &recordingDirectoryRepository{items: []domainmedia.Item{first, second}}
+	directory := appmedia.NewDirectory(repository)
+	firstPage, err := directory.ListItems(
+		context.Background(),
+		serviceUser(serviceActorID, identity.RoleViewer, true),
+		appmedia.ListItemsInput{Limit: 1},
+	)
+	if err != nil {
+		t.Fatalf("create media cursor: %v", err)
+	}
+	cursor := *firstPage.NextCursor
+	cursor.CreatedAt = cursor.CreatedAt.In(time.FixedZone("test", 2*60*60))
+	repository.items = []domainmedia.Item{}
+
+	page, err := directory.ListItems(
+		context.Background(),
+		serviceUser(serviceActorID, identity.RoleViewer, true),
+		appmedia.ListItemsInput{Limit: 1, Cursor: &cursor},
 	)
 	if err != nil {
 		t.Fatalf("list media with cursor: %v", err)
 	}
-	if page.Items == nil || repository.limit != appmedia.DefaultDirectoryLimit+1 {
-		t.Fatalf("unexpected default page: %+v", page)
+	if page.Items == nil || repository.limit != 2 {
+		t.Fatalf("unexpected cursor page: %+v", page)
 	}
 	if repository.cursor == nil || repository.cursor.CreatedAt.Location() != time.UTC {
 		t.Fatalf("expected normalized cursor, got %+v", repository.cursor)
@@ -143,6 +191,21 @@ func TestDirectoryRejectsInvalidInputBeforeRepository(t *testing.T) {
 			actor:    serviceUser(serviceActorID, identity.RoleViewer, true),
 			input:    appmedia.ListItemsInput{Limit: 101},
 			expected: appmedia.ErrInvalidDirectoryLimit,
+		},
+		{
+			name:  "cursor filter binding",
+			actor: serviceUser(serviceActorID, identity.RoleViewer, true),
+			input: appmedia.ListItemsInput{
+				Filter: appmedia.DirectoryFilter{Query: "changed"},
+				Limit:  1,
+				Cursor: &appmedia.DirectoryCursor{
+					CreatedAt:  serviceTime(),
+					ID:         serviceMediaID,
+					FilterHash: [32]byte{1},
+					Limit:      1,
+				},
+			},
+			expected: appmedia.ErrInvalidDirectoryCursor,
 		},
 		{
 			name:  "cursor",

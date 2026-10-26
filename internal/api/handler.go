@@ -211,6 +211,20 @@ func NewHandler(options ...Option) http.Handler {
 		)
 	}
 
+	if configuration.mediaDirectoryResolver != nil &&
+		configuration.mediaDirectoryLister != nil {
+		directory := &mediaDirectoryHandler{
+			media: configuration.mediaDirectoryLister,
+		}
+		mux.Handle(
+			"GET /api/v1/media",
+			RequireAuthentication(
+				configuration.mediaDirectoryResolver,
+				http.HandlerFunc(directory.list),
+			),
+		)
+	}
+
 	if configuration.mediaUploadResolver != nil &&
 		configuration.mediaUploads != nil &&
 		configuration.maximumUploadSize > 0 {

@@ -70,8 +70,8 @@ docs(media): complete discovery milestone
 - [x] SQLite returns only owned or explicitly discoverable media.
 - [x] Title, author, type, literal wildcard, and cursor behavior are tested.
 - [x] Directory traversal has dedicated SQLite indexes.
-- [ ] The authenticated API exposes a filtered, paginated media directory.
-- [ ] Opaque cursors are bound to the complete filter and page limit.
+- [x] The authenticated API exposes a filtered, paginated media directory.
+- [x] Opaque cursors are bound to the complete filter and page limit.
 - [ ] The typed client validates filters, cursors, ordering, and media responses.
 - [ ] The interactive client supports list, search, next, first, and get commands.
 - [ ] Logout and password replacement clear media pagination state.

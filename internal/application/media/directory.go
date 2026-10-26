@@ -2,6 +2,8 @@ package media
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -40,12 +42,19 @@ type DirectoryFilter struct {
 
 // DirectoryCursor identifies the immutable key after the last returned item.
 type DirectoryCursor struct {
-	CreatedAt time.Time
-	ID        string
+	CreatedAt  time.Time
+	ID         string
+	FilterHash [sha256.Size]byte
+	Limit      int
 }
 
 // NewDirectoryCursor validates a media-directory pagination position.
-func NewDirectoryCursor(createdAt time.Time, id string) (DirectoryCursor, error) {
+func NewDirectoryCursor(
+	createdAt time.Time,
+	id string,
+	filterHash [sha256.Size]byte,
+	limit int,
+) (DirectoryCursor, error) {
 	if createdAt.IsZero() {
 		return DirectoryCursor{}, fmt.Errorf(
 			"%w: creation time must not be zero",
@@ -55,8 +64,17 @@ func NewDirectoryCursor(createdAt time.Time, id string) (DirectoryCursor, error)
 	if err := domainmedia.ValidateMediaID(id); err != nil {
 		return DirectoryCursor{}, fmt.Errorf("%w: %v", ErrInvalidDirectoryCursor, err)
 	}
+	if filterHash == ([sha256.Size]byte{}) ||
+		limit < 1 || limit > MaximumDirectoryLimit {
+		return DirectoryCursor{}, ErrInvalidDirectoryCursor
+	}
 
-	return DirectoryCursor{CreatedAt: createdAt.UTC(), ID: id}, nil
+	return DirectoryCursor{
+		CreatedAt:  createdAt.UTC(),
+		ID:         id,
+		FilterHash: filterHash,
+		Limit:      limit,
+	}, nil
 }
 
 // ListItemsInput selects one bounded media-directory page.
@@ -121,10 +139,19 @@ func (directory *Directory) ListItems(
 			MaximumDirectoryLimit,
 		)
 	}
+	filterHash, err := directoryFilterFingerprint(filter, limit)
+	if err != nil {
+		return ItemPage{}, err
+	}
 	if input.Cursor != nil {
-		cursor, err := NewDirectoryCursor(input.Cursor.CreatedAt, input.Cursor.ID)
-		if err != nil {
-			return ItemPage{}, err
+		cursor, err := NewDirectoryCursor(
+			input.Cursor.CreatedAt,
+			input.Cursor.ID,
+			input.Cursor.FilterHash,
+			input.Cursor.Limit,
+		)
+		if err != nil || cursor.FilterHash != filterHash || cursor.Limit != limit {
+			return ItemPage{}, ErrInvalidDirectoryCursor
 		}
 		input.Cursor = &cursor
 	}
@@ -146,7 +173,7 @@ func (directory *Directory) ListItems(
 	}
 	page.Items = items[:limit]
 	last := page.Items[len(page.Items)-1]
-	page.NextCursor, err = directoryCursorForItem(last)
+	page.NextCursor, err = directoryCursorForItem(last, filterHash, limit)
 	if err != nil {
 		return ItemPage{}, err
 	}
@@ -182,11 +209,32 @@ func normalizeDirectoryFilter(filter DirectoryFilter) (DirectoryFilter, error) {
 	return filter, nil
 }
 
-func directoryCursorForItem(item domainmedia.Item) (*DirectoryCursor, error) {
-	cursor, err := NewDirectoryCursor(item.CreatedAt, item.ID)
+func directoryCursorForItem(
+	item domainmedia.Item,
+	filterHash [sha256.Size]byte,
+	limit int,
+) (*DirectoryCursor, error) {
+	cursor, err := NewDirectoryCursor(item.CreatedAt, item.ID, filterHash, limit)
 	if err != nil {
 		return nil, fmt.Errorf("create media directory cursor: %w", err)
 	}
 
 	return &cursor, nil
+}
+
+func directoryFilterFingerprint(
+	filter DirectoryFilter,
+	limit int,
+) ([sha256.Size]byte, error) {
+	document := struct {
+		Query string           `json:"query"`
+		Type  domainmedia.Type `json:"type"`
+		Limit int              `json:"limit"`
+	}{Query: filter.Query, Type: filter.Type, Limit: limit}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("encode media directory filter: %w", err)
+	}
+
+	return sha256.Sum256(encoded), nil
 }

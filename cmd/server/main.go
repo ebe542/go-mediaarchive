@@ -415,6 +415,7 @@ func newApplicationHandlerWithContent(
 		uuid.NewString,
 		time.Now,
 	)
+	mediaDirectory := appmedia.NewDirectory(mediaRepository)
 	grantService := appmedia.NewGrantService(
 		mediaRepository,
 		grantRepository,
@@ -459,6 +460,10 @@ func newApplicationHandlerWithContent(
 		api.WithMediaGrantAPI(
 			sessionService,
 			grantService,
+		),
+		api.WithMediaDirectoryAPI(
+			sessionService,
+			mediaDirectory,
 		),
 	}
 	if contentStore != nil {
