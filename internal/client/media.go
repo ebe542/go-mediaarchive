@@ -177,7 +177,9 @@ func (client *Client) mutateMedia(
 func decodeMediaResponse(response mediaResponse, operation string) (Media, error) {
 	if response.Authors == nil ||
 		len(response.SHA256) != sha256.Size*2 ||
-		response.SHA256 != strings.ToLower(response.SHA256) {
+		response.SHA256 != strings.ToLower(response.SHA256) ||
+		response.CreatedAt.Location() != time.UTC ||
+		response.UpdatedAt.Location() != time.UTC {
 		return Media{}, fmt.Errorf("validate %s response: media is incomplete", operation)
 	}
 	checksum, err := hex.DecodeString(response.SHA256)

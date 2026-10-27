@@ -72,7 +72,7 @@ docs(media): complete discovery milestone
 - [x] Directory traversal has dedicated SQLite indexes.
 - [x] The authenticated API exposes a filtered, paginated media directory.
 - [x] Opaque cursors are bound to the complete filter and page limit.
-- [ ] The typed client validates filters, cursors, ordering, and media responses.
+- [x] The typed client validates filters, cursors, ordering, and media responses.
 - [ ] The interactive client supports list, search, next, first, and get commands.
 - [ ] Logout and password replacement clear media pagination state.
 - [ ] Public documentation describes media discovery and its authorization boundary.
