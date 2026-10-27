@@ -19,6 +19,12 @@ type userAPI interface {
 	CurrentUser(context.Context, string) (apiclient.User, error)
 	CompletePasswordEnrollment(context.Context, string, []byte) error
 	ChangePassword(context.Context, string, []byte, []byte) error
+	ListMedia(
+		context.Context,
+		string,
+		apiclient.MediaDirectoryFilter,
+	) (apiclient.MediaPage, error)
+	MediaByID(context.Context, string, string) (apiclient.Media, error)
 }
 
 type secretReader = sharedcli.SecretReader
@@ -31,6 +37,16 @@ type userConsole struct {
 	readSecret    sharedcli.SecretReader
 	logoutTimeout time.Duration
 	session       *sharedcli.Session
+	mediaFilter   apiclient.MediaDirectoryFilter
+	mediaCursor   string
+	mediaStarted  bool
+}
+
+func (console *userConsole) readCommand(
+	ctx context.Context,
+	prompt string,
+) (string, bool, error) {
+	return console.input.Read(ctx, console.output, prompt)
 }
 
 func newUserConsole(
@@ -129,6 +145,8 @@ func (console *userConsole) execute(
 		return false, console.me(ctx)
 	case "password":
 		return false, console.password(ctx, fields[1:])
+	case "media":
+		return false, console.media(ctx, fields[1:])
 	case "exit", "quit", "bye":
 		if len(fields) != 1 {
 			return false, commandUsage(fields[0])
@@ -179,6 +197,7 @@ func (console *userConsole) login(
 		return fmt.Errorf("get authenticated user: %w", err)
 	}
 	console.session.Set(user.Username, session.AccessToken)
+	console.clearMediaPagination()
 	fmt.Fprintf(console.output, "Logged in as %s.\n", user.Username)
 
 	return nil
@@ -193,6 +212,7 @@ func (console *userConsole) logout(ctx context.Context) error {
 	}
 
 	console.session.Clear()
+	console.clearMediaPagination()
 	fmt.Fprintln(console.output, "Logged out.")
 
 	return nil
@@ -217,6 +237,7 @@ func (console *userConsole) logoutOnExit() {
 		console.printError(fmt.Errorf("logout during exit: %w", err))
 	}
 	console.session.Clear()
+	console.clearMediaPagination()
 }
 
 func (console *userConsole) me(ctx context.Context) error {
@@ -322,6 +343,7 @@ func (console *userConsole) changePassword(ctx context.Context) error {
 
 	// The server revokes every user session after a successful password change.
 	console.session.Clear()
+	console.clearMediaPagination()
 	fmt.Fprintln(console.output, "Password changed. Log in again.")
 
 	return nil
@@ -336,6 +358,11 @@ func (console *userConsole) printHelp() {
 	fmt.Fprintln(console.output, "  me")
 	fmt.Fprintln(console.output, "  password enroll")
 	fmt.Fprintln(console.output, "  password change")
+	fmt.Fprintln(console.output, "  media list [limit]")
+	fmt.Fprintln(console.output, "  media search [limit]")
+	fmt.Fprintln(console.output, "  media next")
+	fmt.Fprintln(console.output, "  media first")
+	fmt.Fprintln(console.output, "  media get <id>")
 	fmt.Fprintln(console.output, "  exit | quit | bye")
 }
 

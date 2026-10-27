@@ -25,6 +25,16 @@ type recordingUserAPI struct {
 	changeToken           string
 	changeCurrentPassword string
 	changeNewPassword     string
+	mediaPages            []apiclient.MediaPage
+	mediaCalls            []mediaCall
+	mediaByID             apiclient.Media
+	mediaByIDToken        string
+	mediaByIDValue        string
+}
+
+type mediaCall struct {
+	accessToken string
+	filter      apiclient.MediaDirectoryFilter
 }
 
 func (api *recordingUserAPI) Health(
@@ -82,6 +92,34 @@ func (api *recordingUserAPI) ChangePassword(
 	api.changeNewPassword = string(newPassword)
 
 	return nil
+}
+
+func (api *recordingUserAPI) ListMedia(
+	_ context.Context,
+	accessToken string,
+	filter apiclient.MediaDirectoryFilter,
+) (apiclient.MediaPage, error) {
+	api.mediaCalls = append(api.mediaCalls, mediaCall{
+		accessToken: accessToken,
+		filter:      filter,
+	})
+	index := len(api.mediaCalls) - 1
+	if index >= len(api.mediaPages) {
+		return apiclient.MediaPage{}, nil
+	}
+
+	return api.mediaPages[index], nil
+}
+
+func (api *recordingUserAPI) MediaByID(
+	_ context.Context,
+	accessToken string,
+	id string,
+) (apiclient.Media, error) {
+	api.mediaByIDToken = accessToken
+	api.mediaByIDValue = id
+
+	return api.mediaByID, nil
 }
 
 func TestUserConsoleRunsAuthenticatedPasswordChangeScenario(t *testing.T) {
