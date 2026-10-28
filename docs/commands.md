@@ -190,6 +190,11 @@ go run ./cmd/client --server http://127.0.0.1:8080 health
 | `me` | Yes | Show the current user identity. | `me` |
 | `password enroll` | No | Set the initial password with an enrollment token. | `password enroll` |
 | `password change` | Yes | Change the current user's password. | `password change` |
+| `media list [limit]` | Yes | Start an unfiltered discoverable-media directory. | `media list 20` |
+| `media search [limit]` | Yes | Prompt for search text and an optional media type. | `media search 20` |
+| `media next` | Yes | Load the next page with the active media filters. | `media next` |
+| `media first` | Yes | Return to the first page with the active media filters. | `media first` |
+| `media get <id>` | Yes | Show complete discoverable metadata for one medium. | `media get 123e4567-e89b-12d3-a456-426614174000` |
 | `exit` | No | Attempt logout and close the console. | `exit` |
 | `quit` | No | Alias for `exit`. | `quit` |
 | `bye` | No | Alias for `exit`. | `bye` |
@@ -202,6 +207,63 @@ and after logout it uses `anonymous@mediaarchive>`.
 Invalid interactive field values repeat only the affected prompt. Values already
 accepted during the current operation do not need to be entered again. API
 errors still end the current operation and return to the command prompt.
+
+### Discover media
+
+`media list` shows media owned by the authenticated user and media for which
+that user has an explicit `discover` grant. `media search` performs the same
+authorization-aware lookup and prompts for a required title-or-author substring
+and an optional exact type: `book`, `document`, or `video`.
+
+Both commands accept a page limit from 1 through 100 and use 50 by default.
+Results use descending creation time and media ID. The console retains the
+active filters and opaque continuation cursor only in process memory. The
+`media next` command advances the result set, while `media first` repeats its
+first page.
+Starting another list or search replaces the retained state. Login, logout,
+password replacement, and process exit clear it.
+
+List output contains the media ID, type, title, authors, and creation time.
+`media get` displays all public metadata, including the original filename,
+MIME type, byte size, SHA-256 checksum, owner ID, and timestamps. Displayed
+times use the operating system's current local time zone.
+
+An explicit `discover` grant exposes metadata only. It does not grant `read`
+access to the media bytes. Global `viewer`, `editor`, and `admin` roles do not
+bypass this per-media boundary.
+
+Example discovery session:
+
+```text
+$ go run ./cmd/client --server https://archive.example.test:8443 --ca-certificate /path/to/archive-ca.crt
+anonymous@mediaarchive> login archive_user
+Password:
+Logged in as archive_user.
+archive_user@mediaarchive> media search 20
+Search title or author: security
+Media type (book|document|video, blank for any): book
+123e4567-e89b-12d3-a456-426614174000  book      "Security Engineering"  authors=Example Author  created=<local timestamp>
+More media are available; use 'media next'.
+archive_user@mediaarchive> media next
+<next authorized result page>
+archive_user@mediaarchive> media first
+<first authorized result page>
+archive_user@mediaarchive> media get 123e4567-e89b-12d3-a456-426614174000
+ID: 123e4567-e89b-12d3-a456-426614174000
+Title: Security Engineering
+Authors: Example Author
+Type: book
+Original filename: security-engineering.pdf
+MIME type: application/pdf
+Size: 4096 bytes
+SHA-256: <sha256-checksum>
+Owner ID: 223e4567-e89b-12d3-a456-426614174000
+Created: <local timestamp>
+Updated: <local timestamp>
+archive_user@mediaarchive> logout
+Logged out.
+anonymous@mediaarchive> exit
+```
 
 ## Administrator console
 
@@ -421,6 +483,7 @@ directly with the same HTTPS JSON API and implement equivalent session handling.
 | Change own password | `PUT /api/v1/users/me/password` | Authenticated |
 | Create media metadata | `POST /api/v1/media` | Active editor or administrator |
 | Upload managed media | `POST /api/v1/media/uploads` | Active editor or administrator |
+| Discover media | `GET /api/v1/media?query={query}&type={type}&limit={limit}&cursor={cursor}` | Owner or explicit `discover` permission per result |
 | Read media metadata | `GET /api/v1/media/{id}` | Owner or explicit `discover` permission |
 | Inspect managed content | `HEAD /api/v1/media/{id}/content` | Owner or explicit `read` permission |
 | Stream managed content | `GET /api/v1/media/{id}/content` | Owner or explicit `read` permission |
@@ -441,6 +504,58 @@ Authorization: Bearer <access-token>
 Tokens, passwords, and enrollment secrets must not be logged or placed in URLs.
 Media responses never expose internal storage locations. Administrators receive
 no implicit access to media owned by another user.
+
+### Media-directory API
+
+`GET /api/v1/media` accepts these optional query parameters:
+
+| Parameter | Contract |
+| --- | --- |
+| `query` | Case-insensitive substring of the title or an author name; maximum 200 Unicode characters. |
+| `type` | Exact `book`, `document`, or `video` value. |
+| `limit` | Page size from 1 through 100; defaults to 50. |
+| `cursor` | Opaque continuation value returned with the preceding page. |
+
+Every supplied parameter must occur exactly once and must not be empty. Clients
+omit unrestricted parameters instead of sending blank values. A successful
+response has this shape:
+
+```json
+{
+  "items": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "title": "Security Engineering",
+      "authors": ["Example Author"],
+      "originalFilename": "security-engineering.pdf",
+      "type": "book",
+      "mimeType": "application/pdf",
+      "size": 4096,
+      "sha256": "<lowercase-sha256-checksum>",
+      "ownerId": "223e4567-e89b-12d3-a456-426614174000",
+      "createdAt": "2026-10-27T08:00:00Z",
+      "updatedAt": "2026-10-27T09:00:00Z"
+    }
+  ],
+  "nextCursor": "<opaque-cursor>"
+}
+```
+
+`items` is always an array, including on an empty final page. `nextCursor` is
+omitted when no further page exists. Cursors bind the normalized search text,
+media type, and page limit to an immutable `(createdAt, id)` position. Treat a
+cursor as an indivisible value: do not decode, modify, log, or combine it with
+different filters.
+
+Authorization is applied inside the database query before pagination. Hidden
+media therefore cannot influence a visible result page or count. Owners always
+discover their own media; every other user needs an explicit grant containing
+`discover`. The endpoint returns `401 Unauthorized` without a valid active
+session, `400 Bad Request` for invalid filters or cursors, and a bounded
+`500 Internal Server Error` for operational failures.
+Directory traversal itself is not added to the permanent audit history because
+ordinary searches and page changes could otherwise grow the immutable audit
+log without a useful security event.
 
 Upload managed content with the JSON metadata part first and the file part last:
 

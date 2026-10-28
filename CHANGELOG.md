@@ -8,6 +8,12 @@ checkpoints.
 
 ## [Unreleased]
 
+### Added
+
+- Authorization-aware media discovery with bounded title-and-author search,
+  media-type filtering, opaque keyset pagination, a validated typed client, and
+  interactive end-user directory commands.
+
 ### Fixed
 
 - Release publication explicitly targets the GitHub repository and supports a

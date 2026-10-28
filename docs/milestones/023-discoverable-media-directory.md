@@ -75,9 +75,9 @@ docs(media): complete discovery milestone
 - [x] The typed client validates filters, cursors, ordering, and media responses.
 - [x] The interactive client supports list, search, next, first, and get commands.
 - [x] Logout and password replacement clear media pagination state.
-- [ ] Public documentation describes media discovery and its authorization boundary.
-- [ ] Standard project checks pass.
-- [ ] Local quality gate checks pass.
+- [x] Public documentation describes media discovery and its authorization boundary.
+- [x] Standard project checks pass.
+- [x] Local quality gate checks pass.
 
 GitHub Actions passing on `main` is the external gate for creating the immutable
 `milestone-023` tag after all milestone commits are complete.

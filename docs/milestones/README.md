@@ -27,7 +27,7 @@ verifiable increments.
 | `milestone-020` | [Authorized content streaming](020-authorized-content-streaming.md) | Complete |
 | `milestone-021` | [Security audit logging](021-security-audit-logging.md) | Complete |
 | `milestone-022` | [Administrator audit console](022-administrator-audit-console.md) | Complete |
-| `milestone-023` | [Discoverable media directory](023-discoverable-media-directory.md) | In progress |
+| `milestone-023` | [Discoverable media directory](023-discoverable-media-directory.md) | Complete |
 
 ## Versioning rule
 

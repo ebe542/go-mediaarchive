@@ -10,7 +10,7 @@ private keys, certificates, and database files are not.
 
 ## Current status
 
-Milestone 21 is complete. The project currently provides:
+Milestone 23 is complete. The project currently provides:
 
 - a Go 1.26 module;
 - a versioned `GET /api/v1/health` endpoint;
@@ -54,6 +54,10 @@ Milestone 21 is complete. The project currently provides:
   keyset pagination;
 - a typed client operation that validates audit filters, event snapshots, and
   opaque continuation cursors;
+- an authorization-aware media directory with bounded title-and-author search,
+  media-type filtering, and immutable keyset pagination;
+- a typed media-directory client with strict response and cursor validation;
+- interactive end-user media discovery, pagination, and metadata inspection;
 - one-time initial password enrollment and authenticated password changes;
 - a cross-platform Go project tool for quality gates and release builds.
 
